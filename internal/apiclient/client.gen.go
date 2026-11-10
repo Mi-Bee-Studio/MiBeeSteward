@@ -669,6 +669,51 @@ func (e ProbeEgressSourceKind) Valid() bool {
 	}
 }
 
+// Defines values for ProbeEpisodeAttributionKind.
+const (
+	EgressChange       ProbeEpisodeAttributionKind = "egress_change"
+	ErrorShape         ProbeEpisodeAttributionKind = "error_shape"
+	PathChange         ProbeEpisodeAttributionKind = "path_change"
+	PeerEgressDegraded ProbeEpisodeAttributionKind = "peer_egress_degraded"
+)
+
+// Valid indicates whether the value is a known member of the ProbeEpisodeAttributionKind enum.
+func (e ProbeEpisodeAttributionKind) Valid() bool {
+	switch e {
+	case EgressChange:
+		return true
+	case ErrorShape:
+		return true
+	case PathChange:
+		return true
+	case PeerEgressDegraded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeEpisodeMetricReason.
+const (
+	Both    ProbeEpisodeMetricReason = "both"
+	Latency ProbeEpisodeMetricReason = "latency"
+	OkRate  ProbeEpisodeMetricReason = "ok_rate"
+)
+
+// Valid indicates whether the value is a known member of the ProbeEpisodeMetricReason enum.
+func (e ProbeEpisodeMetricReason) Valid() bool {
+	switch e {
+	case Both:
+		return true
+	case Latency:
+		return true
+	case OkRate:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProbeOptionsExpectMode.
 const (
 	ProbeOptionsExpectModeContains ProbeOptionsExpectMode = "contains"
@@ -831,6 +876,27 @@ func (e ProbePathSampleTrigger) Valid() bool {
 	}
 }
 
+// Defines values for ProbePhaseRowModule.
+const (
+	ProbePhaseRowModuleHttp ProbePhaseRowModule = "http"
+	ProbePhaseRowModuleIcmp ProbePhaseRowModule = "icmp"
+	ProbePhaseRowModuleTcp  ProbePhaseRowModule = "tcp"
+)
+
+// Valid indicates whether the value is a known member of the ProbePhaseRowModule enum.
+func (e ProbePhaseRowModule) Valid() bool {
+	switch e {
+	case ProbePhaseRowModuleHttp:
+		return true
+	case ProbePhaseRowModuleIcmp:
+		return true
+	case ProbePhaseRowModuleTcp:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProbeQualityCategoryCategory.
 const (
 	ProbeQualityCategoryCategoryExternal ProbeQualityCategoryCategory = "external"
@@ -846,6 +912,24 @@ func (e ProbeQualityCategoryCategory) Valid() bool {
 	case ProbeQualityCategoryCategoryLan:
 		return true
 	case ProbeQualityCategoryCategoryQuality:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeQualityEpisodeKind.
+const (
+	ProbeQualityEpisodeKindNetwork ProbeQualityEpisodeKind = "network"
+	ProbeQualityEpisodeKindPath    ProbeQualityEpisodeKind = "path"
+)
+
+// Valid indicates whether the value is a known member of the ProbeQualityEpisodeKind enum.
+func (e ProbeQualityEpisodeKind) Valid() bool {
+	switch e {
+	case ProbeQualityEpisodeKindNetwork:
+		return true
+	case ProbeQualityEpisodeKindPath:
 		return true
 	default:
 		return false
@@ -1440,6 +1524,24 @@ func (e PutDevicesIdArchiveSettingsJSONBodyPin) Valid() bool {
 	case PutDevicesIdArchiveSettingsJSONBodyPinForceActive:
 		return true
 	case PutDevicesIdArchiveSettingsJSONBodyPinForceArchive:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetProbeQualityEpisodesParamsActive.
+const (
+	GetProbeQualityEpisodesParamsActiveN0 GetProbeQualityEpisodesParamsActive = 0
+	GetProbeQualityEpisodesParamsActiveN1 GetProbeQualityEpisodesParamsActive = 1
+)
+
+// Valid indicates whether the value is a known member of the GetProbeQualityEpisodesParamsActive enum.
+func (e GetProbeQualityEpisodesParamsActive) Valid() bool {
+	switch e {
+	case GetProbeQualityEpisodesParamsActiveN0:
+		return true
+	case GetProbeQualityEpisodesParamsActiveN1:
 		return true
 	default:
 		return false
@@ -2409,6 +2511,33 @@ type ProbeEgressVantage struct {
 	Vantage string `json:"vantage"`
 }
 
+// ProbeEpisodeAttribution defines model for ProbeEpisodeAttribution.
+type ProbeEpisodeAttribution struct {
+	// At change timestamp when point-precise
+	At     *string                     `json:"at,omitempty"`
+	Detail string                      `json:"detail"`
+	Kind   ProbeEpisodeAttributionKind `json:"kind"`
+}
+
+// ProbeEpisodeAttributionKind defines model for ProbeEpisodeAttribution.Kind.
+type ProbeEpisodeAttributionKind string
+
+// ProbeEpisodeMetric defines model for ProbeEpisodeMetric.
+type ProbeEpisodeMetric struct {
+	BaseOkRate float64                  `json:"base_ok_rate"`
+	BaseP50Ms  float64                  `json:"base_p50_ms"`
+	Name       string                   `json:"name"`
+	OkRate     float64                  `json:"ok_rate"`
+	P50Ms      float64                  `json:"p50_ms"`
+	Reason     ProbeEpisodeMetricReason `json:"reason"`
+	Samples    int                      `json:"samples"`
+	TargetId   int64                    `json:"target_id"`
+	Vantage    string                   `json:"vantage"`
+}
+
+// ProbeEpisodeMetricReason defines model for ProbeEpisodeMetric.Reason.
+type ProbeEpisodeMetricReason string
+
 // ProbeOptions Per-module execution options (#605), stored as JSON on the target and mirrored to vantage agents verbatim. Fields apply to their own module only (validated). Deliberately no credentials/auth headers: the agent command channel stays secret-free.
 type ProbeOptions struct {
 	// Expect tcp only; banner match against the first bytes read
@@ -2516,6 +2645,35 @@ type ProbePathsResponse struct {
 	Paths []ProbePathSample `json:"paths"`
 }
 
+// ProbePhaseRow One run's per-stage timing breakdown (#717). Stage fields are 0/absent when the module does not exercise them (tcp carries connect_ms only, icmp carries reply_ttl only). latency_ms is the run total denormalized so the phases chart needs no join.
+type ProbePhaseRow struct {
+	CheckedAt time.Time           `json:"checked_at"`
+	ConnectMs *float64            `json:"connect_ms,omitempty"`
+	DnsMs     *float64            `json:"dns_ms,omitempty"`
+	LatencyMs float64             `json:"latency_ms"`
+	Module    ProbePhaseRowModule `json:"module"`
+
+	// ReplyTtl icmp only: remaining hop budget in the destination's reply (0 = unknown)
+	ReplyTtl *int `json:"reply_ttl,omitempty"`
+
+	// ResolvedIp the address the run actually used
+	ResolvedIp *string  `json:"resolved_ip,omitempty"`
+	TargetId   int64    `json:"target_id"`
+	TlsMs      *float64 `json:"tls_ms,omitempty"`
+
+	// TtfbMs time to first response byte after the request went out
+	TtfbMs  *float64 `json:"ttfb_ms,omitempty"`
+	Vantage string   `json:"vantage"`
+}
+
+// ProbePhaseRowModule defines model for ProbePhaseRow.Module.
+type ProbePhaseRowModule string
+
+// ProbePhasesResponse defines model for ProbePhasesResponse.
+type ProbePhasesResponse struct {
+	Phases []ProbePhaseRow `json:"phases"`
+}
+
 // ProbeQualityCategory defines model for ProbeQualityCategory.
 type ProbeQualityCategory struct {
 	// Category lan = device-bound targets; external = manual unbound (business) targets; quality = the built-in system matrix
@@ -2531,6 +2689,42 @@ type ProbeQualityCategory struct {
 
 // ProbeQualityCategoryCategory lan = device-bound targets; external = manual unbound (business) targets; quality = the built-in system matrix
 type ProbeQualityCategoryCategory string
+
+// ProbeQualityEpisode One degradation episode (#720). notified=false episodes are recorded-only (no notification fired; the #716 impact-only rule).
+type ProbeQualityEpisode struct {
+	Attribution []ProbeEpisodeAttribution `json:"attribution"`
+	Id          int64                     `json:"id"`
+
+	// Kind network = one egress group's quality points mostly degraded; path = one destination /24 degraded from that group's view
+	Kind ProbeQualityEpisodeKind `json:"kind"`
+
+	// LastSeenAt last window the confirmation still held
+	LastSeenAt      time.Time            `json:"last_seen_at"`
+	MetricDegraded  []ProbeEpisodeMetric `json:"metric_degraded"`
+	Notified        bool                 `json:"notified"`
+	RecoverNotified bool                 `json:"recover_notified"`
+
+	// ResolvedAt empty = active
+	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
+	StartedAt  time.Time  `json:"started_at"`
+
+	// TargetGroup destination /24 for path episodes, '' for network
+	TargetGroup string `json:"target_group"`
+
+	// VantageGroup 'center' or 'agent:{id}' — the egress group
+	VantageGroup string `json:"vantage_group"`
+
+	// Windows consecutive degraded windows seen
+	Windows int `json:"windows"`
+}
+
+// ProbeQualityEpisodeKind network = one egress group's quality points mostly degraded; path = one destination /24 degraded from that group's view
+type ProbeQualityEpisodeKind string
+
+// ProbeQualityEpisodes defines model for ProbeQualityEpisodes.
+type ProbeQualityEpisodes struct {
+	Episodes []ProbeQualityEpisode `json:"episodes"`
+}
 
 // ProbeQualityGroup defines model for ProbeQualityGroup.
 type ProbeQualityGroup struct {
@@ -3494,6 +3688,18 @@ type GetProbeQualityParams struct {
 	Window *int `form:"window,omitempty" json:"window,omitempty"`
 }
 
+// GetProbeQualityEpisodesParams defines parameters for GetProbeQualityEpisodes.
+type GetProbeQualityEpisodesParams struct {
+	// Days history window (default 1 = last 24h)
+	Days *int `form:"days,omitempty" json:"days,omitempty"`
+
+	// Active 1 = only unresolved episodes
+	Active *GetProbeQualityEpisodesParamsActive `form:"active,omitempty" json:"active,omitempty"`
+}
+
+// GetProbeQualityEpisodesParamsActive defines parameters for GetProbeQualityEpisodes.
+type GetProbeQualityEpisodesParamsActive int
+
 // GetProbeQualityHistoryParams defines parameters for GetProbeQualityHistory.
 type GetProbeQualityHistoryParams struct {
 	// Days lookback days (hourly buckets for 7d, daily for 30d; raw probe results are retained 30 days by default)
@@ -3518,6 +3724,11 @@ type GetProbeTargetsParams struct {
 
 // GetProbeTargetsIdPathsParams defines parameters for GetProbeTargetsIdPaths.
 type GetProbeTargetsIdPathsParams struct {
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// GetProbeTargetsIdPhasesParams defines parameters for GetProbeTargetsIdPhases.
+type GetProbeTargetsIdPhasesParams struct {
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
@@ -4938,6 +5149,13 @@ type ClientInterface interface {
 	// Corresponds with GET /probe-quality (the `GetProbeQuality` operationId).
 	GetProbeQuality(ctx context.Context, params *GetProbeQualityParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetProbeQualityEpisodes Quality degradation episodes (#720) - relative-baseline drops confirmed by cross-evidence, with attribution
+	//
+	// Episodes are the impact-only alert surface of the probe extension: a track degrades when its 15-minute window clearly drops below its own baseline (72h median, or same weekday-hour once 7 days of history exist), and an episode only opens after cross-confirmation (one egress group's quality points mostly degraded = network kind; one destination /24 degraded from enough vantages = path kind). Episodes without a same-window egress/path attribution stay recorded (notified=false) but never fire notifications (#716).
+	//
+	// Corresponds with GET /probe-quality/episodes (the `GetProbeQualityEpisodes` operationId).
+	GetProbeQualityEpisodes(ctx context.Context, params *GetProbeQualityEpisodesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetProbeQualityHistory Egress-quality trend - the verdict chain replayed per time bucket over the retention horizon
 	//
 	// Corresponds with GET /probe-quality/history (the `GetProbeQualityHistory` operationId).
@@ -4977,6 +5195,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /probe-targets/{id}/paths (the `GetProbeTargetsIdPaths` operationId).
 	GetProbeTargetsIdPaths(ctx context.Context, id Id, params *GetProbeTargetsIdPathsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetProbeTargetsIdPhases Per-stage timing history of one target (#717), newest first
+	//
+	// One row per run that produced a stage breakdown: DNS/connect/TLS/TTFB for http, connect for tcp, reply TTL for icmp, across all vantages. Failed runs keep the stages that did complete (a timeout mid-handshake still tells you what DNS/connect cost); dns/tls modules produce no rows.
+	//
+	// Corresponds with GET /probe-targets/{id}/phases (the `GetProbeTargetsIdPhases` operationId).
+	GetProbeTargetsIdPhases(ctx context.Context, id Id, params *GetProbeTargetsIdPhasesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetProbeTargetsIdResults Result history (vantage filter)
 	//
@@ -7367,6 +7592,23 @@ func (c *Client) GetProbeQuality(ctx context.Context, params *GetProbeQualityPar
 	return c.Client.Do(req)
 }
 
+// GetProbeQualityEpisodes Quality degradation episodes (#720) - relative-baseline drops confirmed by cross-evidence, with attribution
+//
+// Episodes are the impact-only alert surface of the probe extension: a track degrades when its 15-minute window clearly drops below its own baseline (72h median, or same weekday-hour once 7 days of history exist), and an episode only opens after cross-confirmation (one egress group's quality points mostly degraded = network kind; one destination /24 degraded from enough vantages = path kind). Episodes without a same-window egress/path attribution stay recorded (notified=false) but never fire notifications (#716).
+//
+// Corresponds with GET /probe-quality/episodes (the `GetProbeQualityEpisodes` operationId).
+func (c *Client) GetProbeQualityEpisodes(ctx context.Context, params *GetProbeQualityEpisodesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProbeQualityEpisodesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetProbeQualityHistory Egress-quality trend - the verdict chain replayed per time bucket over the retention horizon
 //
 // Corresponds with GET /probe-quality/history (the `GetProbeQualityHistory` operationId).
@@ -7477,6 +7719,23 @@ func (c *Client) GetProbeTargetsIdCertificates(ctx context.Context, id Id, reqEd
 // Corresponds with GET /probe-targets/{id}/paths (the `GetProbeTargetsIdPaths` operationId).
 func (c *Client) GetProbeTargetsIdPaths(ctx context.Context, id Id, params *GetProbeTargetsIdPathsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetProbeTargetsIdPathsRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetProbeTargetsIdPhases Per-stage timing history of one target (#717), newest first
+//
+// One row per run that produced a stage breakdown: DNS/connect/TLS/TTFB for http, connect for tcp, reply TTL for icmp, across all vantages. Failed runs keep the stages that did complete (a timeout mid-handshake still tells you what DNS/connect cost); dns/tls modules produce no rows.
+//
+// Corresponds with GET /probe-targets/{id}/phases (the `GetProbeTargetsIdPhases` operationId).
+func (c *Client) GetProbeTargetsIdPhases(ctx context.Context, id Id, params *GetProbeTargetsIdPhasesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProbeTargetsIdPhasesRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -13399,6 +13658,72 @@ func NewGetProbeQualityRequest(server string, params *GetProbeQualityParams) (*h
 	return req, nil
 }
 
+// NewGetProbeQualityEpisodesRequest constructs an http.Request for the GetProbeQualityEpisodes method
+func NewGetProbeQualityEpisodesRequest(server string, params *GetProbeQualityEpisodesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/probe-quality/episodes")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Days != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "days", *params.Days, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Active != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "active", *params.Active, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetProbeQualityHistoryRequest constructs an http.Request for the GetProbeQualityHistory method
 func NewGetProbeQualityHistoryRequest(server string, params *GetProbeQualityHistoryParams) (*http.Request, error) {
 	var err error
@@ -13723,6 +14048,67 @@ func NewGetProbeTargetsIdPathsRequest(server string, id Id, params *GetProbeTarg
 	}
 
 	operationPath := fmt.Sprintf("/probe-targets/%s/paths", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetProbeTargetsIdPhasesRequest constructs an http.Request for the GetProbeTargetsIdPhases method
+func NewGetProbeTargetsIdPhasesRequest(server string, id Id, params *GetProbeTargetsIdPhasesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/probe-targets/%s/phases", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -16780,6 +17166,15 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /probe-quality (the `GetProbeQuality` operationId).
 	GetProbeQualityWithResponse(ctx context.Context, params *GetProbeQualityParams, reqEditors ...RequestEditorFn) (*GetProbeQualityResponse, error)
 
+	// GetProbeQualityEpisodesWithResponse Quality degradation episodes (#720) - relative-baseline drops confirmed by cross-evidence, with attribution
+	//
+	// Episodes are the impact-only alert surface of the probe extension: a track degrades when its 15-minute window clearly drops below its own baseline (72h median, or same weekday-hour once 7 days of history exist), and an episode only opens after cross-confirmation (one egress group's quality points mostly degraded = network kind; one destination /24 degraded from enough vantages = path kind). Episodes without a same-window egress/path attribution stay recorded (notified=false) but never fire notifications (#716).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /probe-quality/episodes (the `GetProbeQualityEpisodes` operationId).
+	GetProbeQualityEpisodesWithResponse(ctx context.Context, params *GetProbeQualityEpisodesParams, reqEditors ...RequestEditorFn) (*GetProbeQualityEpisodesResponse, error)
+
 	// GetProbeQualityHistoryWithResponse Egress-quality trend - the verdict chain replayed per time bucket over the retention horizon
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -16835,6 +17230,15 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /probe-targets/{id}/paths (the `GetProbeTargetsIdPaths` operationId).
 	GetProbeTargetsIdPathsWithResponse(ctx context.Context, id Id, params *GetProbeTargetsIdPathsParams, reqEditors ...RequestEditorFn) (*GetProbeTargetsIdPathsResponse, error)
+
+	// GetProbeTargetsIdPhasesWithResponse Per-stage timing history of one target (#717), newest first
+	//
+	// One row per run that produced a stage breakdown: DNS/connect/TLS/TTFB for http, connect for tcp, reply TTL for icmp, across all vantages. Failed runs keep the stages that did complete (a timeout mid-handshake still tells you what DNS/connect cost); dns/tls modules produce no rows.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /probe-targets/{id}/phases (the `GetProbeTargetsIdPhases` operationId).
+	GetProbeTargetsIdPhasesWithResponse(ctx context.Context, id Id, params *GetProbeTargetsIdPhasesParams, reqEditors ...RequestEditorFn) (*GetProbeTargetsIdPhasesResponse, error)
 
 	// GetProbeTargetsIdResultsWithResponse Result history (vantage filter)
 	//
@@ -22367,6 +22771,47 @@ func (r GetProbeQualityResponse) ContentType() string {
 	return ""
 }
 
+type GetProbeQualityEpisodesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProbeQualityEpisodes
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetProbeQualityEpisodesResponse) GetJSON200() *ProbeQualityEpisodes {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetProbeQualityEpisodesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProbeQualityEpisodesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProbeQualityEpisodesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetProbeQualityEpisodesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetProbeQualityHistoryResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -22682,6 +23127,47 @@ func (r GetProbeTargetsIdPathsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetProbeTargetsIdPathsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetProbeTargetsIdPhasesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProbePhasesResponse
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetProbeTargetsIdPhasesResponse) GetJSON200() *ProbePhasesResponse {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetProbeTargetsIdPhasesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProbeTargetsIdPhasesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProbeTargetsIdPhasesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetProbeTargetsIdPhasesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -26371,6 +26857,21 @@ func (c *ClientWithResponses) GetProbeQualityWithResponse(ctx context.Context, p
 	return ParseGetProbeQualityResponse(rsp)
 }
 
+// GetProbeQualityEpisodesWithResponse Quality degradation episodes (#720) - relative-baseline drops confirmed by cross-evidence, with attribution
+//
+// Episodes are the impact-only alert surface of the probe extension: a track degrades when its 15-minute window clearly drops below its own baseline (72h median, or same weekday-hour once 7 days of history exist), and an episode only opens after cross-confirmation (one egress group's quality points mostly degraded = network kind; one destination /24 degraded from enough vantages = path kind). Episodes without a same-window egress/path attribution stay recorded (notified=false) but never fire notifications (#716).
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /probe-quality/episodes (the `GetProbeQualityEpisodes` operationId).
+func (c *ClientWithResponses) GetProbeQualityEpisodesWithResponse(ctx context.Context, params *GetProbeQualityEpisodesParams, reqEditors ...RequestEditorFn) (*GetProbeQualityEpisodesResponse, error) {
+	rsp, err := c.GetProbeQualityEpisodes(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProbeQualityEpisodesResponse(rsp)
+}
+
 // GetProbeQualityHistoryWithResponse Egress-quality trend - the verdict chain replayed per time bucket over the retention horizon
 //
 // Returns a wrapper object for the known response body format(s).
@@ -26473,6 +26974,21 @@ func (c *ClientWithResponses) GetProbeTargetsIdPathsWithResponse(ctx context.Con
 		return nil, err
 	}
 	return ParseGetProbeTargetsIdPathsResponse(rsp)
+}
+
+// GetProbeTargetsIdPhasesWithResponse Per-stage timing history of one target (#717), newest first
+//
+// One row per run that produced a stage breakdown: DNS/connect/TLS/TTFB for http, connect for tcp, reply TTL for icmp, across all vantages. Failed runs keep the stages that did complete (a timeout mid-handshake still tells you what DNS/connect cost); dns/tls modules produce no rows.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /probe-targets/{id}/phases (the `GetProbeTargetsIdPhases` operationId).
+func (c *ClientWithResponses) GetProbeTargetsIdPhasesWithResponse(ctx context.Context, id Id, params *GetProbeTargetsIdPhasesParams, reqEditors ...RequestEditorFn) (*GetProbeTargetsIdPhasesResponse, error) {
+	rsp, err := c.GetProbeTargetsIdPhases(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProbeTargetsIdPhasesResponse(rsp)
 }
 
 // GetProbeTargetsIdResultsWithResponse Result history (vantage filter)
@@ -30208,6 +30724,32 @@ func ParseGetProbeQualityResponse(rsp *http.Response) (*GetProbeQualityResponse,
 	return response, nil
 }
 
+// ParseGetProbeQualityEpisodesResponse parses an HTTP response from a GetProbeQualityEpisodesWithResponse call
+func ParseGetProbeQualityEpisodesResponse(rsp *http.Response) (*GetProbeQualityEpisodesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProbeQualityEpisodesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProbeQualityEpisodes
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetProbeQualityHistoryResponse parses an HTTP response from a GetProbeQualityHistoryWithResponse call
 func ParseGetProbeQualityHistoryResponse(rsp *http.Response) (*GetProbeQualityHistoryResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -30396,6 +30938,32 @@ func ParseGetProbeTargetsIdPathsResponse(rsp *http.Response) (*GetProbeTargetsId
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ProbePathsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetProbeTargetsIdPhasesResponse parses an HTTP response from a GetProbeTargetsIdPhasesWithResponse call
+func ParseGetProbeTargetsIdPhasesResponse(rsp *http.Response) (*GetProbeTargetsIdPhasesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProbeTargetsIdPhasesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProbePhasesResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
