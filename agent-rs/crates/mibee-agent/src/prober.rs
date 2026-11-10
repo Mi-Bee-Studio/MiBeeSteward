@@ -34,11 +34,6 @@ const BODY_LIMIT: usize = 1 << 20;
 const FAIL_TRACE_COOLDOWN_MS: i64 = 10 * 60 * 1000;
 /// Concurrent traces (center default parity).
 const TRACE_CONCURRENCY: usize = 2;
-/// User-Agent for http probes, the same product token the center sends
-/// (#713: some public sites reject common tool UAs with 501).
-const PROBE_USER_AGENT: &str =
-    concat!("MiBeeSteward-probe/", env!("CARGO_PKG_VERSION"), " (+https://github.com/Mi-Bee-Studio/MiBeeSteward)");
-
 pub struct Prober {
     plan_fingerprint: String,
     targets: Vec<ProbeTargetSpec>,
