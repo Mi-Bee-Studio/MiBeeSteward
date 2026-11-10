@@ -394,7 +394,7 @@ flowchart LR
 
 
 
-- **公开**：无需认证（健康检查、登录、登出、2FA 校验、`/metrics`、`/sd`）
+- **公开**：无需认证（健康检查、登录、登出、2FA 校验、`/metrics`、`/sd`、`/.well-known/mibee-service`）
 
 
 - **需认证**：有效的 JWT 令牌（任意角色）
@@ -746,8 +746,26 @@ flowchart LR
 
 根路径别名 `GET /health` 返回同样的 JSON：外部监控、容器探针与负载均衡按惯例探测 `/health` 时将拿到真实健康状态，而不是 SPA fallback 的 HTML（#571）。
 
+### GET /.well-known/mibee-service
 
+生态服务发现身份端点（#729，蜂探 docs/02 §8.1）：蜂探 App 的子网扫描命中此端点即可按类型归类发现的实例，无需再手填地址。契约要求无鉴权且最小披露——恰好四个字段，不含地址、能力、凭据任何信息（与 `/health` 同等披露口径；必须公开，因为 App 在发现实例之前无从鉴权）。
 
+**公开**
+
+**响应**：
+
+```json
+{
+  "service": "steward",
+  "name": "steward-lan",
+  "ver": "v0.9.1",
+  "id": "6f0c8e2b1a4d5f379c8e0b2a4d6f8c1e"
+}
+```
+
+`service` 恒为 `steward`（docs/02 §8.4 类型注册表值）；`name` 为宣告的实例名（`announce.name` 或 OS 主机名）；`ver` 为构建版本；`id` 为稳定实例 ID（`data/instance-id`，重启/升级/换 IP 不变——它是 App 侧绑定与归并的锚点）。`announce.enabled: false` 时端点注销（404）。
+
+同一身份还通过 mDNS `_mibee-steward._tcp`（TXT `ver/id/name/tls/api`，与 NVR 服务同形）和 49091/udp 上应答共享探测帧 `MIBEE-NVR-DISCv1?`（应答带 `type=steward`）的 UDP 应答器宣告——两者都由 `announce` 配置块控制，见 [configuration.md](configuration.md#局域网自宣告配置729)。
 
 
 
@@ -4286,6 +4304,7 @@ Prometheus 数据源的仪表板配置与查询透传。读（`CapDashboardRead`
 
 
 | `GET /sd` | Prometheus HTTP SD 文件内容（已注册设备的 IP 与标签，供 Prometheus 服务发现） |
+| `GET /.well-known/mibee-service` | 生态服务发现身份端点（#729）：`{service: steward, name, ver, id}`——蜂探扫描的分类依据 |
 
 
 

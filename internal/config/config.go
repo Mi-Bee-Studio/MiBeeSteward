@@ -44,6 +44,15 @@ type Config struct {
 	// Default off — it opens a listening socket (UDP 162; ports below 1024
 	// need CAP_NET_BIND_SERVICE) and expects firewall allowance.
 	SNMPTrap SNMPTrapConfig `koanf:"snmp_trap"`
+	// Announce is the LAN self-announcement block (#729, Scout docs/02 §8
+	// ecosystem service discovery): mDNS advertisement, the public well-known
+	// identity endpoint, and the UDP discovery responder. Default ON — the
+	// Scout app shows nothing it cannot find (ruling ⑨A), so announcing is
+	// what makes this instance appear; deployments that must stay invisible
+	// set announce.enabled: false. Named "announce" (not "discovery") to
+	// stay unambiguous next to scanner.discovery — THAT block is this
+	// instance DISCOVERING others; this block is being discoverable.
+	Announce AnnounceConfig `koanf:"announce"`
 	// ListenWatch diffs the local LISTEN table and alerts on newly opened
 	// listening sockets (#500). Default OFF.
 	ListenWatch ListenWatchConfig `koanf:"listen_watch"`
@@ -397,6 +406,20 @@ var authDefaults = map[string]interface{}{
 	},
 }
 
+// announceDefaults seeds the announce block (#729) ON by default: the Scout
+// app shows nothing it cannot find, so announcing is what makes the instance
+// appear. A deployment's yaml omits the block entirely (the #727 upgrade
+// path) and still gets announcing; explicit keys (including enabled: false)
+// override per key.
+var announceDefaults = map[string]interface{}{
+	"announce": map[string]interface{}{
+		"enabled":  true,
+		"mdns":     true,
+		"udp":      true,
+		"udp_port": 49091,
+	},
+}
+
 type HeartbeatConfig struct {
 	DefaultInterval int `koanf:"default_interval"`
 	Timeout         int `koanf:"timeout"`
@@ -491,6 +514,9 @@ func Load(configPath string) (*Config, error) {
 	// Seed defaults first: later loads (YAML/env) override only the keys they
 	// actually name, so partial blocks don't zero out unmentioned fields.
 	if err := k.Load(mapProvider(authDefaults), nil); err != nil {
+		return nil, err
+	}
+	if err := k.Load(mapProvider(announceDefaults), nil); err != nil {
 		return nil, err
 	}
 
@@ -746,6 +772,43 @@ type SNMPTrapConfig struct {
 	Enabled   bool   `koanf:"enabled"`
 	Bind      string `koanf:"bind"`
 	Community string `koanf:"community"`
+}
+
+// AnnounceConfig controls LAN self-announcement (#729, Scout docs/02 §8):
+// the ecosystem service discovery trio so the Scout app's one-shot LAN scan
+// recognizes this instance (type=steward) instead of requiring a hand-typed
+// address. All three surfaces (mDNS, well-known endpoint, UDP responder)
+// hang off one Enabled switch; sub-switches allow partial shutdown. The
+// published data is deliberately minimal (a stable ID, the instance name,
+// the API port) — same disclosure posture as /health. The yaml key is
+// "announce" (Go type AnnounceConfig) to stay unambiguous next to
+// scanner.discovery, which is the opposite direction (this instance
+// discovering OTHERS).
+type AnnounceConfig struct {
+	// Enabled is the master switch, default ON (seeded in discoveryDefaults):
+	// discovery is what makes the instance visible to the Scout app, and a
+	// false here also unregisters the well-known HTTP endpoint (404).
+	Enabled bool `koanf:"enabled"`
+	// Name is the announced instance name (mDNS instance label + TXT name +
+	// well-known "name"). Empty = OS hostname. Trimmed before use.
+	Name string `koanf:"name"`
+	// MDNS toggles the _mibee-steward._tcp advertisement (the App's primary
+	// discovery path; 5353/udp multicast, coexists with avahi/umdns).
+	MDNS bool `koanf:"mdns"`
+	// UDP toggles the discovery responder (the App's fallback path for
+	// multicast-restricted Wi-Fi). It answers the shared MIBEE-NVR-DISCv1?
+	// probe frame with a type=steward payload.
+	UDP bool `koanf:"udp"`
+	// UDPPort is the steward discovery port, default 49091 (adjacent to the
+	// NVR's 49090 so the MiBee services form a port group; the Scout docs/02
+	// §8.3 registry confirmation for this number is tracked in #729 — until
+	// then it is our proposal, changeable per-deployment).
+	UDPPort int `koanf:"udp_port"`
+	// TLS is the announced scheme hint (mDNS TXT tls= / UDP "tls"): whether
+	// clients should talk https to the API port. The binary itself serves
+	// plain HTTP; set true only when a TLS-terminating reverse proxy fronts
+	// the SAME port mapping clients discover.
+	TLS bool `koanf:"tls"`
 }
 
 // ListenWatchConfig controls the listen-table diff source (#500).

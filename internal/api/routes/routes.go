@@ -35,6 +35,7 @@ import (
 	"mibee-steward/internal/service/agentwatch"
 	"mibee-steward/internal/service/archive"
 	"mibee-steward/internal/service/demoseed"
+	"mibee-steward/internal/service/discovery"
 	"mibee-steward/internal/service/flows"
 	"mibee-steward/internal/service/listenwatch"
 	"mibee-steward/internal/service/notification"
@@ -787,6 +788,53 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		go listenWatcher.Run(lwCtx)
 	}
 
+	// Ecosystem service discovery (#729, Scout docs/02 §8): announce this
+	// instance on the LAN so the Scout app's one-shot scan classifies it
+	// (type=steward). Default on — the app shows nothing it cannot find, so
+	// announcing IS the visibility. Three surfaces under one switch: the
+	// public well-known identity endpoint, the mDNS advertisement, and the
+	// UDP discovery responder. Announcing surfaces fail soft (log once,
+	// continue) like the SNMP trap receiver; a failed surface only costs its
+	// own discovery path, never boot.
+	var discoveryMDNS *discovery.Registrar
+	var discoveryUDP *discovery.Responder
+	if cfg.Announce.Enabled {
+		// Same default as main.go's dbPath fallback: an empty
+		// database.sqlite.path means ./data, and the instance-id file must
+		// land there — not in the process CWD.
+		dbPath := cfg.Database.SQLite.Path
+		if dbPath == "" {
+			dbPath = "./data/mibee.db"
+		}
+		ident := discovery.LoadIdentity(filepath.Dir(dbPath), cfg.Announce.Name, slog.Default())
+		r.Get("/.well-known/mibee-service", handler.WellKnownHandler(ident, version.Version))
+		if cfg.Announce.MDNS {
+			discoveryMDNS = discovery.NewRegistrar(ident.ID, ident.Name, cfg.Server.Port, cfg.Announce.TLS)
+			if err := discoveryMDNS.Start(); err != nil {
+				slog.Error("discovery: mdns advertise failed to start (continuing without it)", "error", err)
+				discoveryMDNS = nil
+			} else {
+				slog.Info("discovery: mdns advertising", "type", discovery.ServiceType,
+					"instance", ident.Name, "api_port", cfg.Server.Port)
+			}
+		}
+		if cfg.Announce.UDP {
+			udpPort := cfg.Announce.UDPPort
+			if udpPort <= 0 {
+				udpPort = discovery.DefaultUDPPort
+			}
+			discoveryUDP = discovery.NewResponder(ident.ID, ident.Name, cfg.Server.Port, cfg.Announce.TLS, udpPort)
+			if err := discoveryUDP.Start(); err != nil {
+				slog.Error("discovery: udp responder failed to start (continuing without it)",
+					"error", err, "port", udpPort)
+				discoveryUDP = nil
+			} else {
+				slog.Info("discovery: udp responder listening",
+					"port", discoveryUDP.Port(), "probe", discovery.DiscoveryProbeV1)
+			}
+		}
+	}
+
 	// Agent command service: constructed BEFORE the scheduler so the ScanFunc
 	// binding below can close over it (agent-network tasks dispatch through it
 	// instead of running a local scan).
@@ -1147,6 +1195,14 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 		}
 		if trapReceiver != nil {
 			trapReceiver.Stop()
+		}
+		// Discovery announcers (#729): DB-independent sockets, but stopped
+		// with everything else so the process exits quiet.
+		if discoveryMDNS != nil {
+			discoveryMDNS.Stop()
+		}
+		if discoveryUDP != nil {
+			discoveryUDP.Stop()
 		}
 		discSvc.Stop()
 		// Wait for the raw-frame listeners to exit (bounded ~1s: their socket
