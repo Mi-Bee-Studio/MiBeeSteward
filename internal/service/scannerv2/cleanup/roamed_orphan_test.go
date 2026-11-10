@@ -73,7 +73,7 @@ func TestPruneRoamedOrphans_OrphanDeleted(t *testing.T) {
 	_, err = conn.ExecContext(ctx, `UPDATE devices SET network_id = ? WHERE id = ?`, net2.ID, liveID)
 	require.NoError(t, err)
 
-	svc := New(queries, nil, nil, conn, config.RetentionConfig{BatchSize: 1000})
+	svc := New(queries, nil, nil, conn, nil, config.RetentionConfig{BatchSize: 1000})
 	svc.pruneRoamedOrphans(ctx)
 
 	var orphanGone int64
@@ -111,7 +111,7 @@ func TestPruneRoamedOrphans_KeepsRecent(t *testing.T) {
 	_, err = conn.ExecContext(ctx, `UPDATE devices SET network_id = ? WHERE id = ?`, net2.ID, liveID)
 	require.NoError(t, err)
 
-	svc := New(queries, nil, nil, conn, config.RetentionConfig{BatchSize: 1000})
+	svc := New(queries, nil, nil, conn, nil, config.RetentionConfig{BatchSize: 1000})
 	svc.pruneRoamedOrphans(ctx)
 
 	var kept int64
@@ -136,7 +136,7 @@ func TestPruneRoamedOrphans_LogsDeviceRemoved(t *testing.T) {
 	liveID := insertDevice(t, conn, "audited-live", "scanner_v2", "online", "aa:bb:cc:dd:ee:33", "198.51.100.33", nil)
 	require.NotZero(t, liveID)
 
-	svc := New(queries, nil, nil, conn, config.RetentionConfig{BatchSize: 1000})
+	svc := New(queries, nil, nil, conn, nil, config.RetentionConfig{BatchSize: 1000})
 	svc.pruneRoamedOrphans(ctx)
 
 	var n int64
@@ -163,7 +163,7 @@ func TestPruneRoamedOrphans_SilentDeviceStays(t *testing.T) {
 	id := insertDevice(t, conn, "silent-keeper", "scanner_v2", "offline", "aa:bb:cc:dd:ee:99", "192.0.2.99",
 		utcPtr(time.Now().AddDate(0, 0, -30))) // offline 30d, no online duplicate
 
-	svc := New(queries, nil, nil, conn, config.RetentionConfig{BatchSize: 1000})
+	svc := New(queries, nil, nil, conn, nil, config.RetentionConfig{BatchSize: 1000})
 	svc.pruneRoamedOrphans(ctx)
 
 	var kept int64

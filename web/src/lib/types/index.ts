@@ -98,6 +98,13 @@ export type ProbeQualityHistoryReport = Schemas['ProbeQualityHistoryReport'];
 export type ProbeQualityHistoryGroup = Schemas['ProbeQualityHistoryGroup'];
 export type ProbeQualityHistorySeries = Schemas['ProbeQualityHistorySeries'];
 export type ProbeQualityHistoryPoint = Schemas['ProbeQualityHistoryPoint'];
+// Egress identity + traced paths (#716/#718/#719).
+export type ProbeEgressReport = Schemas['ProbeEgressReport'];
+export type ProbeEgressVantage = Schemas['ProbeEgressVantage'];
+export type ProbeEgressIP = Schemas['ProbeEgressIP'];
+export type ProbeEgressSource = Schemas['ProbeEgressSource'];
+export type ProbePathSample = Schemas['ProbePathSample'];
+export type ProbePathHop = Schemas['ProbePathHop'];
 
 // ---------------------------------------------------------------------------
 // Linked Document (used in device-document linking modal)

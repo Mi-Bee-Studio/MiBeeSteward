@@ -1128,6 +1128,26 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ProbeQualityHistoryReport"}
+  /probe-egress:
+    get:
+      tags: [ProbeTargets]
+      summary: Current egress identity per vantage (#718) - latest public-IP echo round, ASN enrichment, local gateway. Recording only, changes never notify (#716)
+      responses:
+        "200":
+          description: Egress report
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbeEgressReport"}
+  /probe-paths:
+    get:
+      tags: [ProbeTargets]
+      summary: Latest traced path per target and vantage (#719) - hop list, reached TTL, reply TTL
+      responses:
+        "200":
+          description: Path snapshot
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbePathsResponse"}
   /probe-targets:
     get:
       tags: [ProbeTargets]
@@ -1216,6 +1236,31 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/CertificateList"}
+  /probe-targets/{id}/paths:
+    get:
+      tags: [ProbeTargets]
+      summary: Path-trace history of one target (#719), newest first
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {name: limit, in: query, schema: {type: integer, default: 50, maximum: 200}}
+      responses:
+        "200":
+          description: Path samples
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbePathsResponse"}
+  /probe-targets/{id}/trace:
+    post:
+      tags: [ProbeTargets]
+      summary: Trace this target's path now from the center (#719, zero-privilege TCP/ICMP TTL walk)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: The stored manual sample
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbePathSample"}
+        "404": {$ref: "#/components/responses/Error"}
 
   /snmp-credentials:
     get:
@@ -2837,6 +2882,78 @@ components:
         samples: {type: integer}
         score: {type: integer, description: "0-100, the same score the live window reports"}
         verdict: {type: string, enum: [ok, degraded, egress_down, dns_fault, upstream_resolver, insufficient]}
+    ProbeEgressReport:
+      type: object
+      description: "Current egress identity per vantage (#718): the latest echo round's per-source results, the distinct public IPs observed in the window (with origin ASN), and the local default-route gateway. Recording only - changes never notify (#716)."
+      required: [vantages]
+      properties:
+        vantages: {type: array, items: {$ref: "#/components/schemas/ProbeEgressVantage"}}
+    ProbeEgressVantage:
+      type: object
+      required: [vantage, ips, sources]
+      properties:
+        vantage: {type: string, description: "'center' or 'agent:{id}'"}
+        network_name: {type: string}
+        round_at: {type: string, format: date-time, description: "latest round, UTC"}
+        ips: {type: array, items: {$ref: "#/components/schemas/ProbeEgressIP"}, description: "distinct public IPs seen this round; more than one usually means a CGNAT address pool assigned per destination"}
+        sources: {type: array, items: {$ref: "#/components/schemas/ProbeEgressSource"}}
+        local_gateway: {type: string, description: "default-route gateway IP"}
+        local_iface: {type: string}
+    ProbeEgressIP:
+      type: object
+      required: [ip, samples]
+      properties:
+        ip: {type: string, format: ipv4}
+        asn: {type: string, description: "origin ASN (Team Cymru), empty when the lookup failed"}
+        as_name: {type: string}
+        sources: {type: array, items: {type: string}, description: "echo sources that observed this IP in the latest round"}
+        first_seen: {type: string, format: date-time}
+        last_seen: {type: string, format: date-time}
+        samples: {type: integer, description: "successful observations within the 24h window"}
+    ProbeEgressSource:
+      type: object
+      required: [source, kind, ok, ms]
+      properties:
+        source: {type: string}
+        kind: {type: string, enum: [http, stun, dns]}
+        ok: {type: boolean}
+        ip: {type: string}
+        ms: {type: number, format: double}
+        err: {type: string}
+    ProbePathsResponse:
+      type: object
+      required: [paths]
+      properties:
+        paths: {type: array, items: {$ref: "#/components/schemas/ProbePathSample"}}
+    ProbePathSample:
+      type: object
+      description: "One zero-privilege path trace (#719). Silent hops carry an empty ip. reply_ttl is the destination reply's IP TTL (ICMP method via IP_RECVTTL; 0 = unknown)."
+      required: [id, target_id, vantage, method, end_state, hops, traced_at]
+      properties:
+        id: {type: integer, format: int64}
+        target_id: {type: integer, format: int64}
+        target_name: {type: string}
+        vantage: {type: string}
+        resolved_ip: {type: string, description: "the IP the tracer resolved and walked (DNS pollution makes the name-level view ambiguous)"}
+        module: {type: string, description: "probe module (snapshot only)"}
+        target: {type: string, description: "target string (snapshot only)"}
+        category: {type: string, enum: [lan, external, quality], description: "management category (snapshot only)"}
+        method: {type: string, enum: [tcp, icmp]}
+        end_state: {type: string, enum: [reached, max_ttl, error], description: "max_ttl with one visible hop is the silent-middle-egress shape: only the gateway answers"}
+        reached_ttl: {type: integer, description: "TTL whose answer came from the destination (0 = never reached)"}
+        reply_ttl: {type: integer}
+        visible_hops: {type: integer}
+        hops: {type: array, items: {$ref: "#/components/schemas/ProbePathHop"}}
+        trigger: {type: string, enum: [baseline, manual]}
+        err: {type: string}
+        traced_at: {type: string, format: date-time}
+    ProbePathHop:
+      type: object
+      required: [ttl]
+      properties:
+        ttl: {type: integer}
+        ip: {type: string, description: "empty = this hop stayed silent"}
+        ms: {type: number, format: double}
     ProbeQualityTarget:
       type: object
       required: [name, module, target, cross_vantage, per_vantage]

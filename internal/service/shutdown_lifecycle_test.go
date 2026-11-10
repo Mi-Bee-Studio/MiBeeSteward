@@ -99,7 +99,7 @@ func TestStopWithoutStartDoesNotHang(t *testing.T) {
 
 	instances := []interface{ Stop() }{
 		reconcile.New(conn, time.Minute, nil, nil),
-		cleanup.New(nil, nil, conn, conn, config.RetentionConfig{}),
+		cleanup.New(nil, nil, nil, conn, nil, config.RetentionConfig{}),
 	}
 	for _, inst := range instances {
 		done := make(chan struct{})

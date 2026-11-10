@@ -44,7 +44,7 @@ func TestCutoff_ZeroDaysGuard(t *testing.T) {
 // TestSweepBatched_ZeroDaysNeverDeletes asserts the del callback is never
 // invoked when days<=0, the single most important sweep safety property.
 func TestSweepBatched_ZeroDaysNeverDeletes(t *testing.T) {
-	svc := New(nil, nil, nil, nil, config.RetentionConfig{BatchSize: 10, SweepIntervalHours: 1})
+	svc := New(nil, nil, nil, nil, nil, config.RetentionConfig{BatchSize: 10, SweepIntervalHours: 1})
 	calls := 0
 	got := svc.sweepBatched(context.Background(), "t", 0, func(time.Time, int64) (int64, error) {
 		calls++
@@ -59,7 +59,7 @@ func TestSweepBatched_ZeroDaysNeverDeletes(t *testing.T) {
 // under-sized batch stops it. Total is the sum across batches.
 func TestSweepBatched_LoopsUntilBatchExhausted(t *testing.T) {
 	const batch = 3
-	svc := New(nil, nil, nil, nil, config.RetentionConfig{BatchSize: batch, SweepIntervalHours: 1})
+	svc := New(nil, nil, nil, nil, nil, config.RetentionConfig{BatchSize: batch, SweepIntervalHours: 1})
 	// Plan: two full batches (3 each) then a partial (1) → 4 calls, 7 rows total.
 	plan := []int64{batch, batch, 1}
 	idx := 0
@@ -77,7 +77,7 @@ func TestSweepBatched_LoopsUntilBatchExhausted(t *testing.T) {
 // loop but keeps the rows already deleted (a transient failure
 // mid-table does not undo earlier batches).
 func TestSweepBatched_ErrorReturnsTotalSoFar(t *testing.T) {
-	svc := New(nil, nil, nil, nil, config.RetentionConfig{BatchSize: 5, SweepIntervalHours: 1})
+	svc := New(nil, nil, nil, nil, nil, config.RetentionConfig{BatchSize: 5, SweepIntervalHours: 1})
 	calls := 0
 	got := svc.sweepBatched(context.Background(), "t", 7, func(time.Time, int64) (int64, error) {
 		calls++
@@ -93,7 +93,7 @@ func TestSweepBatched_ErrorReturnsTotalSoFar(t *testing.T) {
 // TestSweepBatched_CancelledMidSweep asserts a cancelled context stops the loop
 // and returns whatever was deleted so far.
 func TestSweepBatched_CancelledMidSweep(t *testing.T) {
-	svc := New(nil, nil, nil, nil, config.RetentionConfig{BatchSize: 2, SweepIntervalHours: 1})
+	svc := New(nil, nil, nil, nil, nil, config.RetentionConfig{BatchSize: 2, SweepIntervalHours: 1})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // pre-cancelled → loop body never runs
 	got := svc.sweepBatched(ctx, "t", 5, func(time.Time, int64) (int64, error) {
@@ -119,7 +119,7 @@ func TestPruneAuditLogs_WindowPrunesOldKeepsNew(t *testing.T) {
 	seedAuditLog(t, conn, &now)
 	seedAuditLog(t, conn, &now)
 
-	svc := New(queries, nil, nil, nil, config.RetentionConfig{
+	svc := New(queries, nil, nil, nil, nil, config.RetentionConfig{
 		AuditLogsDays:      30,
 		BatchSize:          1000,
 		SweepIntervalHours: 1,
@@ -142,7 +142,7 @@ func TestPruneAuditLogs_ZeroDaysGuard(t *testing.T) {
 	seedAuditLog(t, conn, &old)
 	seedAuditLog(t, conn, &old)
 
-	svc := New(queries, nil, nil, nil, config.RetentionConfig{
+	svc := New(queries, nil, nil, nil, nil, config.RetentionConfig{
 		AuditLogsDays:      0, // disabled → must prune nothing
 		BatchSize:          1000,
 		SweepIntervalHours: 1,
@@ -186,7 +186,7 @@ func TestMaintenance_CheckpointAndMetrics(t *testing.T) {
 	_, err = mainDB.Exec(`CREATE TABLE scan_results (id INTEGER PRIMARY KEY, ip TEXT)`)
 	require.NoError(t, err)
 
-	svc := New(db.New(mainDB), nil, nil, mainDB, config.RetentionConfig{})
+	svc := New(db.New(mainDB), nil, nil, mainDB, nil, config.RetentionConfig{})
 	svc.runMaintenance(context.Background())
 
 	require.Equal(t, float64(0),
