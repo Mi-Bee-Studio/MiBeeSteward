@@ -15,6 +15,7 @@
 	import { onMount } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
 	import { html, formatDateTime as formatTime } from '$lib/utils/index';
+	import { defaultRange } from '$lib/utils/dateRange';
 	import { addToast } from '$lib/stores/toast';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
@@ -49,12 +50,22 @@
 
 	// Auth is consumed directly via the $auth store (auto-subscribed in .svelte).
 
-	// Filters
+	// Filters. Date defaults (#UI-dates): the audit page has no default
+	// period of its own, so per the doctrine the range inputs are prefilled
+	// with the LAST HOUR window — on date-only inputs that renders as
+	// today → today (yesterday too when the hour crosses midnight) — and the
+	// initial fetch APPLIES it. No more bare yyyy/mm/dd placeholders.
 	let filterUser = $state('');
 	let filterAction = $state('');
 	let filterResourceType = $state('');
 	let filterDateFrom = $state('');
 	let filterDateTo = $state('');
+
+	function applyDefaultDateFilter() {
+		const r = defaultRange('date', 3600_000);
+		filterDateFrom = r.from;
+		filterDateTo = r.to;
+	}
 
 	// Available filter options, pulled from the API so the dropdowns always
 	// reflect what the backend actually emits (a new action appears here
@@ -69,6 +80,7 @@
 
 	onMount(() => {
 		hydrateFromUrl();
+		applyDefaultDateFilter();
 		fetchAuditLogs();
 		fetchUsers();
 		fetchFacets();
@@ -149,8 +161,9 @@
 		filterUser = '';
 		filterAction = '';
 		filterResourceType = '';
-		filterDateFrom = '';
-		filterDateTo = '';
+		// Reset returns to the DEFAULT range (last hour, today on date-only
+		// inputs), not to bare placeholders (#UI-dates).
+		applyDefaultDateFilter();
 		offset = 0;
 		fetchAuditLogs();
 	}

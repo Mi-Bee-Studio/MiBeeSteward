@@ -21,6 +21,7 @@
 	import type { Device, Network, System, DeviceNeighbor, TLSPortCerts, HeartbeatResult, HeartbeatResultList, HeartbeatStats, DeviceSpeaks, DeviceSighting, DeviceInterfaceRow, ProbeTarget, ProbeTargetListResponse } from '$lib/types';
 	import type { EChartsOption } from '$lib/charts/echarts';
 	import { certStatus } from '$lib/utils/certs';
+	import { defaultRange, presetWindowMs } from '$lib/utils/dateRange';
 	import { Monitor, BarChart3, FileText, Activity } from '@lucide/svelte';
 
 	import Modal from '$lib/components/Modal.svelte';
@@ -160,6 +161,11 @@
 	// --- Heartbeat trend state ---
 	let trendLoading = $state(false);
 	let trendPreset = $state('24h');
+	// #UI-dates: the custom-range inputs always SHOW the currently active
+	// period — prefilled with the default preset (24h) on mount and re-synced
+	// whenever a preset pill is clicked, so they never stare bare
+	// yyyy-MM-ddTHH:mm placeholders. Switching to 筛选 (custom) applies
+	// whatever the inputs show, so display and applied stay identical.
 	let trendFrom = $state('');
 	let trendTo = $state('');
 	let trendOption = $state<EChartsOption>({});
@@ -490,6 +496,11 @@
 	// --- Lifecycle ---
 	onMount(() => {
 		activeTab = hydrateTabFromUrl();
+		// #UI-dates: seed the custom-range inputs with the default preset's
+		// window so they never show bare placeholders.
+		const seed = defaultRange('datetime-local', presetWindowMs(trendPreset));
+		trendFrom = seed.from;
+		trendTo = seed.to;
 		fetchDevice();
 		// Only the Overview + Systems panes are needed up front; Discovery uses
 		// the same `device` fetch, Network/Heartbeat/Config fetch on first open
@@ -2180,7 +2191,15 @@
 		<div class="flex flex-wrap items-center gap-2 mb-4">
 			{#each ['1h', '6h', '24h', '7d', '30d'] as preset}
 				<button
-					onclick={() => { trendPreset = preset; fetchHeartbeatTrend(); }}
+					onclick={() => {
+					trendPreset = preset;
+					// #UI-dates: keep the custom-range inputs displaying the
+					// active preset's window (re-apply seeds them too).
+					const seed = defaultRange('datetime-local', presetWindowMs(preset));
+					trendFrom = seed.from;
+					trendTo = seed.to;
+					fetchHeartbeatTrend();
+				}}
 					class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
 						{trendPreset === preset
 							? 'bg-primary text-inverse'

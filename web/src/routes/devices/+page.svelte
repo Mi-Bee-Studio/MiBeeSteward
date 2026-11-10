@@ -18,6 +18,7 @@
 	import { getErrorMessage } from '$lib/utils/error';
 	import { escapeHtml, escapeAttr, formatDateTime } from '$lib/utils';
 	import { isValidIP } from '$lib/utils/validation';
+	import { defaultRange } from '$lib/utils/dateRange';
 	import type { Device, LinkedDoc, Network , NetworkWithMirror } from '$lib/types';
 	import { ChevronDown, ChevronRight, Download, Upload, Plus, List, Share2 } from '@lucide/svelte';
 
@@ -1307,7 +1308,19 @@ interface AddDevicesResponse {
 
 		<!-- Advanced filters toggle -->
 		<button
-			onclick={() => (showAdvanced = !showAdvanced)}
+			onclick={() => {
+				// #UI-dates: opening the advanced panel prefills the created-range
+				// inputs with today (last-hour default on date granularity) — no
+				// bare yyyy/mm/dd placeholders. Display-only: the list changes
+				// only when the explicit 筛选 click applies them, and inputs stay
+				// consistent with what the list then shows.
+				showAdvanced = !showAdvanced;
+				if (showAdvanced && !dateFrom && !dateTo) {
+					const r = defaultRange('date', 3600_000);
+					dateFrom = r.from;
+					dateTo = r.to;
+				}
+			}}
 			class="btn btn-secondary"
 		>
 			{m['devices.Advanced Filters']()}
