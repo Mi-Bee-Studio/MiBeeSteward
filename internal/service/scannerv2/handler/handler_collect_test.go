@@ -29,9 +29,13 @@ func TestBasicHandlers_GenerateHeartbeat(t *testing.T) {
 	require.Equal(t, "tcp", spec.Method)
 	require.Equal(t, "10.20.0.1:22", spec.Target)
 
-	spec = (RTSPHandler{}).GenerateHeartbeat(svcCtx("10.20.0.2", 554, "", nil))
-	require.Equal(t, "tcp", spec.Method)
-	require.Equal(t, "10.20.0.2:554", spec.Target)
+	// #731: rtsp must NOT auto-seed a TCP:554 heartbeat — every accept on
+	// small streaming devices (ESP32-class cameras) hatches and destroys a
+	// full RTSP session, and 30s connect churn for milliseconds-long
+	// connections is a measurable memory-pressure source. Device-level
+	// liveness is the ICMP fallback's job (the bridge seeds it when no
+	// service produces a heartbeat spec).
+	require.Nil(t, (RTSPHandler{}).GenerateHeartbeat(svcCtx("10.20.0.2", 554, "", nil)))
 
 	spec = (ONVIFHandler{}).GenerateHeartbeat(svcCtx("10.20.0.3", 8000, "", nil))
 	require.NotNil(t, spec)

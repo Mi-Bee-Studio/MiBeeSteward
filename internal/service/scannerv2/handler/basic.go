@@ -49,18 +49,22 @@ func (SSHHandler) EnrichDevice(svc scannerv2.ServiceContext, _ scannerv2.Collect
 	}
 }
 
-// RTSPHandler generates a TCP-connect heartbeat on the RTSP port. Part of the
-// camera detection story: a host with RTSP gets continuous reachability
-// monitoring on the camera's video port.
+// RTSPHandler recognizes the RTSP streaming service (part of the camera
+// detection story). It deliberately does NOT auto-seed a heartbeat: a
+// TCP-connect probe is a full session for small streaming devices —
+// ESP32-class cameras hatch a complete RTSP session (task threads) per
+// accept, and a 30s connect-churn on :554 was observed to be the trigger
+// schedule for periodic memory corruption on such a device (#731; NVR made
+// the same call for its reconnector, NvrRtsp #711). Device-level liveness
+// is covered by the bridge's ICMP fallback when no service seeds a
+// heartbeat; operators who want port-level RTSP monitoring can add a
+// TCP heartbeat manually.
 type RTSPHandler struct{}
 
 func (RTSPHandler) Service() string { return "rtsp" }
 
-func (RTSPHandler) GenerateHeartbeat(svc scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
-	return &scannerv2.HeartbeatSpec{
-		Method: "tcp",
-		Target: fmt.Sprintf("%s:%d", svc.IP, svc.Identity.Port),
-	}
+func (RTSPHandler) GenerateHeartbeat(_ scannerv2.ServiceContext) *scannerv2.HeartbeatSpec {
+	return nil
 }
 
 func (RTSPHandler) Collect(_ context.Context, _ scannerv2.ServiceContext) (scannerv2.CollectedData, []scannerv2.Trigger, error) {
