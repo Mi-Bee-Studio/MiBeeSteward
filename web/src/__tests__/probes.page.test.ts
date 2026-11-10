@@ -1586,7 +1586,8 @@ describe('Probes page', () => {
 		expect(rows[0].textContent).toContain('site-b');
 		expect(rows[0].textContent).toContain('TTL');
 		expect(rows[1].textContent).toContain('site-a');
-		expect(rows[1].textContent).toContain('12→—', 'reached chip: reached TTL → reply TTL');
+		// reached chip: reached TTL → reply TTL
+		expect(rows[1].textContent).toContain('12→—');
 		// A chip opens the hop-by-hop modal (site-a carries 3 hops).
 		const chip = (rows[1] as HTMLElement).querySelector('button') as HTMLElement;
 		await fireEvent.click(chip);
