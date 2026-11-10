@@ -69,6 +69,87 @@ func (e AgentCommandStatus) Valid() bool {
 	}
 }
 
+// Defines values for AgentEgressRoundResultsKind.
+const (
+	AgentEgressRoundResultsKindDns  AgentEgressRoundResultsKind = "dns"
+	AgentEgressRoundResultsKindHttp AgentEgressRoundResultsKind = "http"
+	AgentEgressRoundResultsKindStun AgentEgressRoundResultsKind = "stun"
+)
+
+// Valid indicates whether the value is a known member of the AgentEgressRoundResultsKind enum.
+func (e AgentEgressRoundResultsKind) Valid() bool {
+	switch e {
+	case AgentEgressRoundResultsKindDns:
+		return true
+	case AgentEgressRoundResultsKindHttp:
+		return true
+	case AgentEgressRoundResultsKindStun:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentPathSampleEndState.
+const (
+	AgentPathSampleEndStateError   AgentPathSampleEndState = "error"
+	AgentPathSampleEndStateMaxTtl  AgentPathSampleEndState = "max_ttl"
+	AgentPathSampleEndStateReached AgentPathSampleEndState = "reached"
+)
+
+// Valid indicates whether the value is a known member of the AgentPathSampleEndState enum.
+func (e AgentPathSampleEndState) Valid() bool {
+	switch e {
+	case AgentPathSampleEndStateError:
+		return true
+	case AgentPathSampleEndStateMaxTtl:
+		return true
+	case AgentPathSampleEndStateReached:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentPathSampleMethod.
+const (
+	AgentPathSampleMethodIcmp AgentPathSampleMethod = "icmp"
+	AgentPathSampleMethodTcp  AgentPathSampleMethod = "tcp"
+)
+
+// Valid indicates whether the value is a known member of the AgentPathSampleMethod enum.
+func (e AgentPathSampleMethod) Valid() bool {
+	switch e {
+	case AgentPathSampleMethodIcmp:
+		return true
+	case AgentPathSampleMethodTcp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentPathSampleTrigger.
+const (
+	AgentPathSampleTriggerBaseline AgentPathSampleTrigger = "baseline"
+	AgentPathSampleTriggerFailure  AgentPathSampleTrigger = "failure"
+	AgentPathSampleTriggerManual   AgentPathSampleTrigger = "manual"
+)
+
+// Valid indicates whether the value is a known member of the AgentPathSampleTrigger enum.
+func (e AgentPathSampleTrigger) Valid() bool {
+	switch e {
+	case AgentPathSampleTriggerBaseline:
+		return true
+	case AgentPathSampleTriggerFailure:
+		return true
+	case AgentPathSampleTriggerManual:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ArchiveItemArchivePin.
 const (
 	ArchiveItemArchivePinEmpty        ArchiveItemArchivePin = ""
@@ -588,6 +669,51 @@ func (e ProbeEgressSourceKind) Valid() bool {
 	}
 }
 
+// Defines values for ProbeEpisodeAttributionKind.
+const (
+	EgressChange       ProbeEpisodeAttributionKind = "egress_change"
+	ErrorShape         ProbeEpisodeAttributionKind = "error_shape"
+	PathChange         ProbeEpisodeAttributionKind = "path_change"
+	PeerEgressDegraded ProbeEpisodeAttributionKind = "peer_egress_degraded"
+)
+
+// Valid indicates whether the value is a known member of the ProbeEpisodeAttributionKind enum.
+func (e ProbeEpisodeAttributionKind) Valid() bool {
+	switch e {
+	case EgressChange:
+		return true
+	case ErrorShape:
+		return true
+	case PathChange:
+		return true
+	case PeerEgressDegraded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeEpisodeMetricReason.
+const (
+	Both    ProbeEpisodeMetricReason = "both"
+	Latency ProbeEpisodeMetricReason = "latency"
+	OkRate  ProbeEpisodeMetricReason = "ok_rate"
+)
+
+// Valid indicates whether the value is a known member of the ProbeEpisodeMetricReason enum.
+func (e ProbeEpisodeMetricReason) Valid() bool {
+	switch e {
+	case Both:
+		return true
+	case Latency:
+		return true
+	case OkRate:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProbeOptionsExpectMode.
 const (
 	ProbeOptionsExpectModeContains ProbeOptionsExpectMode = "contains"
@@ -732,6 +858,7 @@ func (e ProbePathSampleMethod) Valid() bool {
 // Defines values for ProbePathSampleTrigger.
 const (
 	ProbePathSampleTriggerBaseline ProbePathSampleTrigger = "baseline"
+	ProbePathSampleTriggerFailure  ProbePathSampleTrigger = "failure"
 	ProbePathSampleTriggerManual   ProbePathSampleTrigger = "manual"
 )
 
@@ -740,7 +867,30 @@ func (e ProbePathSampleTrigger) Valid() bool {
 	switch e {
 	case ProbePathSampleTriggerBaseline:
 		return true
+	case ProbePathSampleTriggerFailure:
+		return true
 	case ProbePathSampleTriggerManual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbePhaseRowModule.
+const (
+	ProbePhaseRowModuleHttp ProbePhaseRowModule = "http"
+	ProbePhaseRowModuleIcmp ProbePhaseRowModule = "icmp"
+	ProbePhaseRowModuleTcp  ProbePhaseRowModule = "tcp"
+)
+
+// Valid indicates whether the value is a known member of the ProbePhaseRowModule enum.
+func (e ProbePhaseRowModule) Valid() bool {
+	switch e {
+	case ProbePhaseRowModuleHttp:
+		return true
+	case ProbePhaseRowModuleIcmp:
+		return true
+	case ProbePhaseRowModuleTcp:
 		return true
 	default:
 		return false
@@ -762,6 +912,24 @@ func (e ProbeQualityCategoryCategory) Valid() bool {
 	case ProbeQualityCategoryCategoryLan:
 		return true
 	case ProbeQualityCategoryCategoryQuality:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeQualityEpisodeKind.
+const (
+	ProbeQualityEpisodeKindNetwork ProbeQualityEpisodeKind = "network"
+	ProbeQualityEpisodeKindPath    ProbeQualityEpisodeKind = "path"
+)
+
+// Valid indicates whether the value is a known member of the ProbeQualityEpisodeKind enum.
+func (e ProbeQualityEpisodeKind) Valid() bool {
+	switch e {
+	case ProbeQualityEpisodeKindNetwork:
+		return true
+	case ProbeQualityEpisodeKindPath:
 		return true
 	default:
 		return false
@@ -1362,6 +1530,24 @@ func (e PutDevicesIdArchiveSettingsJSONBodyPin) Valid() bool {
 	}
 }
 
+// Defines values for GetProbeQualityEpisodesParamsActive.
+const (
+	GetProbeQualityEpisodesParamsActiveN0 GetProbeQualityEpisodesParamsActive = 0
+	GetProbeQualityEpisodesParamsActiveN1 GetProbeQualityEpisodesParamsActive = 1
+)
+
+// Valid indicates whether the value is a known member of the GetProbeQualityEpisodesParamsActive enum.
+func (e GetProbeQualityEpisodesParamsActive) Valid() bool {
+	switch e {
+	case GetProbeQualityEpisodesParamsActiveN0:
+		return true
+	case GetProbeQualityEpisodesParamsActiveN1:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetProbeQualityHistoryParamsDays.
 const (
 	GetProbeQualityHistoryParamsDaysN30 GetProbeQualityHistoryParamsDays = 30
@@ -1429,6 +1615,56 @@ type AgentCommandList struct {
 	// Total Filtered count
 	Total *int64 `json:"total,omitempty"`
 }
+
+// AgentEgressRound One agent-side egress round (#718) in an /agents/egress-report batch. Raw echo outcomes; ASN enrichment happens on the center.
+type AgentEgressRound struct {
+	Local *struct {
+		GatewayIp *string `json:"gateway_ip,omitempty"`
+
+		// GatewayMac reported for forward-compat; not persisted
+		GatewayMac *string `json:"gateway_mac,omitempty"`
+		Iface      *string `json:"iface,omitempty"`
+	} `json:"local,omitempty"`
+	Results []struct {
+		Err    *string                     `json:"err,omitempty"`
+		Ip     *string                     `json:"ip,omitempty"`
+		Kind   AgentEgressRoundResultsKind `json:"kind"`
+		Ms     *float64                    `json:"ms,omitempty"`
+		Ok     bool                        `json:"ok"`
+		Source string                      `json:"source"`
+	} `json:"results"`
+	RoundAt time.Time `json:"round_at"`
+}
+
+// AgentEgressRoundResultsKind defines model for AgentEgressRound.Results.Kind.
+type AgentEgressRoundResultsKind string
+
+// AgentPathSample One agent-side path trace (#719) in an /agents/path-report batch. The center re-derives the target name and recounts visible hops.
+type AgentPathSample struct {
+	EndState   AgentPathSampleEndState `json:"end_state"`
+	Err        *string                 `json:"err,omitempty"`
+	Hops       *[]ProbePathHop         `json:"hops,omitempty"`
+	Method     *AgentPathSampleMethod  `json:"method,omitempty"`
+	ReachedTtl *int                    `json:"reached_ttl,omitempty"`
+	ReplyTtl   *int                    `json:"reply_ttl,omitempty"`
+	ResolvedIp *string                 `json:"resolved_ip,omitempty"`
+	TargetId   int64                   `json:"target_id"`
+
+	// TargetName informational; the center stores its own live row's name
+	TargetName  *string                 `json:"target_name,omitempty"`
+	TracedAt    time.Time               `json:"traced_at"`
+	Trigger     *AgentPathSampleTrigger `json:"trigger,omitempty"`
+	VisibleHops *int                    `json:"visible_hops,omitempty"`
+}
+
+// AgentPathSampleEndState defines model for AgentPathSample.EndState.
+type AgentPathSampleEndState string
+
+// AgentPathSampleMethod defines model for AgentPathSample.Method.
+type AgentPathSampleMethod string
+
+// AgentPathSampleTrigger defines model for AgentPathSample.Trigger.
+type AgentPathSampleTrigger string
 
 // AgentToken defines model for AgentToken.
 type AgentToken struct {
@@ -2275,6 +2511,33 @@ type ProbeEgressVantage struct {
 	Vantage string `json:"vantage"`
 }
 
+// ProbeEpisodeAttribution defines model for ProbeEpisodeAttribution.
+type ProbeEpisodeAttribution struct {
+	// At change timestamp when point-precise
+	At     *string                     `json:"at,omitempty"`
+	Detail string                      `json:"detail"`
+	Kind   ProbeEpisodeAttributionKind `json:"kind"`
+}
+
+// ProbeEpisodeAttributionKind defines model for ProbeEpisodeAttribution.Kind.
+type ProbeEpisodeAttributionKind string
+
+// ProbeEpisodeMetric defines model for ProbeEpisodeMetric.
+type ProbeEpisodeMetric struct {
+	BaseOkRate float64                  `json:"base_ok_rate"`
+	BaseP50Ms  float64                  `json:"base_p50_ms"`
+	Name       string                   `json:"name"`
+	OkRate     float64                  `json:"ok_rate"`
+	P50Ms      float64                  `json:"p50_ms"`
+	Reason     ProbeEpisodeMetricReason `json:"reason"`
+	Samples    int                      `json:"samples"`
+	TargetId   int64                    `json:"target_id"`
+	Vantage    string                   `json:"vantage"`
+}
+
+// ProbeEpisodeMetricReason defines model for ProbeEpisodeMetric.Reason.
+type ProbeEpisodeMetricReason string
+
 // ProbeOptions Per-module execution options (#605), stored as JSON on the target and mirrored to vantage agents verbatim. Fields apply to their own module only (validated). Deliberately no credentials/auth headers: the agent command channel stays secret-free.
 type ProbeOptions struct {
 	// Expect tcp only; banner match against the first bytes read
@@ -2354,10 +2617,12 @@ type ProbePathSample struct {
 	ResolvedIp *string `json:"resolved_ip,omitempty"`
 
 	// Target target string (snapshot only)
-	Target      *string                 `json:"target,omitempty"`
-	TargetId    int64                   `json:"target_id"`
-	TargetName  *string                 `json:"target_name,omitempty"`
-	TracedAt    time.Time               `json:"traced_at"`
+	Target     *string   `json:"target,omitempty"`
+	TargetId   int64     `json:"target_id"`
+	TargetName *string   `json:"target_name,omitempty"`
+	TracedAt   time.Time `json:"traced_at"`
+
+	// Trigger failure = snapshot fired by the agent right after a failed probe (#719)
 	Trigger     *ProbePathSampleTrigger `json:"trigger,omitempty"`
 	Vantage     string                  `json:"vantage"`
 	VisibleHops *int                    `json:"visible_hops,omitempty"`
@@ -2372,12 +2637,41 @@ type ProbePathSampleEndState string
 // ProbePathSampleMethod defines model for ProbePathSample.Method.
 type ProbePathSampleMethod string
 
-// ProbePathSampleTrigger defines model for ProbePathSample.Trigger.
+// ProbePathSampleTrigger failure = snapshot fired by the agent right after a failed probe (#719)
 type ProbePathSampleTrigger string
 
 // ProbePathsResponse defines model for ProbePathsResponse.
 type ProbePathsResponse struct {
 	Paths []ProbePathSample `json:"paths"`
+}
+
+// ProbePhaseRow One run's per-stage timing breakdown (#717). Stage fields are 0/absent when the module does not exercise them (tcp carries connect_ms only, icmp carries reply_ttl only). latency_ms is the run total denormalized so the phases chart needs no join.
+type ProbePhaseRow struct {
+	CheckedAt time.Time           `json:"checked_at"`
+	ConnectMs *float64            `json:"connect_ms,omitempty"`
+	DnsMs     *float64            `json:"dns_ms,omitempty"`
+	LatencyMs float64             `json:"latency_ms"`
+	Module    ProbePhaseRowModule `json:"module"`
+
+	// ReplyTtl icmp only: remaining hop budget in the destination's reply (0 = unknown)
+	ReplyTtl *int `json:"reply_ttl,omitempty"`
+
+	// ResolvedIp the address the run actually used
+	ResolvedIp *string  `json:"resolved_ip,omitempty"`
+	TargetId   int64    `json:"target_id"`
+	TlsMs      *float64 `json:"tls_ms,omitempty"`
+
+	// TtfbMs time to first response byte after the request went out
+	TtfbMs  *float64 `json:"ttfb_ms,omitempty"`
+	Vantage string   `json:"vantage"`
+}
+
+// ProbePhaseRowModule defines model for ProbePhaseRow.Module.
+type ProbePhaseRowModule string
+
+// ProbePhasesResponse defines model for ProbePhasesResponse.
+type ProbePhasesResponse struct {
+	Phases []ProbePhaseRow `json:"phases"`
 }
 
 // ProbeQualityCategory defines model for ProbeQualityCategory.
@@ -2395,6 +2689,42 @@ type ProbeQualityCategory struct {
 
 // ProbeQualityCategoryCategory lan = device-bound targets; external = manual unbound (business) targets; quality = the built-in system matrix
 type ProbeQualityCategoryCategory string
+
+// ProbeQualityEpisode One degradation episode (#720). notified=false episodes are recorded-only (no notification fired; the #716 impact-only rule).
+type ProbeQualityEpisode struct {
+	Attribution []ProbeEpisodeAttribution `json:"attribution"`
+	Id          int64                     `json:"id"`
+
+	// Kind network = one egress group's quality points mostly degraded; path = one destination /24 degraded from that group's view
+	Kind ProbeQualityEpisodeKind `json:"kind"`
+
+	// LastSeenAt last window the confirmation still held
+	LastSeenAt      time.Time            `json:"last_seen_at"`
+	MetricDegraded  []ProbeEpisodeMetric `json:"metric_degraded"`
+	Notified        bool                 `json:"notified"`
+	RecoverNotified bool                 `json:"recover_notified"`
+
+	// ResolvedAt empty = active
+	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
+	StartedAt  time.Time  `json:"started_at"`
+
+	// TargetGroup destination /24 for path episodes, '' for network
+	TargetGroup string `json:"target_group"`
+
+	// VantageGroup 'center' or 'agent:{id}' — the egress group
+	VantageGroup string `json:"vantage_group"`
+
+	// Windows consecutive degraded windows seen
+	Windows int `json:"windows"`
+}
+
+// ProbeQualityEpisodeKind network = one egress group's quality points mostly degraded; path = one destination /24 degraded from that group's view
+type ProbeQualityEpisodeKind string
+
+// ProbeQualityEpisodes defines model for ProbeQualityEpisodes.
+type ProbeQualityEpisodes struct {
+	Episodes []ProbeQualityEpisode `json:"episodes"`
+}
 
 // ProbeQualityGroup defines model for ProbeQualityGroup.
 type ProbeQualityGroup struct {
@@ -3103,10 +3433,20 @@ type GetAgentsCommandsAllParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// PostAgentsEgressReportJSONBody defines parameters for PostAgentsEgressReport.
+type PostAgentsEgressReportJSONBody struct {
+	Rounds []AgentEgressRound `json:"rounds"`
+}
+
 // GetAgentsFingerprintsParams defines parameters for GetAgentsFingerprints.
 type GetAgentsFingerprintsParams struct {
 	// Rev last-applied revision (64-hex); omit to force download
 	Rev *string `form:"rev,omitempty" json:"rev,omitempty"`
+}
+
+// PostAgentsPathReportJSONBody defines parameters for PostAgentsPathReport.
+type PostAgentsPathReportJSONBody struct {
+	Paths []AgentPathSample `json:"paths"`
 }
 
 // GetArchiveParams defines parameters for GetArchive.
@@ -3348,6 +3688,18 @@ type GetProbeQualityParams struct {
 	Window *int `form:"window,omitempty" json:"window,omitempty"`
 }
 
+// GetProbeQualityEpisodesParams defines parameters for GetProbeQualityEpisodes.
+type GetProbeQualityEpisodesParams struct {
+	// Days history window (default 1 = last 24h)
+	Days *int `form:"days,omitempty" json:"days,omitempty"`
+
+	// Active 1 = only unresolved episodes
+	Active *GetProbeQualityEpisodesParamsActive `form:"active,omitempty" json:"active,omitempty"`
+}
+
+// GetProbeQualityEpisodesParamsActive defines parameters for GetProbeQualityEpisodes.
+type GetProbeQualityEpisodesParamsActive int
+
 // GetProbeQualityHistoryParams defines parameters for GetProbeQualityHistory.
 type GetProbeQualityHistoryParams struct {
 	// Days lookback days (hourly buckets for 7d, daily for 30d; raw probe results are retained 30 days by default)
@@ -3372,6 +3724,11 @@ type GetProbeTargetsParams struct {
 
 // GetProbeTargetsIdPathsParams defines parameters for GetProbeTargetsIdPaths.
 type GetProbeTargetsIdPathsParams struct {
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// GetProbeTargetsIdPhasesParams defines parameters for GetProbeTargetsIdPhases.
+type GetProbeTargetsIdPhasesParams struct {
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
@@ -3482,6 +3839,12 @@ type GetUsersParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 	Search *string `form:"search,omitempty" json:"search,omitempty"`
 }
+
+// PostAgentsEgressReportJSONRequestBody defines body for PostAgentsEgressReport for application/json ContentType.
+type PostAgentsEgressReportJSONRequestBody PostAgentsEgressReportJSONBody
+
+// PostAgentsPathReportJSONRequestBody defines body for PostAgentsPathReport for application/json ContentType.
+type PostAgentsPathReportJSONRequestBody PostAgentsPathReportJSONBody
 
 // PostAuthLoginJSONRequestBody defines body for PostAuthLogin for application/json ContentType.
 type PostAuthLoginJSONRequestBody PostAuthLoginJSONBody
@@ -4068,12 +4431,48 @@ type ClientInterface interface {
 	// Corresponds with POST /agents/commands/{id}/complete (the `PostAgentsCommandsIdComplete` operationId).
 	PostAgentsCommandsIdComplete(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PostAgentsEgressReportWithBody [agent] Egress-identity round batches (#718)
+	//
+	// One batch of egress rounds from the agent-side collector. The reporting agent's token identity overrides any vantage the payload claims; distinct public IPs are origin-ASN-enriched on the center. Recording only — no notifications.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /agents/egress-report (the `PostAgentsEgressReport` operationId).
+	PostAgentsEgressReportWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostAgentsEgressReport [agent] Egress-identity round batches (#718)
+	//
+	// One batch of egress rounds from the agent-side collector. The reporting agent's token identity overrides any vantage the payload claims; distinct public IPs are origin-ASN-enriched on the center. Recording only — no notifications.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /agents/egress-report (the `PostAgentsEgressReport` operationId).
+	PostAgentsEgressReport(ctx context.Context, body PostAgentsEgressReportJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetAgentsFingerprints [agent] Fingerprint corpus distribution (rev-negotiated tar.gz, fpsync format)
 	//
 	// Agents poll with their last-applied corpus revision. 204 = already current; 200 = deterministic tar.gz envelope (*.yaml files) with the new revision in the X-Fingerprint-Rev header. The served corpus is the center's active one (scanner.fingerprint_path dir when set, else the embedded corpus) — this is the no-recompile corpus-update channel.
 	//
 	// Corresponds with GET /agents/fingerprints (the `GetAgentsFingerprints` operationId).
 	GetAgentsFingerprints(ctx context.Context, params *GetAgentsFingerprintsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostAgentsPathReportWithBody [agent] Path-trace sample batches (#719)
+	//
+	// One batch of zero-privilege path traces from the agent-side tracer. Rows for deleted targets are skipped; the reporting agent's token identity overrides any vantage claim. Recording only.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /agents/path-report (the `PostAgentsPathReport` operationId).
+	PostAgentsPathReportWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostAgentsPathReport [agent] Path-trace sample batches (#719)
+	//
+	// One batch of zero-privilege path traces from the agent-side tracer. Rows for deleted targets are skipped; the reporting agent's token identity overrides any vantage claim. Recording only.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /agents/path-report (the `PostAgentsPathReport` operationId).
+	PostAgentsPathReport(ctx context.Context, body PostAgentsPathReportJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostAgentsProbeReport [agent] Synthetic probe result batches
 	//
@@ -4750,6 +5149,13 @@ type ClientInterface interface {
 	// Corresponds with GET /probe-quality (the `GetProbeQuality` operationId).
 	GetProbeQuality(ctx context.Context, params *GetProbeQualityParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetProbeQualityEpisodes Quality degradation episodes (#720) - relative-baseline drops confirmed by cross-evidence, with attribution
+	//
+	// Episodes are the impact-only alert surface of the probe extension: a track degrades when its 15-minute window clearly drops below its own baseline (72h median, or same weekday-hour once 7 days of history exist), and an episode only opens after cross-confirmation (one egress group's quality points mostly degraded = network kind; one destination /24 degraded from enough vantages = path kind). Episodes without a same-window egress/path attribution stay recorded (notified=false) but never fire notifications (#716).
+	//
+	// Corresponds with GET /probe-quality/episodes (the `GetProbeQualityEpisodes` operationId).
+	GetProbeQualityEpisodes(ctx context.Context, params *GetProbeQualityEpisodesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetProbeQualityHistory Egress-quality trend - the verdict chain replayed per time bucket over the retention horizon
 	//
 	// Corresponds with GET /probe-quality/history (the `GetProbeQualityHistory` operationId).
@@ -4789,6 +5195,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /probe-targets/{id}/paths (the `GetProbeTargetsIdPaths` operationId).
 	GetProbeTargetsIdPaths(ctx context.Context, id Id, params *GetProbeTargetsIdPathsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetProbeTargetsIdPhases Per-stage timing history of one target (#717), newest first
+	//
+	// One row per run that produced a stage breakdown: DNS/connect/TLS/TTFB for http, connect for tcp, reply TTL for icmp, across all vantages. Failed runs keep the stages that did complete (a timeout mid-handshake still tells you what DNS/connect cost); dns/tls modules produce no rows.
+	//
+	// Corresponds with GET /probe-targets/{id}/phases (the `GetProbeTargetsIdPhases` operationId).
+	GetProbeTargetsIdPhases(ctx context.Context, id Id, params *GetProbeTargetsIdPhasesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetProbeTargetsIdResults Result history (vantage filter)
 	//
@@ -5121,6 +5534,44 @@ func (c *Client) PostAgentsCommandsIdComplete(ctx context.Context, id Id, reqEdi
 	return c.Client.Do(req)
 }
 
+// PostAgentsEgressReportWithBody [agent] Egress-identity round batches (#718)
+//
+// One batch of egress rounds from the agent-side collector. The reporting agent's token identity overrides any vantage the payload claims; distinct public IPs are origin-ASN-enriched on the center. Recording only — no notifications.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /agents/egress-report (the `PostAgentsEgressReport` operationId).
+func (c *Client) PostAgentsEgressReportWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostAgentsEgressReportRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostAgentsEgressReport [agent] Egress-identity round batches (#718)
+//
+// One batch of egress rounds from the agent-side collector. The reporting agent's token identity overrides any vantage the payload claims; distinct public IPs are origin-ASN-enriched on the center. Recording only — no notifications.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /agents/egress-report (the `PostAgentsEgressReport` operationId).
+func (c *Client) PostAgentsEgressReport(ctx context.Context, body PostAgentsEgressReportJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostAgentsEgressReportRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetAgentsFingerprints [agent] Fingerprint corpus distribution (rev-negotiated tar.gz, fpsync format)
 //
 // Agents poll with their last-applied corpus revision. 204 = already current; 200 = deterministic tar.gz envelope (*.yaml files) with the new revision in the X-Fingerprint-Rev header. The served corpus is the center's active one (scanner.fingerprint_path dir when set, else the embedded corpus) — this is the no-recompile corpus-update channel.
@@ -5128,6 +5579,44 @@ func (c *Client) PostAgentsCommandsIdComplete(ctx context.Context, id Id, reqEdi
 // Corresponds with GET /agents/fingerprints (the `GetAgentsFingerprints` operationId).
 func (c *Client) GetAgentsFingerprints(ctx context.Context, params *GetAgentsFingerprintsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetAgentsFingerprintsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostAgentsPathReportWithBody [agent] Path-trace sample batches (#719)
+//
+// One batch of zero-privilege path traces from the agent-side tracer. Rows for deleted targets are skipped; the reporting agent's token identity overrides any vantage claim. Recording only.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /agents/path-report (the `PostAgentsPathReport` operationId).
+func (c *Client) PostAgentsPathReportWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostAgentsPathReportRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostAgentsPathReport [agent] Path-trace sample batches (#719)
+//
+// One batch of zero-privilege path traces from the agent-side tracer. Rows for deleted targets are skipped; the reporting agent's token identity overrides any vantage claim. Recording only.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /agents/path-report (the `PostAgentsPathReport` operationId).
+func (c *Client) PostAgentsPathReport(ctx context.Context, body PostAgentsPathReportJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostAgentsPathReportRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -7103,6 +7592,23 @@ func (c *Client) GetProbeQuality(ctx context.Context, params *GetProbeQualityPar
 	return c.Client.Do(req)
 }
 
+// GetProbeQualityEpisodes Quality degradation episodes (#720) - relative-baseline drops confirmed by cross-evidence, with attribution
+//
+// Episodes are the impact-only alert surface of the probe extension: a track degrades when its 15-minute window clearly drops below its own baseline (72h median, or same weekday-hour once 7 days of history exist), and an episode only opens after cross-confirmation (one egress group's quality points mostly degraded = network kind; one destination /24 degraded from enough vantages = path kind). Episodes without a same-window egress/path attribution stay recorded (notified=false) but never fire notifications (#716).
+//
+// Corresponds with GET /probe-quality/episodes (the `GetProbeQualityEpisodes` operationId).
+func (c *Client) GetProbeQualityEpisodes(ctx context.Context, params *GetProbeQualityEpisodesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProbeQualityEpisodesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetProbeQualityHistory Egress-quality trend - the verdict chain replayed per time bucket over the retention horizon
 //
 // Corresponds with GET /probe-quality/history (the `GetProbeQualityHistory` operationId).
@@ -7213,6 +7719,23 @@ func (c *Client) GetProbeTargetsIdCertificates(ctx context.Context, id Id, reqEd
 // Corresponds with GET /probe-targets/{id}/paths (the `GetProbeTargetsIdPaths` operationId).
 func (c *Client) GetProbeTargetsIdPaths(ctx context.Context, id Id, params *GetProbeTargetsIdPathsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetProbeTargetsIdPathsRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetProbeTargetsIdPhases Per-stage timing history of one target (#717), newest first
+//
+// One row per run that produced a stage breakdown: DNS/connect/TLS/TTFB for http, connect for tcp, reply TTL for icmp, across all vantages. Failed runs keep the stages that did complete (a timeout mid-handshake still tells you what DNS/connect cost); dns/tls modules produce no rows.
+//
+// Corresponds with GET /probe-targets/{id}/phases (the `GetProbeTargetsIdPhases` operationId).
+func (c *Client) GetProbeTargetsIdPhases(ctx context.Context, id Id, params *GetProbeTargetsIdPhasesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProbeTargetsIdPhasesRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -8154,6 +8677,46 @@ func NewPostAgentsCommandsIdCompleteRequest(server string, id Id) (*http.Request
 	return req, nil
 }
 
+// NewPostAgentsEgressReportRequest calls the generic PostAgentsEgressReport builder with application/json body
+func NewPostAgentsEgressReportRequest(server string, body PostAgentsEgressReportJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostAgentsEgressReportRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPostAgentsEgressReportRequestWithBody constructs an http.Request for the PostAgentsEgressReport method, with any body, and a specified content type
+func NewPostAgentsEgressReportRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/agents/egress-report")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetAgentsFingerprintsRequest constructs an http.Request for the GetAgentsFingerprints method
 func NewGetAgentsFingerprintsRequest(server string, params *GetAgentsFingerprintsParams) (*http.Request, error) {
 	var err error
@@ -8204,6 +8767,46 @@ func NewGetAgentsFingerprintsRequest(server string, params *GetAgentsFingerprint
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewPostAgentsPathReportRequest calls the generic PostAgentsPathReport builder with application/json body
+func NewPostAgentsPathReportRequest(server string, body PostAgentsPathReportJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostAgentsPathReportRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPostAgentsPathReportRequestWithBody constructs an http.Request for the PostAgentsPathReport method, with any body, and a specified content type
+func NewPostAgentsPathReportRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/agents/path-report")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -13055,6 +13658,72 @@ func NewGetProbeQualityRequest(server string, params *GetProbeQualityParams) (*h
 	return req, nil
 }
 
+// NewGetProbeQualityEpisodesRequest constructs an http.Request for the GetProbeQualityEpisodes method
+func NewGetProbeQualityEpisodesRequest(server string, params *GetProbeQualityEpisodesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/probe-quality/episodes")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Days != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "days", *params.Days, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Active != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "active", *params.Active, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetProbeQualityHistoryRequest constructs an http.Request for the GetProbeQualityHistory method
 func NewGetProbeQualityHistoryRequest(server string, params *GetProbeQualityHistoryParams) (*http.Request, error) {
 	var err error
@@ -13379,6 +14048,67 @@ func NewGetProbeTargetsIdPathsRequest(server string, id Id, params *GetProbeTarg
 	}
 
 	operationPath := fmt.Sprintf("/probe-targets/%s/paths", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetProbeTargetsIdPhasesRequest constructs an http.Request for the GetProbeTargetsIdPhases method
+func NewGetProbeTargetsIdPhasesRequest(server string, id Id, params *GetProbeTargetsIdPhasesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/probe-targets/%s/phases", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -15484,6 +16214,24 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /agents/commands/{id}/complete (the `PostAgentsCommandsIdComplete` operationId).
 	PostAgentsCommandsIdCompleteWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*PostAgentsCommandsIdCompleteResponse, error)
 
+	// PostAgentsEgressReportWithBodyWithResponse [agent] Egress-identity round batches (#718)
+	//
+	// One batch of egress rounds from the agent-side collector. The reporting agent's token identity overrides any vantage the payload claims; distinct public IPs are origin-ASN-enriched on the center. Recording only — no notifications.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /agents/egress-report (the `PostAgentsEgressReport` operationId).
+	PostAgentsEgressReportWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostAgentsEgressReportResponse, error)
+
+	// PostAgentsEgressReportWithResponse [agent] Egress-identity round batches (#718)
+	//
+	// One batch of egress rounds from the agent-side collector. The reporting agent's token identity overrides any vantage the payload claims; distinct public IPs are origin-ASN-enriched on the center. Recording only — no notifications.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /agents/egress-report (the `PostAgentsEgressReport` operationId).
+	PostAgentsEgressReportWithResponse(ctx context.Context, body PostAgentsEgressReportJSONRequestBody, reqEditors ...RequestEditorFn) (*PostAgentsEgressReportResponse, error)
+
 	// GetAgentsFingerprintsWithResponse [agent] Fingerprint corpus distribution (rev-negotiated tar.gz, fpsync format)
 	//
 	// Agents poll with their last-applied corpus revision. 204 = already current; 200 = deterministic tar.gz envelope (*.yaml files) with the new revision in the X-Fingerprint-Rev header. The served corpus is the center's active one (scanner.fingerprint_path dir when set, else the embedded corpus) — this is the no-recompile corpus-update channel.
@@ -15492,6 +16240,24 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /agents/fingerprints (the `GetAgentsFingerprints` operationId).
 	GetAgentsFingerprintsWithResponse(ctx context.Context, params *GetAgentsFingerprintsParams, reqEditors ...RequestEditorFn) (*GetAgentsFingerprintsResponse, error)
+
+	// PostAgentsPathReportWithBodyWithResponse [agent] Path-trace sample batches (#719)
+	//
+	// One batch of zero-privilege path traces from the agent-side tracer. Rows for deleted targets are skipped; the reporting agent's token identity overrides any vantage claim. Recording only.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /agents/path-report (the `PostAgentsPathReport` operationId).
+	PostAgentsPathReportWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostAgentsPathReportResponse, error)
+
+	// PostAgentsPathReportWithResponse [agent] Path-trace sample batches (#719)
+	//
+	// One batch of zero-privilege path traces from the agent-side tracer. Rows for deleted targets are skipped; the reporting agent's token identity overrides any vantage claim. Recording only.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /agents/path-report (the `PostAgentsPathReport` operationId).
+	PostAgentsPathReportWithResponse(ctx context.Context, body PostAgentsPathReportJSONRequestBody, reqEditors ...RequestEditorFn) (*PostAgentsPathReportResponse, error)
 
 	// PostAgentsProbeReportWithResponse [agent] Synthetic probe result batches
 	//
@@ -16400,6 +17166,15 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /probe-quality (the `GetProbeQuality` operationId).
 	GetProbeQualityWithResponse(ctx context.Context, params *GetProbeQualityParams, reqEditors ...RequestEditorFn) (*GetProbeQualityResponse, error)
 
+	// GetProbeQualityEpisodesWithResponse Quality degradation episodes (#720) - relative-baseline drops confirmed by cross-evidence, with attribution
+	//
+	// Episodes are the impact-only alert surface of the probe extension: a track degrades when its 15-minute window clearly drops below its own baseline (72h median, or same weekday-hour once 7 days of history exist), and an episode only opens after cross-confirmation (one egress group's quality points mostly degraded = network kind; one destination /24 degraded from enough vantages = path kind). Episodes without a same-window egress/path attribution stay recorded (notified=false) but never fire notifications (#716).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /probe-quality/episodes (the `GetProbeQualityEpisodes` operationId).
+	GetProbeQualityEpisodesWithResponse(ctx context.Context, params *GetProbeQualityEpisodesParams, reqEditors ...RequestEditorFn) (*GetProbeQualityEpisodesResponse, error)
+
 	// GetProbeQualityHistoryWithResponse Egress-quality trend - the verdict chain replayed per time bucket over the retention horizon
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -16455,6 +17230,15 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /probe-targets/{id}/paths (the `GetProbeTargetsIdPaths` operationId).
 	GetProbeTargetsIdPathsWithResponse(ctx context.Context, id Id, params *GetProbeTargetsIdPathsParams, reqEditors ...RequestEditorFn) (*GetProbeTargetsIdPathsResponse, error)
+
+	// GetProbeTargetsIdPhasesWithResponse Per-stage timing history of one target (#717), newest first
+	//
+	// One row per run that produced a stage breakdown: DNS/connect/TLS/TTFB for http, connect for tcp, reply TTL for icmp, across all vantages. Failed runs keep the stages that did complete (a timeout mid-handshake still tells you what DNS/connect cost); dns/tls modules produce no rows.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /probe-targets/{id}/phases (the `GetProbeTargetsIdPhases` operationId).
+	GetProbeTargetsIdPhasesWithResponse(ctx context.Context, id Id, params *GetProbeTargetsIdPhasesParams, reqEditors ...RequestEditorFn) (*GetProbeTargetsIdPhasesResponse, error)
 
 	// GetProbeTargetsIdResultsWithResponse Result history (vantage filter)
 	//
@@ -16965,6 +17749,51 @@ func (r PostAgentsCommandsIdCompleteResponse) ContentType() string {
 	return ""
 }
 
+type PostAgentsEgressReportResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *struct {
+		Accepted *int `json:"accepted,omitempty"`
+	}
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostAgentsEgressReportResponse) GetJSON200() *struct {
+	Accepted *int `json:"accepted,omitempty"`
+} {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r PostAgentsEgressReportResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostAgentsEgressReportResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostAgentsEgressReportResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostAgentsEgressReportResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetAgentsFingerprintsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -16993,6 +17822,51 @@ func (r GetAgentsFingerprintsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetAgentsFingerprintsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PostAgentsPathReportResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *struct {
+		Accepted *int `json:"accepted,omitempty"`
+	}
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostAgentsPathReportResponse) GetJSON200() *struct {
+	Accepted *int `json:"accepted,omitempty"`
+} {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r PostAgentsPathReportResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostAgentsPathReportResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostAgentsPathReportResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostAgentsPathReportResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -21897,6 +22771,47 @@ func (r GetProbeQualityResponse) ContentType() string {
 	return ""
 }
 
+type GetProbeQualityEpisodesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProbeQualityEpisodes
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetProbeQualityEpisodesResponse) GetJSON200() *ProbeQualityEpisodes {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetProbeQualityEpisodesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProbeQualityEpisodesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProbeQualityEpisodesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetProbeQualityEpisodesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetProbeQualityHistoryResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -22212,6 +23127,47 @@ func (r GetProbeTargetsIdPathsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetProbeTargetsIdPathsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetProbeTargetsIdPhasesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProbePhasesResponse
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetProbeTargetsIdPhasesResponse) GetJSON200() *ProbePhasesResponse {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetProbeTargetsIdPhasesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProbeTargetsIdPhasesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProbeTargetsIdPhasesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetProbeTargetsIdPhasesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -24145,6 +25101,36 @@ func (c *ClientWithResponses) PostAgentsCommandsIdCompleteWithResponse(ctx conte
 	return ParsePostAgentsCommandsIdCompleteResponse(rsp)
 }
 
+// PostAgentsEgressReportWithBodyWithResponse [agent] Egress-identity round batches (#718)
+//
+// One batch of egress rounds from the agent-side collector. The reporting agent's token identity overrides any vantage the payload claims; distinct public IPs are origin-ASN-enriched on the center. Recording only — no notifications.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /agents/egress-report (the `PostAgentsEgressReport` operationId).
+func (c *ClientWithResponses) PostAgentsEgressReportWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostAgentsEgressReportResponse, error) {
+	rsp, err := c.PostAgentsEgressReportWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostAgentsEgressReportResponse(rsp)
+}
+
+// PostAgentsEgressReportWithResponse [agent] Egress-identity round batches (#718)
+//
+// One batch of egress rounds from the agent-side collector. The reporting agent's token identity overrides any vantage the payload claims; distinct public IPs are origin-ASN-enriched on the center. Recording only — no notifications.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /agents/egress-report (the `PostAgentsEgressReport` operationId).
+func (c *ClientWithResponses) PostAgentsEgressReportWithResponse(ctx context.Context, body PostAgentsEgressReportJSONRequestBody, reqEditors ...RequestEditorFn) (*PostAgentsEgressReportResponse, error) {
+	rsp, err := c.PostAgentsEgressReport(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostAgentsEgressReportResponse(rsp)
+}
+
 // GetAgentsFingerprintsWithResponse [agent] Fingerprint corpus distribution (rev-negotiated tar.gz, fpsync format)
 //
 // Agents poll with their last-applied corpus revision. 204 = already current; 200 = deterministic tar.gz envelope (*.yaml files) with the new revision in the X-Fingerprint-Rev header. The served corpus is the center's active one (scanner.fingerprint_path dir when set, else the embedded corpus) — this is the no-recompile corpus-update channel.
@@ -24158,6 +25144,36 @@ func (c *ClientWithResponses) GetAgentsFingerprintsWithResponse(ctx context.Cont
 		return nil, err
 	}
 	return ParseGetAgentsFingerprintsResponse(rsp)
+}
+
+// PostAgentsPathReportWithBodyWithResponse [agent] Path-trace sample batches (#719)
+//
+// One batch of zero-privilege path traces from the agent-side tracer. Rows for deleted targets are skipped; the reporting agent's token identity overrides any vantage claim. Recording only.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /agents/path-report (the `PostAgentsPathReport` operationId).
+func (c *ClientWithResponses) PostAgentsPathReportWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostAgentsPathReportResponse, error) {
+	rsp, err := c.PostAgentsPathReportWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostAgentsPathReportResponse(rsp)
+}
+
+// PostAgentsPathReportWithResponse [agent] Path-trace sample batches (#719)
+//
+// One batch of zero-privilege path traces from the agent-side tracer. Rows for deleted targets are skipped; the reporting agent's token identity overrides any vantage claim. Recording only.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /agents/path-report (the `PostAgentsPathReport` operationId).
+func (c *ClientWithResponses) PostAgentsPathReportWithResponse(ctx context.Context, body PostAgentsPathReportJSONRequestBody, reqEditors ...RequestEditorFn) (*PostAgentsPathReportResponse, error) {
+	rsp, err := c.PostAgentsPathReport(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostAgentsPathReportResponse(rsp)
 }
 
 // PostAgentsProbeReportWithResponse [agent] Synthetic probe result batches
@@ -25841,6 +26857,21 @@ func (c *ClientWithResponses) GetProbeQualityWithResponse(ctx context.Context, p
 	return ParseGetProbeQualityResponse(rsp)
 }
 
+// GetProbeQualityEpisodesWithResponse Quality degradation episodes (#720) - relative-baseline drops confirmed by cross-evidence, with attribution
+//
+// Episodes are the impact-only alert surface of the probe extension: a track degrades when its 15-minute window clearly drops below its own baseline (72h median, or same weekday-hour once 7 days of history exist), and an episode only opens after cross-confirmation (one egress group's quality points mostly degraded = network kind; one destination /24 degraded from enough vantages = path kind). Episodes without a same-window egress/path attribution stay recorded (notified=false) but never fire notifications (#716).
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /probe-quality/episodes (the `GetProbeQualityEpisodes` operationId).
+func (c *ClientWithResponses) GetProbeQualityEpisodesWithResponse(ctx context.Context, params *GetProbeQualityEpisodesParams, reqEditors ...RequestEditorFn) (*GetProbeQualityEpisodesResponse, error) {
+	rsp, err := c.GetProbeQualityEpisodes(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProbeQualityEpisodesResponse(rsp)
+}
+
 // GetProbeQualityHistoryWithResponse Egress-quality trend - the verdict chain replayed per time bucket over the retention horizon
 //
 // Returns a wrapper object for the known response body format(s).
@@ -25943,6 +26974,21 @@ func (c *ClientWithResponses) GetProbeTargetsIdPathsWithResponse(ctx context.Con
 		return nil, err
 	}
 	return ParseGetProbeTargetsIdPathsResponse(rsp)
+}
+
+// GetProbeTargetsIdPhasesWithResponse Per-stage timing history of one target (#717), newest first
+//
+// One row per run that produced a stage breakdown: DNS/connect/TLS/TTFB for http, connect for tcp, reply TTL for icmp, across all vantages. Failed runs keep the stages that did complete (a timeout mid-handshake still tells you what DNS/connect cost); dns/tls modules produce no rows.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /probe-targets/{id}/phases (the `GetProbeTargetsIdPhases` operationId).
+func (c *ClientWithResponses) GetProbeTargetsIdPhasesWithResponse(ctx context.Context, id Id, params *GetProbeTargetsIdPhasesParams, reqEditors ...RequestEditorFn) (*GetProbeTargetsIdPhasesResponse, error) {
+	rsp, err := c.GetProbeTargetsIdPhases(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProbeTargetsIdPhasesResponse(rsp)
 }
 
 // GetProbeTargetsIdResultsWithResponse Result history (vantage filter)
@@ -26687,6 +27733,37 @@ func ParsePostAgentsCommandsIdCompleteResponse(rsp *http.Response) (*PostAgentsC
 	return response, nil
 }
 
+// ParsePostAgentsEgressReportResponse parses an HTTP response from a PostAgentsEgressReportWithResponse call
+func ParsePostAgentsEgressReportResponse(rsp *http.Response) (*PostAgentsEgressReportResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostAgentsEgressReportResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest struct {
+			Accepted *int `json:"accepted,omitempty"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case rsp.StatusCode == 400:
+		break // No content-type
+
+	}
+
+	return response, nil
+}
+
 // ParseGetAgentsFingerprintsResponse parses an HTTP response from a GetAgentsFingerprintsWithResponse call
 func ParseGetAgentsFingerprintsResponse(rsp *http.Response) (*GetAgentsFingerprintsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -26698,6 +27775,37 @@ func ParseGetAgentsFingerprintsResponse(rsp *http.Response) (*GetAgentsFingerpri
 	response := &GetAgentsFingerprintsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParsePostAgentsPathReportResponse parses an HTTP response from a PostAgentsPathReportWithResponse call
+func ParsePostAgentsPathReportResponse(rsp *http.Response) (*PostAgentsPathReportResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostAgentsPathReportResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest struct {
+			Accepted *int `json:"accepted,omitempty"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case rsp.StatusCode == 400:
+		break // No content-type
+
 	}
 
 	return response, nil
@@ -29616,6 +30724,32 @@ func ParseGetProbeQualityResponse(rsp *http.Response) (*GetProbeQualityResponse,
 	return response, nil
 }
 
+// ParseGetProbeQualityEpisodesResponse parses an HTTP response from a GetProbeQualityEpisodesWithResponse call
+func ParseGetProbeQualityEpisodesResponse(rsp *http.Response) (*GetProbeQualityEpisodesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProbeQualityEpisodesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProbeQualityEpisodes
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetProbeQualityHistoryResponse parses an HTTP response from a GetProbeQualityHistoryWithResponse call
 func ParseGetProbeQualityHistoryResponse(rsp *http.Response) (*GetProbeQualityHistoryResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -29804,6 +30938,32 @@ func ParseGetProbeTargetsIdPathsResponse(rsp *http.Response) (*GetProbeTargetsId
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ProbePathsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetProbeTargetsIdPhasesResponse parses an HTTP response from a GetProbeTargetsIdPhasesWithResponse call
+func ParseGetProbeTargetsIdPhasesResponse(rsp *http.Response) (*GetProbeTargetsIdPhasesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProbeTargetsIdPhasesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProbePhasesResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

@@ -403,17 +403,23 @@ scanner:
 | `probe.quality.dns_degraded_ms` | int | 300 | dns 腿的同上阈值。 |
 | `probe.quality.ok_rate_threshold` | float | 0.9 | 窗口内最低成功率（0..1]。 |
 | `probe.quality.groups` | map | 见下 | 拨测点矩阵，`组名 → [{name, module, target, options}]`。保留组 `domestic` 驱动主判定；`international`（及任何其它组名）仅作参照--跨境波动是独立信号，不算出口故障。留空 = 出厂默认：国内组（双公共解析器做 DNS 差分诊断、主流 HTTP 站点、204 端点、免 DNS 的直连 IP TCP 腿）加国际参照组。所有取值均可配置，无一硬编码。 |
+| `probe.quality.episodes.enabled` | bool | （跟随 quality） | 劣化段检测器开关（#720）。缺省时跟随 `probe.quality.enabled`；显式 false 即关闭。 |
+| `probe.quality.episodes.latency_ratio` | float | 2.0 | 轨道窗口 p50 在 `p50 >= max(基线 × ratio, 基线 + min_delta)` 时计为劣化。 |
+| `probe.quality.episodes.latency_min_delta_ms` | int | 50 | 延迟劣化的绝对增量下限——3ms 的基线不会"翻倍"成噪音。 |
+| `probe.quality.episodes.ok_rate_drop` | float | 0.3 | 窗口成功率在 `成功率 <= 基线 − drop` 时计为劣化（0..1）。 |
+| `probe.quality.episodes.min_windows` | int | 2 | 连续劣化的 15 分钟窗数门槛（2 ≈ 持续 30 分钟）。 |
+| `probe.quality.episodes.alert_requires_attribution` | bool | true | #716 裁定的落地：无同窗口出口/路径变更可归因的劣化段只记录（界面黄色）不通知。显式 false 允许无归因也通知。 |
 | `probe.autogen.enabled` | bool | false | 发现即拨测：从发现的服务自动创建设备绑定目标（`source=auto`）。默认关闭--它会自行写行，必须是有意识的选择。关闭时挂起整个 auto 存量（行与历史保留）。 |
 | `probe.autogen.services` | []string | ["http","https"] | 可生成 auto 目标的服务身份（匹配 `host_services.service`）。 |
 | `probe.autogen.device_types` | []string | [] | 限定仅这些设备类型生成；留空 = 全部。 |
 | `probe.autogen.interval_seconds` | int | 300 | auto 目标的探测间隔（≥10）。 |
 | `probe.autogen.max_targets` | int | 100 | 存量上限（1–1000），避免千台设备的 LAN 炸出 3000 个目标。 |
 | `probe.autogen.sweep_interval_minutes` | int | 15 | 对账周期：为新服务建目标、为离开扫描的服务挂起目标、回归即复活。手工目标永不触碰。 |
-| `probe.egress.enabled` | bool | false | 出口身份记录器（#718）：每到 interval，center 向一组公网回显源（HTTP/STUN/DNS）询问当前出口呈现的公网 IP，对去重后的 IP 做来源 ASN 富化，并把整轮结果存入 `data/probe_ext.db`。只记录——变更本身不通知（#716）。裸配置默认**关闭**；`configs/config.example.yaml` 以推荐值 `enabled: true` 出厂。环境变量 `MIBEE_PROBE_EGRESS_ENABLED`。 |
+| `probe.egress.enabled` | bool | false | 出口身份记录器（#718）：每到 interval，center 向一组公网回显源（HTTP/STUN/DNS）询问当前出口呈现的公网 IP，对去重后的 IP 做来源 ASN 富化，并把整轮结果存入 `data/probe_ext.db`。只记录——变更本身不通知（#716）。同一份回显源与周期也会下发给声明了 `egress` 能力的 agent：每个视角各自跑轮次并回传（`POST /agents/egress-report`，令牌绑定身份，ASN 由 center 富化）。裸配置默认**关闭**；`configs/config.example.yaml` 以推荐值 `enabled: true` 出厂。环境变量 `MIBEE_PROBE_EGRESS_ENABLED`。 |
 | `probe.egress.interval_seconds` | int | 300 | 采集周期（60–86400）。环境变量 `MIBEE_PROBE_EGRESS_INTERVAL_SECONDS`。 |
 | `probe.egress.asn_resolvers` | []string | ["223.5.5.5"] | Team Cymru 来源 ASN TXT 查询所用的 DNS 服务器，按优先级排列。 |
 | `probe.egress.sources` | []source | 内置源组 | 回显源；非空即**整体替换**内置多协议源组。条目：`{name, kind: http\|stun\|dns, target}`（http：返回 IP 的 URL；stun：`host:port`；dns：`server\|qname`）。 |
-| `probe.trace.categories` | []string | ["external","quality"] | 参与周期性零权限路径追踪（#719）的拨测目标分类。`lan` 保持关闭——内网路径是拓扑页的职责。 |
+| `probe.trace.categories` | []string | ["external","quality"] | 参与周期性零权限路径追踪（#719）的拨测目标分类。`lan` 保持关闭——内网路径是拓扑页的职责。追踪计划同样随 agent 的拨测计划下发（声明 `trace` 能力的 agent——仅 Linux）：各视角自行追踪并回传，拨测失败时每目标每 10 分钟额外触发一次快照（`trigger=failure`）。 |
 | `probe.trace.interval_minutes` | int | 30 | 每目标的基线追踪周期（≥5）。 |
 | `probe.trace.max_ttl` | int | 30 | TTL 走查上限（8–64）。中间跳静默的出口需要走完全程：不提前放弃。 |
 | `probe.trace.per_hop_ms` | int | 500 | 每跳等待（100–3000）。 |
@@ -606,7 +612,7 @@ head -c 32 /dev/urandom | base64
 | `retention.host_services_days` | int | 30 | 主机服务记录保留天数 |
 | `retention.host_tls_certs_days` | int | 30 | TLS 证书记录保留天数 |
 | `retention.probe_results_days` | int | 30 | 拨测历史结果保留天数（`probe_tls_certs` 不清扫--每目标只存当前证书链） |
-| `retention.probe_ext_days` | int | 30 | 出口回显轮次 + 路径采样保留天数（`data/probe_ext.db` 旁路库，#716/#718/#719）。 |
+| `retention.probe_ext_days` | int | 30 | 出口回显轮次 + 路径采样 + 分阶段计时行保留天数（`data/probe_ext.db` 旁路库，#716/#717/#718/#719）。 |
 | `retention.sweep_interval_hours` | int | 6 | 清理扫描间隔（小时） |
 | `retention.batch_size` | int | 5000 | 每批清理的最大行数 |
 

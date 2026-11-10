@@ -417,17 +417,23 @@ Per-target interval/timeout live on each `probe_targets` row (managed in the UI/
 | `probe.quality.dns_degraded_ms` | int | 300 | Same for dns legs. |
 | `probe.quality.ok_rate_threshold` | float | 0.9 | Minimum success rate within the window (0..1]. |
 | `probe.quality.groups` | map | see below | The probe-point matrix, `group name → [{name, module, target, options}]`. The reserved group `domestic` drives the primary verdict; `international` (and any other name) is reference-only — cross-border variance is its own signal, not an egress fault. Empty = the shipped defaults: a domestic group (two public resolvers for DNS differential diagnosis, mainstream HTTP sites, a 204 endpoint, a DNS-free direct-IP TCP leg) plus an international reference group. Every value is configurable; nothing is hardcoded. |
+| `probe.quality.episodes.enabled` | bool | (follows quality) | Degradation-episode detector switch (#720). Absent = follow `probe.quality.enabled`; explicit false is the off switch. |
+| `probe.quality.episodes.latency_ratio` | float | 2.0 | A track's window p50 counts as degraded at `p50 >= max(base × ratio, base + min_delta)`. |
+| `probe.quality.episodes.latency_min_delta_ms` | int | 50 | Absolute latency floor so a 3ms baseline cannot "double" into noise. |
+| `probe.quality.episodes.ok_rate_drop` | float | 0.3 | Window ok-rate counts as degraded at `ok_rate <= base − drop` (0..1). |
+| `probe.quality.episodes.min_windows` | int | 2 | Consecutive degraded 15-minute windows before a track candidate counts (2 ≈ 30 sustained minutes). |
+| `probe.quality.episodes.alert_requires_attribution` | bool | true | The #716 ruling, enforced: degraded episodes without a same-window egress/path change stay recorded (UI yellow) but never notify. Explicit false allows notifying unattributed episodes. |
 | `probe.autogen.enabled` | bool | false | Discover-then-probe: auto-create device-bound probe targets (`source=auto`) from discovered services. Default OFF — it writes rows on its own, so it must be a deliberate choice. Turning it off parks the auto population (rows + history kept). |
 | `probe.autogen.services` | []string | ["http","https"] | Service identities eligible for auto targets (matched against `host_services.service`). |
 | `probe.autogen.device_types` | []string | [] | Restrict generation to those device types; empty = all. |
 | `probe.autogen.interval_seconds` | int | 300 | Probe interval of auto targets (≥10). |
 | `probe.autogen.max_targets` | int | 100 | Population cap (1–1000) so a 1000-device LAN cannot explode into 3000 targets. |
 | `probe.autogen.sweep_interval_minutes` | int | 15 | Reconcile cadence: create targets for new services, park targets whose service left the scan, revive on reappearance. Manual targets are never touched. |
-| `probe.egress.enabled` | bool | false | Egress identity recorder (#718): every interval the center asks a set of public echo sources (HTTP/STUN/DNS) which public IP the current egress presents, enriches the distinct IPs with their origin ASN, and stores the round in `data/probe_ext.db`. Recording only — changes never notify (#716). A bare config defaults to **disabled**; `configs/config.example.yaml` ships `enabled: true` as the recommended value. Env `MIBEE_PROBE_EGRESS_ENABLED`. |
+| `probe.egress.enabled` | bool | false | Egress identity recorder (#718): every interval the center asks a set of public echo sources (HTTP/STUN/DNS) which public IP the current egress presents, enriches the distinct IPs with their origin ASN, and stores the round in `data/probe_ext.db`. Recording only — changes never notify (#716). The same source set + cadence is also pushed to agents that declared the `egress` capability: every vantage runs its own rounds and reports them home (`POST /agents/egress-report`, token-bound identity, ASN enrichment on the center). A bare config defaults to **disabled**; `configs/config.example.yaml` ships `enabled: true` as the recommended value. Env `MIBEE_PROBE_EGRESS_ENABLED`. |
 | `probe.egress.interval_seconds` | int | 300 | Round cadence (60–86400). Env `MIBEE_PROBE_EGRESS_INTERVAL_SECONDS`. |
 | `probe.egress.asn_resolvers` | []string | ["223.5.5.5"] | DNS servers used for the Team Cymru origin-ASN TXT lookups, in preference order. |
-| `probe.egress.sources` | []source | built-in set | Echo sources; a non-empty list REPLACES the built-in multi-transport set. Entry: `{name, kind: http\|stun\|dns, target}` (http: URL returning the IP in the body; stun: `host:port`; dns: `server\|qname`). |
-| `probe.trace.categories` | []string | ["external","quality"] | Probe-target categories that get periodic zero-privilege path traces (#719). `lan` stays off — internal paths are the topology page's job. |
+| `probe.egress.sources` | []source | built-in set | Echo sources; a non-empty list REPLACES the built-in multi-transport set. Entry: `{name, kind: http\|stun\|dns, target}` (http: URL returning the IP in the body; stun: `host:port`; dns: `server\|qname`). The pushed agent plans use whatever this resolves to. |
+| `probe.trace.categories` | []string | ["external","quality"] | Probe-target categories that get periodic zero-privilege path traces (#719). `lan` stays off — internal paths are the topology page's job. The schedule also rides the agents' probe plans (agents declaring `trace` — a Linux-only capability): each vantage traces on its own and reports, and a failed probe additionally triggers one snapshot per target per 10 minutes (`trigger=failure`). |
 | `probe.trace.interval_minutes` | int | 30 | Baseline trace cadence per target (≥5). |
 | `probe.trace.max_ttl` | int | 30 | TTL walk bound (8–64). Silent-middle egress needs the full walk: no early give-up. |
 | `probe.trace.per_hop_ms` | int | 500 | Per-TTL wait (100–3000). |
@@ -620,7 +626,7 @@ The synchronous scan endpoint (`POST /api/v1/scanner/scan`) imposes a hard targe
 | `retention.host_services_days` | int | 30 | Host service records retention (days) |
 | `retention.host_tls_certs_days` | int | 30 | TLS certificate records retention (days) |
 | `retention.probe_results_days` | int | 30 | Synthetic-probe result history retention (days). `probe_tls_certs` is not swept, it holds only each target's current chain |
-| `retention.probe_ext_days` | int | 30 | Egress echo rounds + path samples retention (days), the `data/probe_ext.db` side database (#716/#718/#719). |
+| `retention.probe_ext_days` | int | 30 | Egress echo rounds + path samples + per-stage timing rows retention (days), the `data/probe_ext.db` side database (#716/#717/#718/#719). |
 | `retention.sweep_interval_hours` | int | 6 | Cleanup sweep interval (hours) |
 | `retention.batch_size` | int | 5000 | Max rows per cleanup batch |
 

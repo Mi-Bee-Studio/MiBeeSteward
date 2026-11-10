@@ -25,9 +25,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	_ "mibee-steward/internal/dbopen" // registers the modernc sqlite driver
+
+	"mibee-steward/internal/service/probe"
 )
 
 // extSchema is the additive DDL for probe_ext.db. checked_at/round_at/
@@ -68,6 +72,40 @@ CREATE TABLE IF NOT EXISTS path_samples (
 );
 CREATE INDEX IF NOT EXISTS idx_path_samples_target ON path_samples(target_id, vantage, traced_at DESC);
 CREATE INDEX IF NOT EXISTS idx_path_samples_time ON path_samples(traced_at);
+
+CREATE TABLE IF NOT EXISTS quality_episodes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,                -- network | path
+    vantage_group TEXT NOT NULL,       -- one vantage token today ('center' | 'agent:{id}')
+    target_group TEXT NOT NULL,        -- destination /24 for path episodes, '' for network
+    started_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    windows INTEGER NOT NULL DEFAULT 1,     -- consecutive degraded windows seen
+    metric_degraded TEXT NOT NULL DEFAULT '[]', -- JSON [{target_id,vantage,name,p50_ms,base_p50_ms,ok_rate,base_ok_rate,samples}]
+    attribution TEXT NOT NULL DEFAULT '[]',     -- JSON [{kind,detail,at}]
+    notified INTEGER NOT NULL DEFAULT 0,    -- fired quality_degraded into change_log
+    resolved_at TEXT NOT NULL DEFAULT '',   -- '' = active
+    recover_notified INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_quality_episodes_time ON quality_episodes(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_quality_episodes_active ON quality_episodes(resolved_at, last_seen_at DESC);
+
+CREATE TABLE IF NOT EXISTS probe_phases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_id INTEGER NOT NULL,        -- probe_targets.id (no FK: side DB)
+    module TEXT NOT NULL,              -- http | tcp | icmp
+    vantage TEXT NOT NULL,
+    checked_at TEXT NOT NULL,
+    resolved_ip TEXT NOT NULL DEFAULT '',
+    dns_ms REAL NOT NULL DEFAULT 0,    -- 0 = stage absent (non-http modules)
+    connect_ms REAL NOT NULL DEFAULT 0,
+    tls_ms REAL NOT NULL DEFAULT 0,
+    ttfb_ms REAL NOT NULL DEFAULT 0,
+    reply_ttl INTEGER NOT NULL DEFAULT 0, -- 0 = unknown (icmp)
+    latency_ms REAL NOT NULL DEFAULT 0    -- run total, denormalized so phase reads need no join
+);
+CREATE INDEX IF NOT EXISTS idx_probe_phases_target ON probe_phases(target_id, vantage, checked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_probe_phases_time ON probe_phases(checked_at);
 `
 
 // Store is the probe_ext.db handle. Single connection + WAL: writes are
@@ -407,19 +445,84 @@ func (s *Store) queryPaths(ctx context.Context, q string, args ...any) ([]PathSa
 
 // Prune deletes rows older than the given RFC3339 cutoff (retention sweep).
 func (s *Store) Prune(ctx context.Context, cutoff string) error {
-	for _, table := range []string{"egress_rounds", "path_samples"} {
-		var col string
-		if table == "egress_rounds" {
-			col = "round_at"
-		} else {
-			col = "traced_at"
-		}
+	for _, t := range []struct{ table, col string }{
+		{"egress_rounds", "round_at"},
+		{"path_samples", "traced_at"},
+		{"probe_phases", "checked_at"},
+	} {
 		if _, err := s.conn.ExecContext(ctx,
-			`DELETE FROM `+table+` WHERE `+col+` < ?`, cutoff); err != nil {
-			return fmt.Errorf("prune %s: %w", table, err)
+			`DELETE FROM `+t.table+` WHERE `+t.col+` < ?`, cutoff); err != nil {
+			return fmt.Errorf("prune %s: %w", t.table, err)
 		}
 	}
 	return nil
+}
+
+// --- probe_phases (#717) ----------------------------------------------------
+
+// PhaseRow is one run's per-stage timing breakdown. latency_ms is the run
+// total denormalized so the phases chart renders without a probe_results
+// join; omitempty on the stages keeps tcp/icmp rows compact on the wire.
+type PhaseRow struct {
+	TargetID   int64   `json:"target_id"`
+	Module     string  `json:"module"`
+	Vantage    string  `json:"vantage"`
+	CheckedAt  string  `json:"checked_at"`
+	ResolvedIP string  `json:"resolved_ip,omitempty"`
+	DNSMs      float64 `json:"dns_ms,omitempty"`
+	ConnectMs  float64 `json:"connect_ms,omitempty"`
+	TLSMs      float64 `json:"tls_ms,omitempty"`
+	TTFBMs     float64 `json:"ttfb_ms,omitempty"`
+	ReplyTTL   int     `json:"reply_ttl,omitempty"`
+	LatencyMs  float64 `json:"latency_ms"`
+}
+
+// PhasesResponse is the GET /probe-targets/{id}/phases payload.
+type PhasesResponse struct {
+	Phases []PhaseRow `json:"phases"`
+}
+
+// StorePhase appends one per-stage timing row (#717). It satisfies the
+// probetarget.PhasesSink interface (checked at the routes wiring site); a
+// nil or data-less Phases is a no-op, double-guarding the engine's gate.
+func (s *Store) StorePhase(ctx context.Context, targetID int64, module, vantage, checkedAt string, latencyMs float64, ph *probe.Phases) error {
+	if ph == nil || !ph.HasData() {
+		return nil
+	}
+	_, err := s.conn.ExecContext(ctx,
+		`INSERT INTO probe_phases
+		 (target_id, module, vantage, checked_at, resolved_ip, dns_ms, connect_ms, tls_ms, ttfb_ms, reply_ttl, latency_ms)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		targetID, module, vantage, checkedAt, ph.ResolvedIP, ph.DNSMs, ph.ConnectMs, ph.TLSMs, ph.TTFBMs, ph.ReplyTTL, latencyMs)
+	if err != nil {
+		return fmt.Errorf("store phase: %w", err)
+	}
+	return nil
+}
+
+// ListPhasesFor returns the newest-first phase rows of one target across all
+// vantages (the history modal renders one series per vantage).
+func (s *Store) ListPhasesFor(ctx context.Context, targetID int64, limit int) ([]PhaseRow, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	rows, err := s.conn.QueryContext(ctx,
+		`SELECT target_id, module, vantage, checked_at, resolved_ip, dns_ms, connect_ms, tls_ms, ttfb_ms, reply_ttl, latency_ms
+		 FROM probe_phases WHERE target_id = ? ORDER BY id DESC LIMIT ?`, targetID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []PhaseRow{}
+	for rows.Next() {
+		var p PhaseRow
+		if err := rows.Scan(&p.TargetID, &p.Module, &p.Vantage, &p.CheckedAt, &p.ResolvedIP,
+			&p.DNSMs, &p.ConnectMs, &p.TLSMs, &p.TTFBMs, &p.ReplyTTL, &p.LatencyMs); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }
 
 func boolInt(b bool) int {
@@ -427,4 +530,161 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// --- quality_episodes (#720) -----------------------------------------------
+
+// InsertEpisode stores a new episode row; JSON fields are marshaled here.
+func (s *Store) InsertEpisode(ctx context.Context, e QualityEpisode) (int64, error) {
+	metrics, _ := json.Marshal(e.MetricDegraded)
+	attr, _ := json.Marshal(e.Attribution)
+	res, err := s.conn.ExecContext(ctx,
+		`INSERT INTO quality_episodes
+		 (kind, vantage_group, target_group, started_at, last_seen_at, windows, metric_degraded, attribution, notified, resolved_at, recover_notified)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.Kind, e.VantageGroup, e.TargetGroup, e.StartedAt, e.LastSeenAt, e.Windows,
+		string(metrics), string(attr), boolInt(e.Notified), e.ResolvedAt, boolInt(e.RecoverNotified))
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// UpdateEpisodeWindow bumps the continuation bookkeeping.
+func (s *Store) UpdateEpisodeWindow(ctx context.Context, id int64, lastSeenAtISO string) error {
+	_, err := s.conn.ExecContext(ctx,
+		`UPDATE quality_episodes SET last_seen_at = ?, windows = windows + 1 WHERE id = ?`, lastSeenAtISO, id)
+	return err
+}
+
+// ResolveEpisode stamps the resolution time.
+func (s *Store) ResolveEpisode(ctx context.Context, id int64, resolvedAtISO string) error {
+	_, err := s.conn.ExecContext(ctx,
+		`UPDATE quality_episodes SET resolved_at = ? WHERE id = ?`, resolvedAtISO, id)
+	return err
+}
+
+// MarkEpisodeNotified / MarkEpisodeRecoverNotified flip the alert flags.
+func (s *Store) MarkEpisodeNotified(ctx context.Context, id int64) error {
+	_, err := s.conn.ExecContext(ctx, `UPDATE quality_episodes SET notified = 1 WHERE id = ?`, id)
+	return err
+}
+
+func (s *Store) MarkEpisodeRecoverNotified(ctx context.Context, id int64) error {
+	_, err := s.conn.ExecContext(ctx, `UPDATE quality_episodes SET recover_notified = 1 WHERE id = ?`, id)
+	return err
+}
+
+// ListActiveEpisodes returns every unresolved episode.
+func (s *Store) ListActiveEpisodes(ctx context.Context) ([]QualityEpisode, error) {
+	return s.listEpisodes(ctx, `WHERE resolved_at = '' ORDER BY last_seen_at DESC`)
+}
+
+// ListEpisodesSince returns episodes started within the window (all states).
+func (s *Store) ListEpisodesSince(ctx context.Context, sinceISO string, limit int) ([]QualityEpisode, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	return s.listEpisodes(ctx, `WHERE started_at >= ? ORDER BY started_at DESC LIMIT `+strconv.Itoa(limit), sinceISO)
+}
+
+func (s *Store) listEpisodes(ctx context.Context, where string, args ...any) ([]QualityEpisode, error) {
+	rows, err := s.conn.QueryContext(ctx,
+		`SELECT id, kind, vantage_group, target_group, started_at, last_seen_at, windows,
+		        metric_degraded, attribution, notified, resolved_at, recover_notified
+		 FROM quality_episodes `+where, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []QualityEpisode
+	for rows.Next() {
+		var e QualityEpisode
+		var metricsJSON, attrJSON string
+		var notified, recoverNotified int
+		if err := rows.Scan(&e.ID, &e.Kind, &e.VantageGroup, &e.TargetGroup, &e.StartedAt, &e.LastSeenAt,
+			&e.Windows, &metricsJSON, &attrJSON, &notified, &e.ResolvedAt, &recoverNotified); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal([]byte(metricsJSON), &e.MetricDegraded)
+		_ = json.Unmarshal([]byte(attrJSON), &e.Attribution)
+		if e.MetricDegraded == nil {
+			e.MetricDegraded = []EpisodeMetric{}
+		}
+		if e.Attribution == nil {
+			e.Attribution = []EpisodeAttribution{}
+		}
+		e.Notified = notified != 0
+		e.RecoverNotified = recoverNotified != 0
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// EgressChangedBetween reports whether the vantage's distinct public-IP set
+// changed between adjacent rounds inside [from,to]; returns the first
+// change round's timestamp.
+func (s *Store) EgressChangedBetween(ctx context.Context, vantage, fromISO, toISO string) (bool, string) {
+	rows, err := s.conn.QueryContext(ctx,
+		`SELECT round_at, ip FROM egress_rounds
+		 WHERE vantage = ? AND round_at >= ? AND round_at <= ? AND ok = 1 AND kind != 'local' AND ip != ''
+		 ORDER BY round_at`, vantage, fromISO, toISO)
+	if err != nil {
+		return false, ""
+	}
+	defer rows.Close()
+	type setKey map[string]bool
+	var lastSet setKey
+	var lastAt string
+	for rows.Next() {
+		var at, ip string
+		if err := rows.Scan(&at, &ip); err != nil {
+			return false, ""
+		}
+		if lastSet == nil {
+			lastSet = setKey{ip: true}
+			lastAt = at
+			continue
+		}
+		if !lastSet[ip] {
+			// New IP not present in the previous round's set.
+			return true, at
+		}
+		_ = lastAt
+	}
+	return false, ""
+}
+
+// PathChangedBetween counts targets whose visible hop sequence changed
+// between adjacent samples inside [from,to] for the given vantage.
+func (s *Store) PathChangedBetween(ctx context.Context, targetIDs []int64, vantage, fromISO, toISO string) int {
+	if len(targetIDs) == 0 {
+		return 0
+	}
+	ids := make([]string, len(targetIDs))
+	for i, id := range targetIDs {
+		ids[i] = strconv.FormatInt(id, 10)
+	}
+	rows, err := s.conn.QueryContext(ctx,
+		`SELECT target_id, hops, traced_at FROM path_samples
+		 WHERE vantage = ? AND traced_at >= ? AND traced_at <= ? AND target_id IN (`+strings.Join(ids, ",")+`)
+		 ORDER BY target_id, traced_at`, vantage, fromISO, toISO)
+	if err != nil {
+		return 0
+	}
+	defer rows.Close()
+	changed := map[int64]bool{}
+	lastHops := map[int64]string{}
+	for rows.Next() {
+		var id int64
+		var hops, at string
+		if err := rows.Scan(&id, &hops, &at); err != nil {
+			return len(changed)
+		}
+		if prev, ok := lastHops[id]; ok && prev != hops {
+			changed[id] = true
+		}
+		lastHops[id] = hops
+	}
+	return len(changed)
 }

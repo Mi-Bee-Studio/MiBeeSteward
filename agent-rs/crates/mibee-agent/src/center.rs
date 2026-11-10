@@ -144,11 +144,42 @@ impl CenterClient {
         &self,
         results: &[ProbeResultReport],
     ) -> Result<PostOutcome, TransportError> {
+        self.post_agent_batch("probe-report", &serde_json::json!({ "results": results }))
+            .await
+    }
+
+    /// POST /api/v1/agents/egress-report — batch of egress rounds (#718).
+    /// Same outcome semantics as the probe report.
+    pub async fn post_egress_rounds(
+        &self,
+        rounds: &[crate::wire::EgressRoundReport],
+    ) -> Result<PostOutcome, TransportError> {
+        self.post_agent_batch("egress-report", &serde_json::json!({ "rounds": rounds }))
+            .await
+    }
+
+    /// POST /api/v1/agents/path-report — batch of path samples (#719).
+    pub async fn post_path_reports(
+        &self,
+        paths: &[crate::wire::PathSampleReport],
+    ) -> Result<PostOutcome, TransportError> {
+        self.post_agent_batch("path-report", &serde_json::json!({ "paths": paths }))
+            .await
+    }
+
+    /// Shared agent-batch POST: 2xx = accepted, 400/401/403/409 = terminal
+    /// (the batch is gone, treated as delivered), anything else = transport
+    /// (caller retries then parks).
+    async fn post_agent_batch(
+        &self,
+        endpoint: &str,
+        body: &serde_json::Value,
+    ) -> Result<PostOutcome, TransportError> {
         let resp = self
             .http
-            .post(format!("{}/api/v1/agents/probe-report", self.base))
+            .post(format!("{}/api/v1/agents/{endpoint}", self.base))
             .header(reqwest::header::AUTHORIZATION, self.bearer())
-            .json(&serde_json::json!({ "results": results }))
+            .json(body)
             .send()
             .await
             .map_err(|e| TransportError(e.to_string()))?;
@@ -167,7 +198,7 @@ impl CenterClient {
                 }))
             }
             400 | 401 | 403 | 409 => Ok(PostOutcome::Rejected(status)),
-            s => Err(TransportError(format!("probe-report status {s}"))),
+            s => Err(TransportError(format!("{endpoint} POST status {s}"))),
         }
     }
 

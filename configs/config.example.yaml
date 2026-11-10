@@ -234,6 +234,13 @@ probe:
     http_degraded_ms: 800   # p50 threshold marking a vantage degraded.
     dns_degraded_ms: 300
     ok_rate_threshold: 0.9  # min success rate within the window (0..1].
+    episodes:               # degradation-episode detector (#720): impact-only alerting.
+      # enabled: true       # absent = follow quality.enabled; false = off.
+      latency_ratio: 2.0        # window p50 degraded at >= max(base*ratio, base+min_delta).
+      latency_min_delta_ms: 50
+      ok_rate_drop: 0.3         # window ok-rate degraded at <= base - drop.
+      min_windows: 2            # consecutive degraded 15m windows (~30 sustained minutes).
+      alert_requires_attribution: true  # unattributed episodes stay recorded, never notify (#716).
     groups:
       domestic:
         - {name: quality-dns-ali,    module: dns,  target: www.baidu.com, options: {record: A, resolver: 223.5.5.5}}

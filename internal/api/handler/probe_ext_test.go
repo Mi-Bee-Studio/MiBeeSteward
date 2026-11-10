@@ -25,6 +25,7 @@ import (
 
 	"mibee-steward/internal/config"
 	sqldb "mibee-steward/internal/db"
+	"mibee-steward/internal/service/probe"
 	"mibee-steward/internal/service/probeext"
 	"mibee-steward/internal/testutil"
 )
@@ -32,7 +33,7 @@ import (
 // setupProbeExt wires the egress/path endpoints over a real probeext service
 // (side store in a temp dir, main DB from the full schema) so the handlers
 // exercise their true serialization paths.
-func setupProbeExt(t *testing.T) (*httptest.Server, *sql.DB) {
+func setupProbeExt(t *testing.T) (*httptest.Server, *sql.DB, *probeext.Store) {
 	t.Helper()
 	conn, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
@@ -48,23 +49,26 @@ func setupProbeExt(t *testing.T) (*httptest.Server, *sql.DB) {
 		Trace:  config.ProbeTraceConfig{Categories: []string{"external"}, IntervalMinutes: 30, MaxTTL: 8, PerHopMs: 200, Concurrency: 1},
 	}
 	svc := probeext.NewService(cfg, store, queries, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	h := NewProbeExtHandler(svc)
+	episodes := probeext.NewEpisodeService(store, queries, conn, config.QualityEpisodeConfig{}, nil, nil)
+	h := NewProbeExtHandler(svc, episodes)
 
 	r := chi.NewMux()
 	r.Get("/api/v1/probe-egress", h.Egress)
 	r.Get("/api/v1/probe-paths", h.Paths)
 	r.Get("/api/v1/probe-targets/{id}/paths", h.TargetPaths)
+	r.Get("/api/v1/probe-targets/{id}/phases", h.TargetPhases)
 	r.Post("/api/v1/probe-targets/{id}/trace", h.TraceNow)
+	r.Get("/api/v1/probe-quality/episodes", h.Episodes)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
-	return srv, conn
+	return srv, conn, store
 }
 
 // TestProbeExtEndpoints pins the four endpoints' envelopes: empty shapes,
 // the manual trace against a loopback target, per-target history, and the
 // invalid-id rejection.
 func TestProbeExtEndpoints(t *testing.T) {
-	srv, conn := setupProbeExt(t)
+	srv, conn, _ := setupProbeExt(t)
 
 	getJSON := func(path string) (int, map[string]any) {
 		t.Helper()
@@ -131,4 +135,56 @@ func TestProbeExtEndpoints(t *testing.T) {
 	resp2.Body.Close()
 	code, _ = getJSON("/api/v1/probe-targets/-3/paths")
 	require.Equal(t, 400, code)
+}
+
+// TestProbeExtEpisodesEndpoint pins the episodes API: empty state returns an
+// empty array (not null).
+func TestProbeExtEpisodesEndpoint(t *testing.T) {
+	srv, _, _ := setupProbeExt(t)
+	resp, err := http.Get(srv.URL + "/api/v1/probe-quality/episodes")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Contains(t, string(body), "\"episodes\":[]")
+}
+
+// TestProbeExtPhasesEndpoint pins the #717 phases API: empty state is an
+// empty array, stored rows serialize with their stage fields (omitempty on
+// absent stages), and invalid ids are rejected without touching the store.
+func TestProbeExtPhasesEndpoint(t *testing.T) {
+	srv, _, store := setupProbeExt(t)
+
+	get := func(path string) (*http.Response, string) {
+		t.Helper()
+		resp, err := http.Get(srv.URL + path)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return resp, string(body)
+	}
+
+	resp, body := get("/api/v1/probe-targets/1/phases")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Contains(t, body, "\"phases\":[]")
+
+	require.NoError(t, store.StorePhase(context.Background(), 1, "http", "center",
+		"2026-11-09T01:00:00Z", 75.5, &probe.Phases{ResolvedIP: "203.0.113.9", DNSMs: 8, ConnectMs: 20, TLSMs: 31, TTFBMs: 12}))
+	require.NoError(t, store.StorePhase(context.Background(), 1, "icmp", "center",
+		"2026-11-09T01:00:30Z", 9.5, &probe.Phases{ResolvedIP: "198.51.100.4", ReplyTTL: 54}))
+
+	resp, body = get("/api/v1/probe-targets/1/phases?limit=1")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Contains(t, body, "\"module\":\"icmp\"")
+	require.Contains(t, body, "\"reply_ttl\":54")
+	require.NotContains(t, body, "\"dns_ms\"", "icmp row must omit absent stages")
+
+	_, body = get("/api/v1/probe-targets/1/phases")
+	require.Contains(t, body, "\"module\":\"http\"")
+	require.Contains(t, body, "\"resolved_ip\":\"203.0.113.9\"")
+	require.Contains(t, body, "\"ttfb_ms\":12")
+	require.Contains(t, body, "\"latency_ms\":75.5")
+
+	resp, _ = get("/api/v1/probe-targets/-1/phases")
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }

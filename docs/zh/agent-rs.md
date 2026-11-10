@@ -90,6 +90,9 @@ Rust agent 的内存不光更低，而且**平**：没有 GC 锯齿——这正�
 | hostapd/iw WiFi 站点遥测 | ✔ | ✔ | 等待带 AP 的实测环境做活体验证 |
 | 上报携带心跳探针规格 | ✔ | ✔ | |
 | vantage 拨测计划（probe 命令，#344） | ✔ icmp/http/tls | ✔ 全五模块（0.2.0，#604/#605） | Go/早期 Rust agent 跑 tcp 计划只会「unknown module」——真实 bug；中心现以能力协商保护旧 agent，0.2.0 补齐 tcp + dns 执行、选项语义（http 关键字/期望状态码、tcp 载荷/banner、dns 记录/解析器/期望 IP）与 `supported_modules` 能力声明 |
+| 出口回显轮次（`egress` 命令，#718） | ✗ | ✔（0.2.2） | 中心把回显源集合与周期下发给声明 `egress` 能力的 agent；每个视角把原始轮次结果回报 `POST /agents/egress-report`（ASN 富化留在中心） |
+| 零权限路径追踪（probe 计划内 `trace` 块，#719） | ✗ | ✔（0.2.2，仅 Linux） | 中心追踪器的语义等价移植（逐 TTL TCP 连接 + 哈希固定源端口 + IP_RECVERR 错队；ICMP ping socket 以 seq 承载 TTL、IP_RECVTTL 取回程 TTL）；追踪计划随拨测计划下发，拨测失败额外触发限频快照（`trigger=failure`），结果回报 `POST /agents/path-report`；新增依赖仅 `libc`（仅 Linux 生效） |
+| 拨测上报分阶段计时（#717） | ✗ | ✔（0.2.3，DNS 段） | http 行携带 `phases.dns_ms` + `phases.resolved_ip`（在 reqwest 之外的弹性解析循环外计时），作为既有上报行的可选块；center 侧照单入库。reqwest 不暴露建连/TLS/TTFB，agent 的 http 行设计上只带 DNS 段 |
 | 保留清扫 + VACUUM | ✔ | ✔ | |
 | conntrack 新主机上报 | ✔ | ✔ | ESTABLISHED/[ASSURED] 流的 LAN 端点（src 或 dst 侧，含 [UNASSURED] 拒收的解析对等）首次目击上报一次（#504） |
 | mDNS 单播查询（`scanner.mdns.unicast_queries`） | ✔ | ✔ | 每个查询同时直发目标 5353，覆盖只应答单播的设备（#20/#504） |

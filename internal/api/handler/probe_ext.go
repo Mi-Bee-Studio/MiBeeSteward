@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"mibee-steward/internal/service/probeext"
 )
@@ -23,12 +24,13 @@ import (
 // manual trace trigger. Reads are read-only passthrough on the probeext
 // service; the trigger mutates (one trace) so it lives behind probe:manage.
 type ProbeExtHandler struct {
-	svc *probeext.Service
+	svc      *probeext.Service
+	episodes *probeext.EpisodeService
 }
 
 // NewProbeExtHandler builds the handler.
-func NewProbeExtHandler(svc *probeext.Service) *ProbeExtHandler {
-	return &ProbeExtHandler{svc: svc}
+func NewProbeExtHandler(svc *probeext.Service, episodes *probeext.EpisodeService) *ProbeExtHandler {
+	return &ProbeExtHandler{svc: svc, episodes: episodes}
 }
 
 // Egress godoc
@@ -104,6 +106,40 @@ func (h *ProbeExtHandler) TargetPaths(w http.ResponseWriter, r *http.Request) {
 	Success(w, map[string]any{"paths": paths})
 }
 
+// TargetPhases godoc
+// @Summary      Per-stage timing history of one target
+// @Description  One row per run that produced a stage breakdown (#717):
+// @Description  DNS/connect/TLS/TTFB milliseconds for http, connect for tcp,
+// @Description  reply TTL for icmp, across all vantages. Runs without a
+// @Description  breakdown (dns/tls modules, failures) are simply absent.
+// @Tags         probes
+// @Security     cookieAuth
+// @Produce      json
+// @Param        id path int true "Target ID"
+// @Param        limit query int false "Max rows (default 200)"
+// @Success      200 {object} probeext.PhasesResponse
+// @Failure      400 {object} ErrorResponse
+// @Failure      500 {object} ErrorResponse
+// @Router       /probe-targets/{id}/phases [get]
+func (h *ProbeExtHandler) TargetPhases(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		Error(w, http.StatusBadRequest, "invalid target id")
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	phases, err := h.svc.ListTargetPhases(r.Context(), id, limit)
+	if err != nil {
+		slog.Error("probe-target phases: list failed", "error", err)
+		Error(w, http.StatusInternalServerError, "failed to load phase history")
+		return
+	}
+	if phases == nil {
+		phases = []probeext.PhaseRow{}
+	}
+	Success(w, probeext.PhasesResponse{Phases: phases})
+}
+
 // TraceNow godoc
 // @Summary      Trace one target's path now (center vantage)
 // @Description  Runs one synchronous zero-privilege TCP/ICMP TTL walk and
@@ -128,4 +164,43 @@ func (h *ProbeExtHandler) TraceNow(w http.ResponseWriter, r *http.Request) {
 	}
 	b, _ := json.Marshal(sample)
 	Success(w, json.RawMessage(b))
+}
+
+// Episodes godoc
+// @Summary      Quality degradation episodes
+// @Description  Relative-baseline degradation episodes (#720): cross-
+// @Description  confirmed impact with attribution. active=1 returns only
+// @Description  unresolved episodes; days bounds the history window.
+// @Tags         probes
+// @Security     cookieAuth
+// @Param        days query int false "History window in days (default 1)"
+// @Param        active query int false "1 = only unresolved episodes"
+// @Success      200 {object} probeext.EpisodesResponse
+// @Failure      500 {object} ErrorResponse
+// @Router       /probe-quality/episodes [get]
+func (h *ProbeExtHandler) Episodes(w http.ResponseWriter, r *http.Request) {
+	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+	if days <= 0 || days > 30 {
+		days = 1
+	}
+	since := time.Now().UTC().AddDate(0, 0, -days).Format(time.RFC3339)
+	episodes, err := h.episodes.ListEpisodesSince(r.Context(), since)
+	if err != nil {
+		slog.Error("probe episodes: list failed", "error", err)
+		Error(w, http.StatusInternalServerError, "failed to list episodes")
+		return
+	}
+	if r.URL.Query().Get("active") == "1" {
+		var active []probeext.QualityEpisode
+		for _, e := range episodes {
+			if e.ResolvedAt == "" {
+				active = append(active, e)
+			}
+		}
+		episodes = active
+	}
+	if episodes == nil {
+		episodes = []probeext.QualityEpisode{}
+	}
+	Success(w, probeext.EpisodesResponse{Episodes: episodes})
 }

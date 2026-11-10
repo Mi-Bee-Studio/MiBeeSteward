@@ -160,7 +160,9 @@
 			case 'device_changed': return m['changes.Event Changed']();
 			case 'device_lost': return m['changes.Event Lost']();
 			case 'device_recovered': return m['changes.Event Recovered']();
-		case 'device_config_changed': return m['changes.Event Config Changed']();
+			case 'device_config_changed': return m['changes.Event Config Changed']();
+			case 'quality_degraded': return m['changes.Event Quality Degraded']();
+			case 'quality_recovered': return m['changes.Event Quality Recovered']();
 			default: return t;
 		}
 	}
@@ -175,6 +177,8 @@
 			case 'device_lost': return 'bg-error/10 text-error';
 			case 'device_recovered': return 'bg-success/10 text-success';
 			case 'device_config_changed': return 'bg-warning/10 text-warning';
+		case 'quality_degraded': return 'bg-error/10 text-error';
+		case 'quality_recovered': return 'bg-success/10 text-success';
 			default: return 'bg-surface border border-border text-text-muted';
 		}
 	}

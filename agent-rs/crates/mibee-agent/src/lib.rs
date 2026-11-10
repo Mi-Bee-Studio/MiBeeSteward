@@ -3,6 +3,7 @@ pub mod config;
 pub mod cron;
 pub mod db;
 pub mod discovery;
+pub mod egress;
 
 // The eBPF passive source exists only where its dependency does (Linux +
 // the ebpf feature); the config section parses everywhere (schema stable).
@@ -13,6 +14,7 @@ pub mod fpsync;
 pub mod prober;
 pub mod selfnet;
 pub mod tls_provider;
+pub mod tracer;
 pub mod vault;
 pub mod wire;
 

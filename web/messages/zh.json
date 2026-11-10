@@ -420,7 +420,8 @@
 		"Help P1": "仪表盘是家庭网络的总览：设备在线情况、最近发生的变化、扫描任务的运行状态都在这里。",
 		"Help P2": "推荐的入门路径：先在「设备 → 扫描任务」创建一个定时扫描，让系统持续发现网络里的设备；再到「设备」页查看和管理清单；最后在「设置」里配置变更通知。",
 		"Help P3": "「添加组件」里的推荐组件开箱即用，可直接加到仪表盘；高级组件需要自建 Prometheus，普通用户无需关心。",
-		"Custom Widgets": "自定义组件"
+		"Custom Widgets": "自定义组件",
+		"Probe Episode Mark": "劣化中"
 	},
 	"common": {
 		"Save": "保存",
@@ -955,7 +956,9 @@
 		"Bot Token Required": "Telegram Bot Token 为必填项",
 		"Chat ID Required": "Telegram Chat ID 为必填项",
 		"Event Speaks With New": "新设备会话",
-		"Event Listen Port Added": "新监听端口"
+		"Event Listen Port Added": "新监听端口",
+		"Event Quality Degraded": "质量劣化",
+		"Event Quality Recovered": "质量恢复"
 	},
 	"snmpCredentials": {
 		"Title": "SNMP 凭据",
@@ -1038,7 +1041,9 @@
 		"Diff No Field Changes": "未记录字段级差异。",
 		"Diff No Snapshot": "无快照数据。",
 		"Diff No Data": "无可用数据。",
-		"Data Unavailable": "数据不可用。"
+		"Data Unavailable": "数据不可用。",
+		"Event Quality Degraded": "质量劣化",
+		"Event Quality Recovered": "质量恢复"
 	},
 	"changefields": {
 		"name": "名称",
@@ -1485,6 +1490,7 @@
 		"Trigger Agent Only": "该目标由 agent 视角执行——无法在中心手动触发",
 		"Vantage": "探测视角",
 		"Vantage Center": "中心（本机）",
+		"Vantage Center Short": "中心",
 		"Vantage All": "中心 + 所有 agent",
 		"Vantage Agent": "Agent {id}",
 		"Vantage Agent Missing": "Agent {id}（未注册）",
@@ -1498,6 +1504,15 @@
 		"Tab Chart": "图表",
 		"Tab Detail": "明细",
 		"Latency Chart": "延迟趋势（按探测点）",
+		"Chart Total": "总延迟",
+		"Chart Stages": "分阶段",
+		"Phases Chart": "延迟分解（按阶段）",
+		"Phases Note": "每次探测的 DNS / 建连 / TLS / 等待响应 耗时堆叠；虚线为 ICMP 回复 TTL（右轴）。失败的探测保留已完成阶段。仅 http / tcp / icmp 模块测量阶段。",
+		"Stage Dns": "DNS",
+		"Stage Connect": "建连",
+		"Stage Tls": "TLS",
+		"Stage Ttfb": "响应",
+		"Total": "总计",
 		"Status Timeline": "状态时间线",
 		"Success Rate": "成功",
 		"View Results": "历史",
@@ -1596,6 +1611,7 @@
 		"Paths Hop Ip": "跳点",
 		"Paths Hop Rtt": "延迟",
 		"Paths Silent Note": "静默跳（—）不回应 TTL 探测——运营商出口常见，只有网关和终点应答；此时路径信号由到达跳数与回程 TTL 承载。",
+		"Paths Matrix Hint": "每目标一行：色块 = 各视角路径状态（到达跳→回程 TTL），点击看逐跳明细",
 		"Column Target": "目标",
 		"Column Vantage": "视角",
 		"Verdict Ok": "正常",
@@ -1648,6 +1664,11 @@
 		"Overview Certs Aria": "展开或收起证书到期时间线",
 		"Filter Problems": "只看异常",
 		"Filter Certs": "证书临期",
+		"Filter Disabled": "已停用",
+		"Health Ok": "正常 {count}",
+		"Health Fail": "失败 {count}",
+		"Health Timeout": "超时 {count}",
+		"Health Nodata": "无数据 {count}",
 		"Filter No Problems": "当前没有异常目标",
 		"Inspect Row": "查看 {name} 详情",
 		"Expanded Latest": "各视角最新结果",
@@ -1657,7 +1678,26 @@
 		"Quality Trend Desc": "各视角成功率随时间变化——每个 {bucket} 桶一个点",
 		"Quality Trend Empty": "区间内无历史数据——拨测结果保留 30 天",
 		"Trend Days 7": "7 天",
-		"Trend Days 30": "30 天"
+		"Trend Days 30": "30 天",
+		"Episode Banner Active": "质量明显下降——{count} 个活跃劣化段",
+		"Episode Banner Recent": "近 24 小时劣化段：{count} 个",
+		"Episode Banner Hint": "影响已互证、附归因",
+		"Episode Banner View": "查看 24 小时",
+		"Episode Strip Aria": "近 24 小时 {count} 个劣化段的时间分布",
+		"Episode State Active": "进行中",
+		"Episodes Modal Title": "质量劣化段（24 小时）",
+		"Episode Empty": "近 24 小时无劣化段",
+		"Episode Kind Network": "出口（网络级）劣化",
+		"Episode Kind Path": "目的地路径劣化",
+		"Episode Notified": "已告警",
+		"Episode Recorded": "仅记录",
+		"Episode Resolved": "已恢复",
+		"Episode Ok Rate": "成功率",
+		"Episode Attribution": "归因",
+		"Episode No Attribution": "同窗口无出口/路径变更可归因——仅记录不告警",
+		"Episode Attr Egress": "同窗口公网出口身份变化",
+		"Episode Attr Path": "同窗口可见路径变化",
+		"Episode Attr Peer": "其他出口组同窗口也劣化——对端原因可能性大"
 	},
 	"fingerprints": {
 		"Title": "指纹覆盖率",
