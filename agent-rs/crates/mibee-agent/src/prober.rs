@@ -8,7 +8,17 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::center::CenterClient;
-use crate::wire::{ProbeResultReport, ProbeTargetOptions, ProbeTargetSpec};
+use crate::wire::{
+    PathSampleReport, ProbeResultReport, ProbeTargetOptions, ProbeTargetSpec, TracePlan,
+};
+
+/// Product probe UA (Go probe.UserAgent() parity, #713): several echo and
+/// business endpoints answer 403/501 to unknown clients.
+pub(crate) const PROBE_USER_AGENT: &str = concat!(
+    "MiBeeSteward-probe/",
+    env!("CARGO_PKG_VERSION"),
+    " (+https://github.com/Mi-Bee-Studio/MiBeeSteward)"
+);
 
 const TICK: Duration = Duration::from_secs(10); // schedule + flush cadence
 const BATCH_MAX: usize = 32;
@@ -19,17 +29,23 @@ const PENDING_MAX: usize = 100;
 const RETRY_BACKOFF: Duration = Duration::from_secs(1);
 /// HTTP keyword inspection bound (matches the center's 1 MiB body limit).
 const BODY_LIMIT: usize = 1 << 20;
-/// User-Agent for http probes, the same product token the center sends
-/// (#713: some public sites reject common tool UAs with 501).
-const PROBE_USER_AGENT: &str =
-    concat!("MiBeeSteward-probe/", env!("CARGO_PKG_VERSION"), " (+https://github.com/Mi-Bee-Studio/MiBeeSteward)");
-
+/// Path traces bound: #719's failure snapshots are rate-limited to one per
+/// target per 10 minutes so a hard-down site cannot tracebroom the box.
+const FAIL_TRACE_COOLDOWN_MS: i64 = 10 * 60 * 1000;
+/// Concurrent traces (center default parity).
+const TRACE_CONCURRENCY: usize = 2;
 pub struct Prober {
     plan_fingerprint: String,
     targets: Vec<ProbeTargetSpec>,
     /// target id -> next-due unix ms (absent + fresh = run immediately).
     due: std::collections::HashMap<i64, i64>,
     vantage: String,
+    /// Trace lane (#719): the pushed schedule, per-target next-due, and the
+    /// failure-snapshot cooldown bookkeeping.
+    trace: Option<TracePlan>,
+    trace_due: std::collections::HashMap<i64, i64>,
+    fail_flagged: std::collections::HashSet<i64>,
+    last_fail_trace: std::collections::HashMap<i64, i64>,
 }
 
 impl Prober {
@@ -39,6 +55,10 @@ impl Prober {
             targets: Vec::new(),
             due: std::collections::HashMap::new(),
             vantage,
+            trace: None,
+            trace_due: std::collections::HashMap::new(),
+            fail_flagged: std::collections::HashSet::new(),
+            last_fail_trace: std::collections::HashMap::new(),
         }
     }
 
@@ -49,8 +69,14 @@ impl Prober {
     /// Apply a plan (fingerprint-guarded; an empty list clears the plan).
     /// Every target's first run is staggered deterministically over the
     /// first minute so a fresh plan (or a plan re-push after a fingerprint
-    /// change) does not march in lockstep (#604 jitter).
-    pub fn apply_plan(&mut self, fingerprint: &str, targets: Vec<ProbeTargetSpec>) {
+    /// change) does not march in lockstep (#604 jitter). The trace block
+    /// rides the same fingerprint: a new plan resets the trace schedule too.
+    pub fn apply_plan(
+        &mut self,
+        fingerprint: &str,
+        targets: Vec<ProbeTargetSpec>,
+        trace: Option<TracePlan>,
+    ) {
         if fingerprint == self.plan_fingerprint {
             return;
         }
@@ -59,9 +85,16 @@ impl Prober {
         self.due.clear();
         let now = now_ms();
         for t in &self.targets {
-            let interval = if t.interval_seconds > 0 { t.interval_seconds } else { 300 };
+            let interval = if t.interval_seconds > 0 {
+                t.interval_seconds
+            } else {
+                300
+            };
             self.due.insert(t.id, now + stagger_ms(t.id, interval));
         }
+        self.trace = trace.filter(|t| !t.categories.is_empty());
+        self.trace_due.clear();
+        self.fail_flagged.clear();
     }
 
     /// One tick: run due targets.
@@ -75,11 +108,94 @@ impl Prober {
             .collect();
         let mut out = Vec::with_capacity(due_specs.len());
         for spec in due_specs {
-            let interval = if spec.interval_seconds > 0 { spec.interval_seconds } else { 300 };
+            let interval = if spec.interval_seconds > 0 {
+                spec.interval_seconds
+            } else {
+                300
+            };
             self.due.insert(spec.id, now + interval * 1000);
             out.push(run_probe(&spec, &self.vantage).await);
         }
         out
+    }
+
+    /// Trace-lane cfg (max_ttl, per_hop_ms) when tracing is enabled.
+    pub fn trace_tuning(&self) -> Option<(i64, i64)> {
+        self.trace.as_ref().map(|t| (t.max_ttl, t.per_hop_ms))
+    }
+
+    /// Take the trace-due specs (#719, called by the tracer loop): category
+    /// filter + first-sight stagger + interval. Failure-flagged targets ride
+    /// along with trigger="failure". Mirrors the center's traceDueTargets.
+    pub fn trace_due_specs(&mut self, now: i64) -> Vec<(ProbeTargetSpec, &'static str)> {
+        let Some(plan) = self.trace.clone() else {
+            self.trace_due.clear();
+            return Vec::new();
+        };
+        if plan.categories.is_empty() {
+            self.trace_due.clear();
+            return Vec::new();
+        }
+        let interval = if plan.interval_minutes > 0 {
+            plan.interval_minutes
+        } else {
+            30
+        } * 60_000;
+        let mut jobs: Vec<(ProbeTargetSpec, &'static str)> = Vec::new();
+        // Failure snapshots first: due now (cooldown was applied at flag
+        // time); they ride the same due-map walk tagged trigger="failure".
+        let flagged: std::collections::HashSet<i64> = self.fail_flagged.drain().collect();
+        for id in &flagged {
+            self.trace_due.insert(*id, now);
+        }
+        for t in self.targets.clone() {
+            if !plan.categories.iter().any(|c| c == &t.category) {
+                continue;
+            }
+            match self.trace_due.get(&t.id) {
+                None => {
+                    // First sight: stagger within the interval (restarts do
+                    // not fire every trace at once) — Go parity.
+                    let n = jobs.len() as i64 + 1;
+                    self.trace_due
+                        .insert(t.id, now + t.id.rem_euclid(n) * interval / 16);
+                }
+                Some(d) if now < *d => continue,
+                Some(_) => {
+                    self.trace_due.insert(t.id, now + interval);
+                    let trigger = if flagged.contains(&t.id) {
+                        "failure"
+                    } else {
+                        "baseline"
+                    };
+                    jobs.push((t, trigger));
+                }
+            }
+        }
+        jobs
+    }
+
+    /// Failure-trigger hook (#719): a just-failed probe schedules an
+    /// immediate trace snapshot, one per cooldown window per target, only
+    /// for targets the trace plan actually covers.
+    pub fn note_probe_failure(&mut self, target_id: i64, now: i64) {
+        let Some(plan) = &self.trace else { return };
+        if plan.categories.is_empty() {
+            return;
+        }
+        let Some(spec) = self.targets.iter().find(|t| t.id == target_id) else {
+            return;
+        };
+        if !plan.categories.iter().any(|c| c == &spec.category) {
+            return;
+        }
+        if let Some(last) = self.last_fail_trace.get(&target_id) {
+            if now - *last < FAIL_TRACE_COOLDOWN_MS {
+                return;
+            }
+        }
+        self.last_fail_trace.insert(target_id, now);
+        self.fail_flagged.insert(target_id);
     }
 }
 
@@ -107,16 +223,25 @@ struct ProbeFailure {
 
 impl ProbeFailure {
     fn other(message: impl Into<String>) -> Self {
-        ProbeFailure { timeout: false, message: message.into() }
+        ProbeFailure {
+            timeout: false,
+            message: message.into(),
+        }
     }
     fn timeout(message: impl Into<String>) -> Self {
-        ProbeFailure { timeout: true, message: message.into() }
+        ProbeFailure {
+            timeout: true,
+            message: message.into(),
+        }
     }
 }
 
 impl From<String> for ProbeFailure {
     fn from(message: String) -> Self {
-        ProbeFailure { timeout: message.contains("timeout"), message }
+        ProbeFailure {
+            timeout: message.contains("timeout"),
+            message,
+        }
     }
 }
 
@@ -143,40 +268,53 @@ pub async fn run_probe(spec: &ProbeTargetSpec, vantage: &str) -> ProbeResultRepo
                 report.error_message = "no echo reply".into();
             }
         },
-        "http" => match http_probe(&spec.target, opts, timeout).await {
-            Ok((code, body)) => {
-                report.status_code = code as i64;
-                let expected = opts.and_then(|o| {
-                    if o.expected_status.is_empty() { None } else { Some(&o.expected_status) }
-                });
-                let status_ok = match expected {
-                    Some(list) => list.contains(&(code as i64)),
-                    None => (200..400).contains(&code),
-                };
-                if !status_ok {
-                    report.status = "fail".into();
-                    report.error_message = format!("http status {code} not in expected set");
-                } else if let (Some(o), Some(body)) = (opts, body) {
-                    match match_payload(&o.keyword_mode, &o.keyword, &body) {
-                        Ok(true) => report.status = "success".into(),
-                        Ok(false) => {
-                            report.status = "fail".into();
-                            report.error_message = keyword_fail_reason(&o.keyword_mode);
+        "http" => {
+            let mut stages = crate::wire::ProbePhases::default();
+            let outcome = http_probe(&spec.target, opts, timeout, &mut stages).await;
+            // Stages survive both arms: a request that died AFTER resolution
+            // still tells the center what DNS cost (#717).
+            if !stages.resolved_ip.is_empty() || stages.dns_ms > 0.0 {
+                report.phases = Some(stages);
+            }
+            match outcome {
+                Ok((code, body)) => {
+                    report.status_code = code as i64;
+                    let expected = opts.and_then(|o| {
+                        if o.expected_status.is_empty() {
+                            None
+                        } else {
+                            Some(&o.expected_status)
                         }
-                        Err(e) => {
-                            report.status = "fail".into();
-                            report.error_message = e;
+                    });
+                    let status_ok = match expected {
+                        Some(list) => list.contains(&(code as i64)),
+                        None => (200..400).contains(&code),
+                    };
+                    if !status_ok {
+                        report.status = "fail".into();
+                        report.error_message = format!("http status {code} not in expected set");
+                    } else if let (Some(o), Some(body)) = (opts, body) {
+                        match match_payload(&o.keyword_mode, &o.keyword, &body) {
+                            Ok(true) => report.status = "success".into(),
+                            Ok(false) => {
+                                report.status = "fail".into();
+                                report.error_message = keyword_fail_reason(&o.keyword_mode);
+                            }
+                            Err(e) => {
+                                report.status = "fail".into();
+                                report.error_message = e;
+                            }
                         }
+                    } else {
+                        report.status = "success".into();
                     }
-                } else {
-                    report.status = "success".into();
+                }
+                Err(f) => {
+                    report.status = if f.timeout { "timeout" } else { "fail" }.into();
+                    report.error_message = f.message;
                 }
             }
-            Err(f) => {
-                report.status = if f.timeout { "timeout" } else { "fail" }.into();
-                report.error_message = f.message;
-            }
-        },
+        }
         "tls" => match tls_probe(&spec.target, timeout).await {
             Ok((version, not_after, trusted)) if !version.is_empty() => {
                 report.status = "success".into();
@@ -189,7 +327,12 @@ pub async fn run_probe(spec: &ProbeTargetSpec, vantage: &str) -> ProbeResultRepo
                 report.error_message = "no tls session".into();
             }
             Err(e) => {
-                report.status = if e.contains("timeout") { "timeout" } else { "fail" }.into();
+                report.status = if e.contains("timeout") {
+                    "timeout"
+                } else {
+                    "fail"
+                }
+                .into();
                 report.error_message = e;
             }
         },
@@ -203,7 +346,12 @@ pub async fn run_probe(spec: &ProbeTargetSpec, vantage: &str) -> ProbeResultRepo
         "dns" => match dns_probe(&spec.target, opts, timeout).await {
             Ok(()) => report.status = "success".into(),
             Err(e) => {
-                report.status = if e.contains("timeout") { "timeout" } else { "fail" }.into();
+                report.status = if e.contains("timeout") {
+                    "timeout"
+                } else {
+                    "fail"
+                }
+                .into();
                 report.error_message = e;
             }
         },
@@ -293,14 +441,23 @@ async fn http_probe(
     target: &str,
     opts: Option<&ProbeTargetOptions>,
     timeout: Duration,
+    stages: &mut crate::wire::ProbePhases,
 ) -> Result<(u16, Option<Vec<u8>>), ProbeFailure> {
-    let url = if target.starts_with("http") { target.to_string() } else { format!("http://{target}") };
+    let url = if target.starts_with("http") {
+        target.to_string()
+    } else {
+        format!("http://{target}")
+    };
     crate::tls_provider::ensure_tls_provider();
     // TLS posture (#604): verify by default, center parity; the explicit
     // per-target opt-out is the only way to accept a broken cert.
     let ignore_tls = opts.map(|o| o.ignore_tls_errors).unwrap_or(false);
     let is_head = opts.map(|o| o.method.as_str()).unwrap_or("") == "HEAD";
-    let method = if is_head { reqwest::Method::HEAD } else { reqwest::Method::GET };
+    let method = if is_head {
+        reqwest::Method::HEAD
+    } else {
+        reqwest::Method::GET
+    };
 
     // Resolve OUTSIDE reqwest (retry loop above) and pin the answer with
     // resolve_to_addrs: reqwest's own single-shot resolution inherits the
@@ -311,9 +468,18 @@ async fn http_probe(
         .map_err(|e| ProbeFailure::other(format!("bad url {url:?}: {e}")))?;
     let host = parsed.host_str().unwrap_or_default().to_string();
     let port = parsed.port_or_known_default().unwrap_or(80);
+    // #717: the resolve is agent-measurable (reqwest hides the rest), so the
+    // DNS stage + the pinned address land here — on failure too, the stages
+    // that did complete are the diagnostic payload.
+    let resolve_started = Instant::now();
     let addrs = resolve_host_resilient(&host, port, 3, Duration::from_millis(300))
         .await
         .map_err(ProbeFailure::other)?;
+    stages.dns_ms = (resolve_started.elapsed().as_secs_f64() * 1000.0 * 10.0).round() / 10.0;
+    stages.resolved_ip = addrs
+        .first()
+        .map(|a| a.ip().to_string())
+        .unwrap_or_default();
 
     let client = reqwest::Client::builder()
         .timeout(timeout)
@@ -334,7 +500,11 @@ async fn http_probe(
     let body = if needs_body {
         let mut buf: Vec<u8> = Vec::new();
         let mut resp = resp;
-        while let Some(chunk) = resp.chunk().await.map_err(|e| ProbeFailure::other(e.to_string()))? {
+        while let Some(chunk) = resp
+            .chunk()
+            .await
+            .map_err(|e| ProbeFailure::other(e.to_string()))?
+        {
             if buf.len() + chunk.len() > BODY_LIMIT {
                 buf.extend_from_slice(&chunk[..BODY_LIMIT.saturating_sub(buf.len())]);
                 break;
@@ -420,7 +590,11 @@ async fn dns_probe(
     use crate::engine::dns::{udp_query, RData};
     let (record, resolver, expected_ips) = match opts {
         Some(o) => (
-            if o.record.is_empty() { "A".to_string() } else { o.record.clone() },
+            if o.record.is_empty() {
+                "A".to_string()
+            } else {
+                o.record.clone()
+            },
             o.resolver.clone(),
             o.expected_ips.clone(),
         ),
@@ -437,7 +611,9 @@ async fn dns_probe(
     let addr = if resolver.is_empty() {
         let servers = crate::engine::probes::rdns::system_nameservers().await;
         match servers.first() {
-            Some(s) => s.parse().map_err(|e| format!("bad system nameserver: {e}"))?,
+            Some(s) => s
+                .parse()
+                .map_err(|e| format!("bad system nameserver: {e}"))?,
             None => return Err("no system nameserver available".into()),
         }
     } else {
@@ -459,9 +635,13 @@ async fn dns_probe(
                 _ => None,
             })
             .collect();
-        let hit = expected_ips.iter().any(|w| got.iter().any(|g| g.eq_ignore_ascii_case(w)));
+        let hit = expected_ips
+            .iter()
+            .any(|w| got.iter().any(|g| g.eq_ignore_ascii_case(w)));
         if !hit {
-            return Err(format!("resolved {got:?} does not intersect expected_ips {expected_ips:?}"));
+            return Err(format!(
+                "resolved {got:?} does not intersect expected_ips {expected_ips:?}"
+            ));
         }
     }
     Ok(())
@@ -473,10 +653,14 @@ fn parse_resolver(resolver: &str) -> Result<std::net::SocketAddr, String> {
         return Ok(addr);
     }
     if !resolver.contains(':') {
-        return format!("{resolver}:53").parse().map_err(|e| format!("bad resolver: {e}"));
+        return format!("{resolver}:53")
+            .parse()
+            .map_err(|e| format!("bad resolver: {e}"));
     }
     if resolver.starts_with('[') {
-        return format!("{resolver}:53").parse().map_err(|e| format!("bad resolver: {e}"));
+        return format!("{resolver}:53")
+            .parse()
+            .map_err(|e| format!("bad resolver: {e}"));
     }
     Err(format!("bad resolver {resolver:?}"))
 }
@@ -485,10 +669,15 @@ fn parse_resolver(resolver: &str) -> Result<std::net::SocketAddr, String> {
 /// matchPayload parity). Err carries e.g. an invalid regex.
 fn match_payload(mode: &str, pattern: &str, payload: &[u8]) -> Result<bool, String> {
     match mode {
-        "" | "contains" => Ok(payload.windows(pattern.len().max(1)).any(|w| w == pattern.as_bytes())),
-        "not_contains" => Ok(!payload.windows(pattern.len().max(1)).any(|w| w == pattern.as_bytes())),
+        "" | "contains" => Ok(payload
+            .windows(pattern.len().max(1))
+            .any(|w| w == pattern.as_bytes())),
+        "not_contains" => Ok(!payload
+            .windows(pattern.len().max(1))
+            .any(|w| w == pattern.as_bytes())),
         "regex" => {
-            let re = regex::bytes::Regex::new(pattern).map_err(|e| format!("invalid regex: {e}"))?;
+            let re =
+                regex::bytes::Regex::new(pattern).map_err(|e| format!("invalid regex: {e}"))?;
             Ok(re.is_match(payload))
         }
         other => Err(format!("unknown match mode {other:?}")),
@@ -506,7 +695,9 @@ fn keyword_fail_reason(mode: &str) -> String {
 }
 
 fn parse_host_port(target: &str, default_port: u16) -> Result<(String, u16), String> {
-    let t = target.trim_start_matches("https://").trim_start_matches("http://");
+    let t = target
+        .trim_start_matches("https://")
+        .trim_start_matches("http://");
     if let Some((h, p)) = t.rsplit_once(':') {
         if let Ok(port) = p.parse() {
             return Ok((h.to_string(), port));
@@ -541,6 +732,17 @@ pub async fn run_prober_with_tuning(
         tokio::select! {
             _ = tokio::time::sleep(tick) => {
                 let reports = prober.lock().await.tick().await;
+                if !reports.is_empty() {
+                    // Failure-trigger hook (#719): a failed probe flags an
+                    // immediate trace snapshot (the tracer loop picks it up).
+                    let mut p = prober.lock().await;
+                    let now = now_ms();
+                    for r in &reports {
+                        if r.status != "success" {
+                            p.note_probe_failure(r.target_id, now);
+                        }
+                    }
+                }
                 batch.extend(reports);
             }
             _ = stop.changed() => {
@@ -559,25 +761,129 @@ pub async fn run_prober_with_tuning(
         // batch per tick even while fresh results keep flowing.
         if !pending.is_empty() {
             let head = pending.remove(0);
-            if post_with_retry(&client, &head, retry_backoff).await.is_err() {
+            if post_with_retry(&client, &head, retry_backoff)
+                .await
+                .is_err()
+            {
                 pending.insert(0, head);
             }
             continue;
         }
 
         if batch.len() >= BATCH_MAX || (last_flush.elapsed() >= tick && !batch.is_empty()) {
-            if post_with_retry(&client, &batch, retry_backoff).await.is_err() {
+            if post_with_retry(&client, &batch, retry_backoff)
+                .await
+                .is_err()
+            {
                 pending.push(std::mem::take(&mut batch));
                 while pending.len() > PENDING_MAX {
                     pending.remove(0);
                 }
-                eprintln!("prober: batch parked (center unreachable), pending={}", pending.len());
+                eprintln!(
+                    "prober: batch parked (center unreachable), pending={}",
+                    pending.len()
+                );
             } else {
                 batch.clear();
             }
             last_flush = Instant::now();
         }
     }
+}
+
+/// Tracer loop (#719): drains the trace schedule every tick, runs due
+/// traces bounded to TRACE_CONCURRENCY, posts batches with the #554 ladder
+/// and parks failures (bounded, oldest-first). Idles at zero cost when the
+/// plan carries no trace block.
+pub async fn run_tracer(
+    prober: Arc<tokio::sync::Mutex<Prober>>,
+    client: Arc<CenterClient>,
+    stop: tokio::sync::watch::Receiver<bool>,
+) {
+    run_tracer_with_tuning(prober, client, stop, RETRY_BACKOFF, TICK).await
+}
+
+/// Test surface: same loop with shrunken cadences.
+pub async fn run_tracer_with_tuning(
+    prober: Arc<tokio::sync::Mutex<Prober>>,
+    client: Arc<CenterClient>,
+    mut stop: tokio::sync::watch::Receiver<bool>,
+    retry_backoff: Duration,
+    tick: Duration,
+) {
+    let mut pending: Vec<Vec<PathSampleReport>> = Vec::new();
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(tick) => {}
+            _ = stop.changed() => {
+                // Parked batches stay parked across a stop (bounded memory,
+                // retried after restart), same as the prober.
+                return;
+            }
+        }
+        // One parked batch per tick, oldest first.
+        if !pending.is_empty() {
+            let head = pending.remove(0);
+            if post_paths(&client, &head, retry_backoff).await.is_err() {
+                pending.insert(0, head);
+                continue;
+            }
+        }
+        let (specs, tuning) = {
+            let mut p = prober.lock().await;
+            (p.trace_due_specs(now_ms()), p.trace_tuning())
+        };
+        let Some((max_ttl, per_hop_ms)) = tuning else {
+            continue;
+        };
+        if specs.is_empty() {
+            continue;
+        }
+        let tracer = Arc::new(crate::tracer::Tracer::new(max_ttl, per_hop_ms));
+        // Chunked bounded concurrency: TRACE_CONCURRENCY traces in flight,
+        // no per-task semaphore bookkeeping (cadence is minutes, not micro).
+        let mut reports: Vec<PathSampleReport> = Vec::with_capacity(specs.len());
+        for chunk in specs.chunks(TRACE_CONCURRENCY) {
+            let futs = chunk.iter().map(|(spec, trigger)| {
+                let tracer = Arc::clone(&tracer);
+                let spec = spec.clone();
+                let trigger: &str = trigger;
+                async move { crate::tracer::trace_spec(&tracer, &spec, trigger).await }
+            });
+            reports.extend(futures::future::join_all(futs).await);
+        }
+        if post_paths(&client, &reports, retry_backoff).await.is_err() {
+            pending.push(reports);
+            while pending.len() > PENDING_MAX {
+                pending.remove(0);
+            }
+            eprintln!(
+                "tracer: batch parked (center unreachable), pending={}",
+                pending.len()
+            );
+        }
+    }
+}
+
+/// Path-batch posting ladder (mirror of post_with_retry).
+async fn post_paths(
+    client: &CenterClient,
+    batch: &[PathSampleReport],
+    base_backoff: Duration,
+) -> Result<(), String> {
+    let mut backoff = base_backoff;
+    for attempt in 0..4 {
+        match client.post_path_reports(batch).await {
+            Ok(_) => return Ok(()),
+            Err(e) if attempt == 3 => return Err(e.0),
+            Err(e) => {
+                eprintln!("tracer: post attempt {} failed: {}", attempt + 1, e.0);
+                tokio::time::sleep(backoff).await;
+                backoff *= 2;
+            }
+        }
+    }
+    unreachable!("loop returns on the 4th attempt")
 }
 
 /// 4-attempt ladder (backoff, backoff*2, backoff*4, backoff*8). Ok = the
@@ -610,13 +916,23 @@ mod tests {
     #[tokio::test]
     async fn plan_apply_dedups_by_fingerprint() {
         let mut p = Prober::new("agent:x".into());
-        p.apply_plan("f1", vec![ProbeTargetSpec { id: 1, module: "http".into(), target: "127.0.0.1:1".into(), interval_seconds: 3600, ..Default::default() }]);
+        p.apply_plan(
+            "f1",
+            vec![ProbeTargetSpec {
+                id: 1,
+                module: "http".into(),
+                target: "127.0.0.1:1".into(),
+                interval_seconds: 3600,
+                ..Default::default()
+            }],
+            None,
+        );
         assert_eq!(p.targets.len(), 1);
         let before = p.due.clone();
-        p.apply_plan("f1", vec![]); // same fingerprint: no-op
+        p.apply_plan("f1", vec![], None); // same fingerprint: no-op
         assert_eq!(p.targets.len(), 1);
         assert_eq!(p.due, before);
-        p.apply_plan("f2", vec![]); // new fingerprint clears the plan
+        p.apply_plan("f2", vec![], None); // new fingerprint clears the plan
         assert!(p.targets.is_empty());
     }
 
@@ -637,13 +953,17 @@ mod tests {
     #[tokio::test]
     async fn plan_apply_staggers_first_due() {
         let mut p = Prober::new("agent:x".into());
-        p.apply_plan("f1", vec![ProbeTargetSpec {
-            id: 33,
-            module: "http".into(),
-            target: "127.0.0.1:1".into(),
-            interval_seconds: 3600,
-            ..Default::default()
-        }]);
+        p.apply_plan(
+            "f1",
+            vec![ProbeTargetSpec {
+                id: 33,
+                module: "http".into(),
+                target: "127.0.0.1:1".into(),
+                interval_seconds: 3600,
+                ..Default::default()
+            }],
+            None,
+        );
         let due = *p.due.get(&33).expect("seeded on apply");
         let expected = stagger_ms(33, 3600);
         // Seeded at now+stagger; allow scheduling slack, assert NOT immediate.
@@ -662,12 +982,56 @@ mod tests {
             while let Ok((mut s, _)) = l.accept().await {
                 let mut b = [0u8; 256];
                 let _ = s.read(&mut b).await;
-                let _ = s.write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n").await;
+                let _ = s
+                    .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
+                    .await;
             }
         });
-        let (code, body) = http_probe(&format!("127.0.0.1:{port}"), None, Duration::from_secs(2)).await.unwrap();
+        // #717: the resolve stage + pinned address fill the phases out-param
+        // even though an IP literal skips real DNS.
+        let mut stages = crate::wire::ProbePhases::default();
+        let (code, body) = http_probe(
+            &format!("127.0.0.1:{port}"),
+            None,
+            Duration::from_secs(2),
+            &mut stages,
+        )
+        .await
+        .unwrap();
         assert_eq!(code, 204);
         assert!(body.is_none());
+        assert_eq!(stages.resolved_ip, "127.0.0.1");
+        assert!(stages.dns_ms >= 0.0);
+        assert_eq!(stages.connect_ms, 0.0, "agent http v1 measures dns only");
+    }
+
+    /// #717 wire/JSON parity: phases serialize with the same snake_case
+    /// omitempty shape the Go center decodes, and decode back losslessly.
+    #[test]
+    fn probe_phases_wire_shape() {
+        let p = crate::wire::ProbePhases {
+            resolved_ip: "203.0.113.9".into(),
+            dns_ms: 8.4,
+            ..Default::default()
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        assert_eq!(v["resolved_ip"], "203.0.113.9");
+        assert_eq!(v["dns_ms"], 8.4);
+        assert!(v.get("connect_ms").is_none());
+        assert!(v.get("tls_ms").is_none());
+        assert!(v.get("ttfb_ms").is_none());
+        assert!(v.get("reply_ttl").is_none());
+        let back: crate::wire::ProbePhases = serde_json::from_value(v).unwrap();
+        assert_eq!(back, p);
+
+        // reply_ttl rides along for icmp-shaped rows.
+        let icmp = crate::wire::ProbePhases {
+            reply_ttl: 54,
+            ..Default::default()
+        };
+        let v = serde_json::to_value(&icmp).unwrap();
+        assert_eq!(v["reply_ttl"], 54);
+        assert!(v.get("resolved_ip").is_none());
     }
 
     /// #713 parity: http probes carry the center's product User-Agent. The
@@ -690,7 +1054,15 @@ mod tests {
                 let _ = s.write_all(reply).await;
             }
         });
-        let (code, _) = http_probe(&format!("127.0.0.1:{port}"), None, Duration::from_secs(2)).await.unwrap();
+        let mut stages = crate::wire::ProbePhases::default();
+        let (code, _) = http_probe(
+            &format!("127.0.0.1:{port}"),
+            None,
+            Duration::from_secs(2),
+            &mut stages,
+        )
+        .await
+        .unwrap();
         assert_eq!(code, 204, "probe must send the MiBeeSteward-probe User-Agent");
     }
 
@@ -705,10 +1077,12 @@ mod tests {
                 let mut b = [0u8; 512];
                 let _ = s.read(&mut b).await;
                 let body = b"healthy: all systems nominal";
-                let _ = s.write_all(
-                    format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len()).as_bytes(),
-                )
-                .await;
+                let _ = s
+                    .write_all(
+                        format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len())
+                            .as_bytes(),
+                    )
+                    .await;
                 let _ = s.write_all(body).await;
             }
         });
@@ -737,7 +1111,10 @@ mod tests {
             module: "http".into(),
             target: url.clone(),
             timeout_seconds: 5,
-            options: opts(ProbeTargetOptions { keyword: "unhealthy".into(), ..Default::default() }),
+            options: opts(ProbeTargetOptions {
+                keyword: "unhealthy".into(),
+                ..Default::default()
+            }),
             ..Default::default()
         };
         let r = run_probe(&spec_miss, "agent:t").await;
@@ -862,10 +1239,11 @@ mod tests {
                 if delay_ms > 0 {
                     tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                 }
-                let _ = s.write_all(
-                    format!("HTTP/1.1 {status_line}\r\nContent-Length: 0\r\n\r\n").as_bytes(),
-                )
-                .await;
+                let _ = s
+                    .write_all(
+                        format!("HTTP/1.1 {status_line}\r\nContent-Length: 0\r\n\r\n").as_bytes(),
+                    )
+                    .await;
             }
         });
         port
@@ -942,7 +1320,11 @@ mod tests {
         };
         let r = run_probe(&spec, "agent:t").await;
         assert_eq!(r.status, "success");
-        assert!(r.latency_ms >= 100.0, "latency_ms {} too small", r.latency_ms);
+        assert!(
+            r.latency_ms >= 100.0,
+            "latency_ms {} too small",
+            r.latency_ms
+        );
     }
 
     #[test]
@@ -961,7 +1343,9 @@ mod tests {
         tokio::spawn(async move {
             let mut buf = [0u8; 512];
             loop {
-                let Ok((n, peer)) = sock.recv_from(&mut buf).await else { return };
+                let Ok((n, peer)) = sock.recv_from(&mut buf).await else {
+                    return;
+                };
                 let q = &buf[..n];
                 if q.len() < 12 {
                     continue;
@@ -1016,7 +1400,11 @@ mod tests {
 
         let r = run_probe(&mk(vec!["1.1.1.1"]), "agent:t").await;
         assert_eq!(r.status, "fail");
-        assert!(r.error_message.contains("expected_ips"), "{}", r.error_message);
+        assert!(
+            r.error_message.contains("expected_ips"),
+            "{}",
+            r.error_message
+        );
 
         let nxdomain = spawn_mock_dns(None).await;
         let spec = ProbeTargetSpec {
@@ -1072,7 +1460,10 @@ mod tests {
         })
         .await
         .unwrap_err();
-        assert!(err.contains("attempt 2 failed"), "last error should survive: {err}");
+        assert!(
+            err.contains("attempt 2 failed"),
+            "last error should survive: {err}"
+        );
         assert_eq!(calls.load(Ordering::SeqCst), 3);
     }
 
@@ -1100,5 +1491,111 @@ mod tests {
             .await
             .unwrap();
         assert!(addrs.iter().any(|a| a.port() == 80));
+    }
+
+    fn trace_spec(id: i64, category: &str) -> ProbeTargetSpec {
+        ProbeTargetSpec {
+            id,
+            module: "http".into(),
+            target: format!("http://t{id}.example/"),
+            interval_seconds: 3600,
+            category: category.into(),
+            ..Default::default()
+        }
+    }
+
+    /// No trace block → the lane is inert (tuning None, no due specs).
+    #[test]
+    fn trace_lane_disabled_without_plan() {
+        let mut p = Prober::new("agent:x".into());
+        p.apply_plan("f1", vec![trace_spec(1, "external")], None);
+        assert!(p.trace_tuning().is_none());
+        assert!(p.trace_due_specs(now_ms()).is_empty());
+        // Empty-categories trace plans also disable (defense vs bad pushes).
+        p.apply_plan(
+            "f2",
+            vec![trace_spec(1, "external")],
+            Some(TracePlan {
+                categories: vec![],
+                interval_minutes: 5,
+                max_ttl: 8,
+                per_hop_ms: 100,
+            }),
+        );
+        assert!(p.trace_tuning().is_none());
+    }
+
+    /// Category filter + first-sight stagger + interval reschedule.
+    #[test]
+    fn trace_lane_category_filter_and_cadence() {
+        let mut p = Prober::new("agent:x".into());
+        p.apply_plan(
+            "f1",
+            vec![
+                trace_spec(1, "external"),
+                trace_spec(2, "lan"),
+                trace_spec(3, "quality"),
+            ],
+            Some(TracePlan {
+                categories: vec!["external".into(), "quality".into()],
+                interval_minutes: 30,
+                max_ttl: 20,
+                per_hop_ms: 400,
+            }),
+        );
+        assert_eq!(p.trace_tuning(), Some((20, 400)));
+        let now = now_ms();
+        // First sight: everything only seeds (stagger offsets may be 0, the
+        // seed call itself returns nothing).
+        assert!(p.trace_due_specs(now).is_empty(), "first sight only seeds");
+        // lan (id 2) never joins; both covered categories fire (0 offsets).
+        let jobs = p.trace_due_specs(now);
+        let ids: Vec<i64> = jobs.iter().map(|(s, _)| s.id).collect();
+        assert_eq!(ids, vec![1, 3]);
+        assert!(jobs.iter().all(|(_, t)| *t == "baseline"));
+        // Rescheduled a full interval out.
+        assert!(p.trace_due_specs(now + 29 * 60_000).is_empty());
+        assert_eq!(p.trace_due_specs(now + 31 * 60_000).len(), 2);
+    }
+
+    /// Failure snapshots (#719): fire immediately, carry trigger=failure,
+    /// respect the per-target cooldown, and ignore out-of-category targets.
+    #[test]
+    fn trace_lane_failure_hook() {
+        let mut p = Prober::new("agent:x".into());
+        p.apply_plan(
+            "f1",
+            vec![trace_spec(5, "external"), trace_spec(6, "lan")],
+            Some(TracePlan {
+                categories: vec!["external".into()],
+                interval_minutes: 30,
+                max_ttl: 20,
+                per_hop_ms: 400,
+            }),
+        );
+        let now = now_ms();
+        p.note_probe_failure(5, now);
+        p.note_probe_failure(6, now); // lan: not covered by the plan
+                                      // The flagged target rides the FIRST due walk with trigger=failure.
+        let jobs = p.trace_due_specs(now);
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].0.id, 5);
+        assert_eq!(jobs[0].1, "failure");
+        // Cooldown: a second failure within 10 minutes flags nothing.
+        p.note_probe_failure(5, now + 60_000);
+        assert!(
+            p.trace_due_specs(now + 60_000).is_empty(),
+            "cooldown suppresses"
+        );
+        // Past the cooldown a fresh failure snapshots again.
+        p.note_probe_failure(5, now + 11 * 60_000);
+        let jobs = p.trace_due_specs(now + 11 * 60_000);
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].1, "failure");
+        // Disabled lane: the hook is a no-op.
+        let mut q = Prober::new("agent:x".into());
+        q.apply_plan("f1", vec![trace_spec(5, "external")], None);
+        q.note_probe_failure(5, now);
+        assert!(q.trace_due_specs(now).is_empty());
     }
 }

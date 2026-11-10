@@ -866,14 +866,25 @@
 				// group (the network verdict; reference groups stay on the
 				// /probes quality matrix). #613 made the report per-category —
 				// the widget keeps reading the quality category's groups.
+				// #720: an active degradation episode on the vantage marks
+				// the row (best-effort; a failed fetch just skips the mark).
 				const q = await api.get<ProbeQualityReport>('/probe-quality');
 				const groups = q.categories?.find((c) => c.category === 'quality')?.groups ?? [];
 				const primary = groups.find((g) => g.role === 'primary') ?? groups[0];
+				let degraded: Set<string> = new Set();
+				try {
+					const eps = await api.get<{ episodes: { vantage_group: string; resolved_at?: string }[] }>(
+						'/probe-quality/episodes?days=1&active=1'
+					);
+					degraded = new Set((eps.episodes ?? []).map((e) => e.vantage_group));
+				} catch {
+					/* marking is best-effort */
+				}
 				applyWidgetPatch(w.id, {
 					listItems: (primary?.vantages ?? []).map((v) => ({
 						title: v.network_name || (v.vantage === 'center' ? m['probes.Vantage Center']() : v.vantage),
-						subtitle: `${qualityVerdictText(v.verdict)} · ${v.score}`,
-						status: qualityVerdictStatus(v.verdict),
+						subtitle: `${qualityVerdictText(v.verdict)} · ${v.score}` + (degraded.has(v.vantage) ? ` · ${m['dashboard.Probe Episode Mark']()}` : ''),
+						status: degraded.has(v.vantage) ? 'error' : qualityVerdictStatus(v.verdict),
 						time: formatTime(new Date()),
 						href: '/probes'
 					}))

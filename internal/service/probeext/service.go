@@ -21,6 +21,7 @@ import (
 
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/db"
+	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service/probetarget"
 )
 
@@ -243,7 +244,43 @@ func (s *Service) TraceNow(ctx context.Context, targetID int64) (PathSample, err
 
 // EgressSnapshot is the GET /probe-egress payload.
 func (s *Service) EgressSnapshot(ctx context.Context) ([]EgressVantageView, error) {
-	return s.store.LatestEgress(ctx, 24*time.Hour)
+	views, err := s.store.LatestEgress(ctx, 24*time.Hour)
+	if err != nil {
+		return nil, err
+	}
+	names := s.agentNetworkNames(ctx)
+	for i := range views {
+		views[i].NetworkName = vantageDisplayName(views[i].Vantage, views[i].NetworkName, names)
+	}
+	return views, nil
+}
+
+// agentNetworkNames maps agent id → its network's name (agent vantages are
+// "agent:{id}" tokens; the UI prefers the human name).
+func (s *Service) agentNetworkNames(ctx context.Context) map[string]string {
+	nets, err := s.queries.ListNetworks(ctx)
+	if err != nil {
+		return nil
+	}
+	names := make(map[string]string, len(nets))
+	for _, n := range nets {
+		if n.AgentID != nil && *n.AgentID != "" && n.Name != "" {
+			names[*n.AgentID] = n.Name
+		}
+	}
+	return names
+}
+
+// vantageDisplayName resolves an agent vantage token to its network name,
+// leaving existing names and the center track untouched.
+func vantageDisplayName(vantage, current string, names map[string]string) string {
+	if current != "" {
+		return current
+	}
+	if id, ok := strings.CutPrefix(vantage, domain.ProbeVantageAgentPrefix); ok {
+		return names[id]
+	}
+	return ""
 }
 
 // PathsSnapshot is the GET /probe-paths payload (latest per target×vantage),
@@ -261,6 +298,7 @@ func (s *Service) PathsSnapshot(ctx context.Context) ([]map[string]any, error) {
 	for _, t := range targets {
 		byID[t.ID] = t
 	}
+	names := s.agentNetworkNames(ctx)
 	out := make([]map[string]any, 0, len(paths))
 	for _, p := range paths {
 		row := map[string]any{
@@ -269,6 +307,9 @@ func (s *Service) PathsSnapshot(ctx context.Context) ([]map[string]any, error) {
 			"end_state": p.EndState, "reached_ttl": p.ReachedTTL, "reply_ttl": p.ReplyTTL,
 			"visible_hops": p.VisibleHops, "hops": p.Hops, "trigger": p.Trigger,
 			"err": p.Err, "traced_at": p.TracedAt,
+		}
+		if name := vantageDisplayName(p.Vantage, "", names); name != "" {
+			row["network_name"] = name
 		}
 		if t, ok := byID[p.TargetID]; ok {
 			row["module"] = t.Module
@@ -283,4 +324,10 @@ func (s *Service) PathsSnapshot(ctx context.Context) ([]map[string]any, error) {
 // ListTargetPaths is the per-target history (GET /probe-targets/{id}/paths).
 func (s *Service) ListTargetPaths(ctx context.Context, targetID int64, limit int) ([]PathSample, error) {
 	return s.store.ListPathsByTarget(ctx, targetID, limit)
+}
+
+// ListTargetPhases is the per-target per-stage timing history (#717,
+// GET /probe-targets/{id}/phases).
+func (s *Service) ListTargetPhases(ctx context.Context, targetID int64, limit int) ([]PhaseRow, error) {
+	return s.store.ListPhasesFor(ctx, targetID, limit)
 }

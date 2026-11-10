@@ -19,12 +19,14 @@ import (
 
 	"mibee-steward/internal/config"
 	sqldb "mibee-steward/internal/db"
+	"mibee-steward/internal/service/probe"
 	"mibee-steward/internal/service/probeext"
 	"mibee-steward/internal/testutil"
 )
 
-// TestPruneProbeExt pins the probe_ext.db retention sweep (#716/#718/#719):
-// rows older than the window disappear from BOTH tables, fresh rows stay.
+// TestPruneProbeExt pins the probe_ext.db retention sweep (#716/#718/#719 +
+// #717 phases): rows older than the window disappear from ALL tables, fresh
+// rows stay.
 func TestPruneProbeExt(t *testing.T) {
 	conn, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)
@@ -49,6 +51,8 @@ func TestPruneProbeExt(t *testing.T) {
 	if _, err := store.InsertPathSample(ctx, probeext.PathSample{TargetID: 2, Vantage: "center", Method: "tcp", EndState: "reached", TracedAt: fresh}); err != nil {
 		t.Fatal(err)
 	}
+	require.NoError(t, store.StorePhase(ctx, 1, "http", "center", old, 50, &probe.Phases{ResolvedIP: "93.184.216.3", ConnectMs: 20}))
+	require.NoError(t, store.StorePhase(ctx, 2, "http", "center", fresh, 51, &probe.Phases{ResolvedIP: "93.184.216.4", ConnectMs: 21}))
 
 	svc := New(queries, nil, nil, nil, store.Conn(), config.RetentionConfig{ProbeExtDays: 1})
 	svc.pruneProbeExt(ctx)
@@ -66,6 +70,13 @@ func TestPruneProbeExt(t *testing.T) {
 	}
 	if samples != 1 {
 		t.Fatalf("path_samples left %d, want only the fresh sample", samples)
+	}
+	var phases int
+	if err := store.Conn().QueryRowContext(ctx, `SELECT count(*) FROM probe_phases`).Scan(&phases); err != nil {
+		t.Fatal(err)
+	}
+	if phases != 1 {
+		t.Fatalf("probe_phases left %d, want only the fresh row", phases)
 	}
 }
 

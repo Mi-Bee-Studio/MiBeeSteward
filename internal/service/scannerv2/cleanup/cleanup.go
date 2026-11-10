@@ -384,6 +384,7 @@ func (s *Service) pruneProbeExt(ctx context.Context) {
 	for _, q := range []string{
 		`DELETE FROM egress_rounds WHERE round_at < ?`,
 		`DELETE FROM path_samples WHERE traced_at < ?`,
+		`DELETE FROM probe_phases WHERE checked_at < ?`,
 	} {
 		if _, err := s.extDB.ExecContext(ctx, q, cut); err != nil {
 			s.logger.Warn("probe_ext prune failed", "error", err)

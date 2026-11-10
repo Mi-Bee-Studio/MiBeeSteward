@@ -39,6 +39,15 @@ func (p *ICMPProber) Probe(ctx context.Context, target string, timeout time.Dura
 	pinger.Count = 1
 	pinger.SetPrivileged(false)
 
+	// #717: capture the reply TTL off the first echo response — the remaining
+	// hop budget from the target's perspective (0 = answer never arrived).
+	replyTTL := 0
+	pinger.OnRecv = func(pkt *probing.Packet) {
+		if replyTTL == 0 {
+			replyTTL = pkt.TTL
+		}
+	}
+
 	start := time.Now()
 	err = pinger.RunWithContext(ctx)
 	elapsed := time.Since(start)
@@ -56,9 +65,14 @@ func (p *ICMPProber) Probe(ctx context.Context, target string, timeout time.Dura
 	if stats.PacketsRecv > 0 {
 		slog.Debug("probe executed", "method", "icmp", "target", target, "success", true, "latency", stats.AvgRtt)
 		noteProbeSuccess("icmp", target, stats.AvgRtt)
+		ph := &Phases{ReplyTTL: replyTTL}
+		if pinger.IPAddr() != nil {
+			ph.ResolvedIP = pinger.IPAddr().IP.String()
+		}
 		return &Result{
 			Success: true,
 			Latency: stats.AvgRtt,
+			Phases:  ph,
 		}, nil
 	}
 

@@ -462,6 +462,13 @@ async fn probe_report_batch_shape_and_ack() {
         vantage: "agent:agent-lan-63".into(),
         status: "success".into(),
         latency_ms: 12.5,
+        // #717: dns_ms + resolved_ip measured agent-side ride the row; zero
+        // stages (connect/tls/ttfb) must stay absent, matching Go's omitempty.
+        phases: Some(mibee_agent::wire::ProbePhases {
+            resolved_ip: "203.0.113.9".into(),
+            dns_ms: 8.4,
+            ..Default::default()
+        }),
         ..Default::default()
     }];
     // PostOutcome (#604): Accepted carries the ack, 4xx would be Rejected
@@ -476,6 +483,90 @@ async fn probe_report_batch_shape_and_ack() {
     assert_eq!(body["results"][0]["target_id"], 4);
     assert_eq!(body["results"][0]["latency_ms"], 12.5);
     assert_eq!(body["results"][0]["vantage"], "agent:agent-lan-63");
+    assert_eq!(body["results"][0]["phases"]["resolved_ip"], "203.0.113.9");
+    assert_eq!(body["results"][0]["phases"]["dns_ms"], 8.4);
+    assert!(body["results"][0]["phases"].get("connect_ms").is_none());
+    assert!(body["results"][0]["phases"].get("tls_ms").is_none());
+    // A phase-less row omits the field entirely.
+    let plain = vec![ProbeResultReport {
+        target_id: 5,
+        status: "success".into(),
+        ..Default::default()
+    }];
+    drop(log);
+    match c.post_probe_results(&plain).await.unwrap() {
+        mibee_agent::center::PostOutcome::Accepted(ack) => assert_eq!(ack.accepted, 1),
+        other => panic!("expected Accepted, got {other:?}"),
+    }
+    let log = mock.log.lock().unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&log[1].body).unwrap();
+    assert!(body["results"][0].get("phases").is_none());
+}
+
+/// Egress + path report batches (#718/#719): wire shapes and ack semantics
+/// against the mock center — the two new agent endpoints piggyback the same
+/// batch-posting contract as probe-report.
+#[tokio::test]
+async fn egress_and_path_report_batch_shapes() {
+    use mibee_agent::wire::{EgressLocalReport, EgressResultReport, EgressRoundReport, PathHopReport, PathSampleReport};
+
+    let (base, mock) = spawn_mock().await;
+    let c = client(&base);
+
+    let rounds = vec![EgressRoundReport {
+        round_at: "2026-11-08T09:00:00.000Z".into(),
+        local: EgressLocalReport { iface: "end0".into(), gateway_ip: "192.168.2.1".into(), gateway_mac: String::new() },
+        results: vec![EgressResultReport {
+            source: "icanhazip".into(),
+            kind: "http".into(),
+            ok: true,
+            ip: "93.184.216.34".into(),
+            ms: 120.5,
+            err: String::new(),
+        }],
+    }];
+    match c.post_egress_rounds(&rounds).await.unwrap() {
+        mibee_agent::center::PostOutcome::Accepted(ack) => assert_eq!(ack.accepted, 1),
+        other => panic!("expected Accepted, got {other:?}"),
+    }
+
+    let paths = vec![PathSampleReport {
+        target_id: 4,
+        target_name: "web".into(),
+        resolved_ip: "93.184.216.34".into(),
+        method: "tcp".into(),
+        end_state: "reached".into(),
+        reached_ttl: 3,
+        reply_ttl: 55,
+        visible_hops: 2,
+        hops: vec![
+            PathHopReport { ttl: 1, ip: "192.168.2.1".into(), ms: 1.2 },
+            PathHopReport { ttl: 2, ip: String::new(), ms: 0.0 },
+        ],
+        trigger: "failure".into(),
+        err: String::new(),
+        traced_at: "2026-11-08T09:00:05.000Z".into(),
+    }];
+    match c.post_path_reports(&paths).await.unwrap() {
+        mibee_agent::center::PostOutcome::Accepted(ack) => assert_eq!(ack.accepted, 1),
+        other => panic!("expected Accepted, got {other:?}"),
+    }
+
+    let log = mock.log.lock().unwrap();
+    assert_eq!(log[0].path, "/api/v1/agents/egress-report");
+    let body: serde_json::Value = serde_json::from_slice(&log[0].body).unwrap();
+    assert_eq!(body["rounds"][0]["local"]["gateway_ip"], "192.168.2.1");
+    assert_eq!(body["rounds"][0]["results"][0]["ip"], "93.184.216.34");
+    assert_eq!(body["rounds"][0]["results"][0]["ms"], 120.5);
+    // gateway_mac is skip_serializing_if empty — the field is absent.
+    assert!(body["rounds"][0]["local"].get("gateway_mac").is_none());
+
+    assert_eq!(log[1].path, "/api/v1/agents/path-report");
+    let body: serde_json::Value = serde_json::from_slice(&log[1].body).unwrap();
+    assert_eq!(body["paths"][0]["target_id"], 4);
+    assert_eq!(body["paths"][0]["trigger"], "failure");
+    assert_eq!(body["paths"][0]["reply_ttl"], 55);
+    assert_eq!(body["paths"][0]["hops"][1]["ip"], "");
 }
 
 /// The prober park queue (#604): a center outage no longer drops batches —
@@ -484,6 +575,7 @@ async fn probe_report_batch_shape_and_ack() {
 async fn probe_results_park_and_recover() {
     use mibee_agent::prober::{run_prober_with_tuning, Prober};
     use std::time::Duration;
+
 
     // A fast local responder as the probe target: each tick produces a
     // success row in milliseconds, keeping the loop's timing deterministic.
@@ -512,6 +604,7 @@ async fn probe_results_park_and_recover() {
             timeout_seconds: 2,
             ..Default::default()
         }],
+        None,
     );
     let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
 
@@ -591,4 +684,50 @@ async fn reporter_early_flush_at_buffer_cap() {
     let body: serde_json::Value = serde_json::from_slice(&log[0].body).unwrap();
     assert_eq!(body["hosts"].as_array().unwrap().len(), 4);
     assert!(log[0].state_hash.is_some(), "scan batch carries state hash");
+}
+
+/// The egress loop's park queue (#718): a center outage parks the round and
+/// the recovery slot drains it — same contract as probe batches.
+#[tokio::test]
+async fn egress_rounds_park_and_recover() {
+    use mibee_agent::egress::{run_egress_with_tuning, EgressRunner};
+    use mibee_agent::wire::EgressSourceSpec;
+
+    let (base, mock) = spawn_mock().await;
+    let c = client(&base);
+    let runner = std::sync::Arc::new(tokio::sync::Mutex::new(EgressRunner::new()));
+    // A plan whose only source fails fast (unknown kind) keeps the round
+    // offline-safe while still exercising the full tick→post→park path.
+    runner.lock().await.apply_plan(
+        "f1",
+        vec![EgressSourceSpec { name: "bad".into(), kind: "xyz".into(), target: String::new() }],
+        3600,
+    );
+    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+
+    mock.then(MockAction::Json(503, String::new()));
+    mock.then(MockAction::Json(503, String::new()));
+    mock.then(MockAction::Json(503, String::new()));
+    mock.then(MockAction::Json(503, String::new()));
+
+    let task = tokio::spawn(run_egress_with_tuning(
+        runner.clone(),
+        c.clone(),
+        stop_rx,
+        std::time::Duration::from_millis(5),
+        std::time::Duration::from_millis(50),
+    ));
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    stop_tx.send(true).unwrap();
+    match task.await {
+        Ok(()) => {}
+        Err(e) => panic!("egress task failed: {e}"),
+    }
+
+    let log = mock.log.lock().unwrap();
+    let posts = log.iter().filter(|r| r.path.contains("egress-report")).count();
+    assert_eq!(posts, 5, "4 failed ladder attempts + 1 recovery drain");
+    let body: serde_json::Value = serde_json::from_slice(&log[4].body).unwrap();
+    assert_eq!(body["rounds"][0]["results"][0]["source"], "bad");
+    assert_eq!(body["rounds"][0]["results"][0]["ok"], serde_json::json!(false), "unknown-kind source reports a failed row, not a dropped round");
 }

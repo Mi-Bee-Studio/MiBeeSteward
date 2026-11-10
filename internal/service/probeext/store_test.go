@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"mibee-steward/internal/service/probe"
 )
 
 func openTestStore(t *testing.T) *Store {
@@ -134,5 +136,81 @@ func TestStorePathRoundTrip(t *testing.T) {
 	}
 	if left, _ := store.LatestPaths(ctx, ""); len(left) != 0 {
 		t.Errorf("prune left %d path samples", len(left))
+	}
+}
+
+// TestStorePhasesRoundTrip pins the #717 phase persistence: StorePhase →
+// ListPhasesFor ordering/limit, the nil/no-data no-op gate, and that Prune
+// sweeps probe_phases with the same cutoff as the other side tables.
+func TestStorePhasesRoundTrip(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	// Nil and data-less phases: no rows, no error.
+	if err := store.StorePhase(ctx, 1, "http", "center", "2026-11-09T01:00:00Z", 50, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.StorePhase(ctx, 1, "http", "center", "2026-11-09T01:00:00Z", 50, &probe.Phases{}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := store.ListPhasesFor(ctx, 1, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("no-op phases wrote %d rows", len(rows))
+	}
+
+	httpRow := &probe.Phases{ResolvedIP: "203.0.113.9", DNSMs: 8, ConnectMs: 20, TLSMs: 31, TTFBMs: 12}
+	if err := store.StorePhase(ctx, 7, "http", "center", "2026-11-09T01:00:00Z", 75.5, httpRow); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.StorePhase(ctx, 7, "tcp", "agent:rig", "2026-11-09T01:00:30Z", 44,
+		&probe.Phases{ResolvedIP: "203.0.113.9", ConnectMs: 43}); err != nil {
+		t.Fatal(err)
+	}
+	// Other target: must not leak into target 7's history.
+	if err := store.StorePhase(ctx, 8, "icmp", "center", "2026-11-09T01:01:00Z", 12,
+		&probe.Phases{ResolvedIP: "198.51.100.4", ReplyTTL: 54}); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err = store.ListPhasesFor(ctx, 7, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("phases = %+v", rows)
+	}
+	// Newest first.
+	if rows[0].Module != "tcp" || rows[0].Vantage != "agent:rig" || rows[0].CheckedAt != "2026-11-09T01:00:30Z" {
+		t.Errorf("newest row = %+v", rows[0])
+	}
+	if rows[0].ConnectMs != 43 || rows[0].DNSMs != 0 {
+		t.Errorf("tcp row stages = %+v", rows[0])
+	}
+	if rows[1].Module != "http" || rows[1].DNSMs != 8 || rows[1].TLSMs != 31 || rows[1].TTFBMs != 12 || rows[1].LatencyMs != 75.5 {
+		t.Errorf("http row = %+v", rows[1])
+	}
+
+	// Limit clamps the newest-first window.
+	limited, err := store.ListPhasesFor(ctx, 7, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(limited) != 1 || limited[0].Module != "tcp" {
+		t.Fatalf("limited = %+v", limited)
+	}
+
+	// Prune sweeps probe_phases rows past the cutoff, keeps the fresh one.
+	if err := store.Prune(ctx, "2026-11-09T01:00:15Z"); err != nil {
+		t.Fatal(err)
+	}
+	rows, err = store.ListPhasesFor(ctx, 7, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Module != "tcp" {
+		t.Fatalf("after prune = %+v, want only the tcp row", rows)
 	}
 }

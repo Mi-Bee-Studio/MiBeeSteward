@@ -876,13 +876,24 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// probe:read (viewer+); CRUD + trigger → probe:manage (operator+). NOT
 	// network-scoped: #138's object-level scope guards the internal inventory,
 	// while probing aims at arbitrary external endpoints by design.
+	// The probe_ext.db side store (heartbeat.db pattern - additive DDL, no
+	// SchemaVersion bump) opens BEFORE the engine so the same handle serves as
+	// the per-stage timing sink (#717) and the egress/path/episode store
+	// (#716/#718/#719/#720).
+	probeExtStore, err := probeext.OpenStore(probeExtDBPathFor(cfg))
+	if err != nil {
+		slog.Error("failed to open probe_ext store", "error", err)
+		os.Exit(1)
+	}
 	probeEngine := probetarget.NewEngine(db.New(probeDB), slog.Default(), prometheus.DefaultRegisterer, cfg.Probe.MaxConcurrency, changeRecorder).
-		WithNotifyFailThreshold(cfg.Probe.NotifyFailThreshold)
+		WithNotifyFailThreshold(cfg.Probe.NotifyFailThreshold).
+		WithPhasesSink(probeExtStore)
 	probeTargetSvc := probetarget.New(db.New(probeDB), probeEngine)
 	// Vantage probe dispatcher (#277): ships agent plans over the command
 	// channel whenever a plan content changes (fingerprint-gated, steady
-	// state is zero traffic). Same 10s cadence as the engine tick.
-	probeDispatcher := probetarget.NewAgentDispatcher(db.New(probeDB), agentCmdSvc, slog.Default())
+	// state is zero traffic). Same 10s cadence as the engine tick. Also owns
+	// the egress echo plans and the trace block riding probe plans (#718/#719).
+	probeDispatcher := probetarget.NewAgentDispatcher(db.New(probeDB), agentCmdSvc, slog.Default(), cfg.Probe)
 	// Stop channel for the dispatch ticker below, without it the goroutine
 	// ran forever (one leak per NewRouter call; tests call NewRouter a lot).
 	probeDispatchStop := make(chan struct{})
@@ -910,17 +921,19 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	probeQualityStop := make(chan struct{})
 	go probeQualitySvc.StartMetricsLoop(context.Background(), prometheus.DefaultRegisterer, probeQualityStop)
 	probeQualityHandler := handler.NewProbeQualityHandler(probeQualitySvc)
-	// Egress/path extension (#716/#718/#719): the probe_ext.db side store
-	// (heartbeat.db pattern - additive DDL, no SchemaVersion bump) plus the
-	// center-side egress rounds and path tracer. Recording only.
-	probeExtStore, err := probeext.OpenStore(probeExtDBPathFor(cfg))
-	if err != nil {
-		slog.Error("failed to open probe_ext store", "error", err)
-		os.Exit(1)
-	}
+	// Egress/path extension (#716/#718/#719): the probe_ext service on the
+	// store opened above the engine (center-side egress rounds + path tracer).
+	// Recording only.
 	probeExtSvc := probeext.NewService(cfg.Probe, probeExtStore, db.New(probeDB), slog.Default())
 	probeExtSvc.Start(context.Background())
-	probeExtHandler := handler.NewProbeExtHandler(probeExtSvc)
+	// Quality degradation episodes (#720): relative-baseline detection with
+	// cross-confirmation, attribution, impact-only alerting. Shares the
+	// probe_ext store + the change recorder the probe engine uses.
+	episodeSvc := probeext.NewEpisodeService(probeExtStore, db.New(probeDB), probeDB, cfg.Probe.Quality.Episodes, changeRecorder, slog.Default())
+	if cfg.Probe.Quality.Episodes.DetectorEnabled(cfg.Probe.Quality.Enabled) {
+		episodeSvc.Start(context.Background())
+	}
+	probeExtHandler := handler.NewProbeExtHandler(probeExtSvc, episodeSvc)
 	registerProbeTargetRoutes(r, probeTargetHandler, probeQualityHandler, probeExtHandler)
 	// Discover-then-probe autogen (#606): default OFF, periodic reconcile of
 	// discovered services into device-bound targets. Same stop pattern.
@@ -964,7 +977,11 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// fpManagedDir resolved above (engine construction) per the shared
 	// fingerprint_path > managed > embedded precedence.
 	agentFingerprintsHandler := handler.NewAgentFingerprintsHandler(cfg.Scanner.FingerprintPath, fpManagedDir, slog.Default())
-	registerAgentRoutes(r, agentReportHandler, agentProbeReportHandler, agentCommandHandler, agentFingerprintsHandler)
+	// Agent-side egress/path reporting (#718/#719): same agent-token regime,
+	// probe_ext.db side store (probeExtSvc built above in the probe block).
+	agentEgressReportHandler := handler.NewAgentEgressReportHandler(probeExtSvc)
+	agentPathReportHandler := handler.NewAgentPathReportHandler(probeExtSvc)
+	registerAgentRoutes(r, agentReportHandler, agentProbeReportHandler, agentEgressReportHandler, agentPathReportHandler, agentCommandHandler, agentFingerprintsHandler)
 	fingerprintAdminHandler := handler.NewFingerprintAdminHandler(v2Engine, cfg.Scanner.FingerprintPath, fpManagedDir, cfg.Scanner.FingerprintUpstreamURL, scanQueries, auditRepo)
 	registerFingerprintAdminRoutes(r, fingerprintAdminHandler)
 

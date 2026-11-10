@@ -3273,6 +3273,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/probe-quality/episodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Quality degradation episodes (#720) - relative-baseline drops confirmed by cross-evidence, with attribution
+         * @description Episodes are the impact-only alert surface of the probe extension: a track degrades when its 15-minute window clearly drops below its own baseline (72h median, or same weekday-hour once 7 days of history exist), and an episode only opens after cross-confirmation (one egress group's quality points mostly degraded = network kind; one destination /24 degraded from enough vantages = path kind). Episodes without a same-window egress/path attribution stay recorded (notified=false) but never fire notifications (#716).
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description history window (default 1 = last 24h) */
+                    days?: number;
+                    /** @description 1 = only unresolved episodes */
+                    active?: 0 | 1;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Episode list */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProbeQualityEpisodes"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/probe-egress": {
         parameters: {
             query?: never;
@@ -3637,6 +3681,49 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["ProbePathsResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/probe-targets/{id}/phases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Per-stage timing history of one target (#717), newest first
+         * @description One row per run that produced a stage breakdown: DNS/connect/TLS/TTFB for http, connect for tcp, reply TTL for icmp, across all vantages. Failed runs keep the stages that did complete (a timeout mid-handshake still tells you what DNS/connect cost); dns/tls modules produce no rows.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    id: components["parameters"]["id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Phase rows */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProbePhasesResponse"];
                     };
                 };
             };
@@ -4545,6 +4632,114 @@ export interface paths {
             responses: {
                 /** @description Ack */
                 200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/egress-report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * [agent] Egress-identity round batches (#718)
+         * @description One batch of egress rounds from the agent-side collector. The reporting agent's token identity overrides any vantage the payload claims; distinct public IPs are origin-ASN-enriched on the center. Recording only — no notifications.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        rounds: components["schemas"]["AgentEgressRound"][];
+                    };
+                };
+            };
+            responses: {
+                /** @description Ack with the accepted round count */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            accepted?: number;
+                        };
+                    };
+                };
+                /** @description Invalid body */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/path-report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * [agent] Path-trace sample batches (#719)
+         * @description One batch of zero-privilege path traces from the agent-side tracer. Rows for deleted targets are skipped; the reporting agent's token identity overrides any vantage claim. Recording only.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        paths: components["schemas"]["AgentPathSample"][];
+                    };
+                };
+            };
+            responses: {
+                /** @description Ack with the accepted sample count */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            accepted?: number;
+                        };
+                    };
+                };
+                /** @description Invalid body */
+                400: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -7073,6 +7268,65 @@ export interface components {
             /** @enum {string} */
             verdict: "ok" | "degraded" | "egress_down" | "dns_fault" | "upstream_resolver" | "insufficient";
         };
+        ProbeQualityEpisodes: {
+            episodes: components["schemas"]["ProbeQualityEpisode"][];
+        };
+        /** @description One degradation episode (#720). notified=false episodes are recorded-only (no notification fired; the #716 impact-only rule). */
+        ProbeQualityEpisode: {
+            /** Format: int64 */
+            id: number;
+            /**
+             * @description network = one egress group's quality points mostly degraded; path = one destination /24 degraded from that group's view
+             * @enum {string}
+             */
+            kind: "network" | "path";
+            /** @description 'center' or 'agent:{id}' — the egress group */
+            vantage_group: string;
+            /** @description destination /24 for path episodes, '' for network */
+            target_group: string;
+            /** Format: date-time */
+            started_at: string;
+            /**
+             * Format: date-time
+             * @description last window the confirmation still held
+             */
+            last_seen_at: string;
+            /** @description consecutive degraded windows seen */
+            windows: number;
+            metric_degraded: components["schemas"]["ProbeEpisodeMetric"][];
+            attribution: components["schemas"]["ProbeEpisodeAttribution"][];
+            notified: boolean;
+            /**
+             * Format: date-time
+             * @description empty = active
+             */
+            resolved_at?: string;
+            recover_notified: boolean;
+        };
+        ProbeEpisodeMetric: {
+            /** Format: int64 */
+            target_id: number;
+            name: string;
+            vantage: string;
+            /** Format: double */
+            p50_ms: number;
+            /** Format: double */
+            base_p50_ms: number;
+            /** Format: double */
+            ok_rate: number;
+            /** Format: double */
+            base_ok_rate: number;
+            samples: number;
+            /** @enum {string} */
+            reason: "latency" | "ok_rate" | "both";
+        };
+        ProbeEpisodeAttribution: {
+            /** @enum {string} */
+            kind: "egress_change" | "path_change" | "peer_egress_degraded" | "error_shape";
+            detail: string;
+            /** @description change timestamp when point-precise */
+            at?: string;
+        };
         /** @description Current egress identity per vantage (#718): the latest echo round's per-source results, the distinct public IPs observed in the window (with origin ASN), and the local default-route gateway. Recording only - changes never notify (#716). */
         ProbeEgressReport: {
             vantages: components["schemas"]["ProbeEgressVantage"][];
@@ -7152,8 +7406,11 @@ export interface components {
             reply_ttl?: number;
             visible_hops?: number;
             hops: components["schemas"]["ProbePathHop"][];
-            /** @enum {string} */
-            trigger?: "baseline" | "manual";
+            /**
+             * @description failure = snapshot fired by the agent right after a failed probe (#719)
+             * @enum {string}
+             */
+            trigger?: "baseline" | "failure" | "manual";
             err?: string;
             /** Format: date-time */
             traced_at: string;
@@ -7164,6 +7421,78 @@ export interface components {
             ip?: string;
             /** Format: double */
             ms?: number;
+        };
+        ProbePhasesResponse: {
+            phases: components["schemas"]["ProbePhaseRow"][];
+        };
+        /** @description One run's per-stage timing breakdown (#717). Stage fields are 0/absent when the module does not exercise them (tcp carries connect_ms only, icmp carries reply_ttl only). latency_ms is the run total denormalized so the phases chart needs no join. */
+        ProbePhaseRow: {
+            /** Format: int64 */
+            target_id: number;
+            /** @enum {string} */
+            module: "http" | "tcp" | "icmp";
+            vantage: string;
+            /** Format: date-time */
+            checked_at: string;
+            /** @description the address the run actually used */
+            resolved_ip?: string;
+            /** Format: double */
+            dns_ms?: number;
+            /** Format: double */
+            connect_ms?: number;
+            /** Format: double */
+            tls_ms?: number;
+            /**
+             * Format: double
+             * @description time to first response byte after the request went out
+             */
+            ttfb_ms?: number;
+            /** @description icmp only: remaining hop budget in the destination's reply (0 = unknown) */
+            reply_ttl?: number;
+            /** Format: double */
+            latency_ms: number;
+        };
+        /** @description One agent-side egress round (#718) in an /agents/egress-report batch. Raw echo outcomes; ASN enrichment happens on the center. */
+        AgentEgressRound: {
+            /** Format: date-time */
+            round_at: string;
+            local?: {
+                iface?: string;
+                gateway_ip?: string;
+                /** @description reported for forward-compat; not persisted */
+                gateway_mac?: string;
+            };
+            results: {
+                source: string;
+                /** @enum {string} */
+                kind: "http" | "stun" | "dns";
+                ok: boolean;
+                ip?: string;
+                /** Format: double */
+                ms?: number;
+                err?: string;
+            }[];
+        };
+        /** @description One agent-side path trace (#719) in an /agents/path-report batch. The center re-derives the target name and recounts visible hops. */
+        AgentPathSample: {
+            /** Format: int64 */
+            target_id: number;
+            /** @description informational; the center stores its own live row's name */
+            target_name?: string;
+            resolved_ip?: string;
+            /** @enum {string} */
+            method?: "tcp" | "icmp";
+            /** @enum {string} */
+            end_state: "reached" | "max_ttl" | "error";
+            reached_ttl?: number;
+            reply_ttl?: number;
+            visible_hops?: number;
+            hops?: components["schemas"]["ProbePathHop"][];
+            /** @enum {string} */
+            trigger?: "baseline" | "failure" | "manual";
+            err?: string;
+            /** Format: date-time */
+            traced_at: string;
         };
         ProbeQualityTarget: {
             name: string;

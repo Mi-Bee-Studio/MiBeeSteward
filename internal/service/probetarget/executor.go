@@ -45,6 +45,9 @@ type Outcome struct {
 	CertNotAfter string // leaf NotAfter, RFC3339; "" = none collected
 	CertTrusted  *bool
 	Certs        []scannerv2.TLSCertRecord // nil unless a chain was collected
+	// Phases is the per-stage timing breakdown (#717); nil when the module
+	// run produced none (dns/tls modules, any failed run).
+	Phases *probe.Phases
 }
 
 // outcome kept as a spelling alias so the engine-side call sites read
@@ -217,6 +220,7 @@ func outcomeFromResult(res *probe.Result) outcome {
 	out := outcome{
 		Latency:    res.Latency,
 		StatusCode: res.StatusCode,
+		Phases:     res.Phases,
 	}
 	if res.Success {
 		out.Status = "success"

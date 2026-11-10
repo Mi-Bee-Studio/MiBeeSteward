@@ -419,7 +419,8 @@
 		"Help P1": "The dashboard is the overview of your network: device availability, recent changes, and scan-task health at a glance.",
 		"Help P2": "Suggested path: create a scheduled scan under Devices → Scan Tasks so devices are discovered continuously; review the inventory on the Devices page; then set up change notifications in Settings.",
 		"Help P3": "The presets under “Add Widget” work out of the box; the advanced ones need your own Prometheus and can be ignored by most users.",
-		"Custom Widgets": "Custom Widgets"
+		"Custom Widgets": "Custom Widgets",
+		"Probe Episode Mark": "degrading"
 	},
 	"common": {
 		"Save": "Save",
@@ -954,7 +955,9 @@
 		"Bot Token Required": "Telegram bot token is required",
 		"Chat ID Required": "Telegram chat ID is required",
 		"Event Speaks With New": "New device conversation",
-		"Event Listen Port Added": "New listening port"
+		"Event Listen Port Added": "New listening port",
+		"Event Quality Degraded": "Quality Degraded",
+		"Event Quality Recovered": "Quality Recovered"
 	},
 	"snmpCredentials": {
 		"Title": "SNMP Credentials",
@@ -1037,7 +1040,9 @@
 		"Diff No Field Changes": "No field-level differences recorded.",
 		"Diff No Snapshot": "No snapshot data.",
 		"Diff No Data": "No data available.",
-		"Data Unavailable": "Data unavailable."
+		"Data Unavailable": "Data unavailable.",
+		"Event Quality Degraded": "Quality degraded",
+		"Event Quality Recovered": "Quality recovered"
 	},
 	"changefields": {
 		"name": "Name",
@@ -1484,6 +1489,7 @@
 		"Trigger Agent Only": "This target runs on its agent's vantage — trigger it there",
 		"Vantage": "Vantage",
 		"Vantage Center": "Center (this server)",
+		"Vantage Center Short": "Center",
 		"Vantage All": "Center + all agents",
 		"Vantage Agent": "Agent {id}",
 		"Vantage Agent Missing": "Agent {id} (unregistered)",
@@ -1497,6 +1503,15 @@
 		"Tab Chart": "Chart",
 		"Tab Detail": "Detail",
 		"Latency Chart": "Latency by vantage",
+		"Chart Total": "Total",
+		"Chart Stages": "Stages",
+		"Phases Chart": "Latency by stage",
+		"Phases Note": "Stacked DNS / connect / TLS / wait-for-response per run; dashed line = ICMP reply TTL (right axis). Failed runs keep the stages that completed. Only modules http / tcp / icmp measure stages.",
+		"Stage Dns": "DNS",
+		"Stage Connect": "Connect",
+		"Stage Tls": "TLS",
+		"Stage Ttfb": "Response",
+		"Total": "Total",
 		"Status Timeline": "Status timeline",
 		"Success Rate": "ok",
 		"View Results": "History",
@@ -1595,6 +1610,7 @@
 		"Paths Hop Ip": "Hop",
 		"Paths Hop Rtt": "RTT",
 		"Paths Silent Note": "Silent hops (—) do not answer TTL probes — common on ISP egress where only the gateway and the destination reply. The reached TTL and reply TTL carry the path signal then.",
+		"Paths Matrix Hint": "One row per target: chips = per-vantage path state (reached→reply TTL), click for hop detail",
 		"Column Target": "Target",
 		"Column Vantage": "Vantage",
 		"Verdict Ok": "ok",
@@ -1647,6 +1663,11 @@
 		"Overview Certs Aria": "Toggle the certificate timeline",
 		"Filter Problems": "Problems only",
 		"Filter Certs": "Cert expiring",
+		"Filter Disabled": "Disabled",
+		"Health Ok": "OK {count}",
+		"Health Fail": "Failing {count}",
+		"Health Timeout": "Timeout {count}",
+		"Health Nodata": "No data {count}",
 		"Filter No Problems": "Nothing failing — all clear",
 		"Inspect Row": "Inspect {name}",
 		"Expanded Latest": "Latest result per vantage",
@@ -1656,7 +1677,26 @@
 		"Quality Trend Desc": "ok-rate per vantage over time — one point per {bucket} bucket",
 		"Quality Trend Empty": "No history in this range — probe results are kept for 30 days",
 		"Trend Days 7": "7d",
-		"Trend Days 30": "30d"
+		"Trend Days 30": "30d",
+		"Episode Banner Active": "Quality degraded — {count} active episode{count}s",
+		"Episode Banner Recent": "Recent quality episodes: {count}",
+		"Episode Banner Hint": "impact-confirmed, attribution attached",
+		"Episode Banner View": "View 24h",
+		"Episode Strip Aria": "Timeline of {count} degradation episodes in the last 24 hours",
+		"Episode State Active": "active",
+		"Episodes Modal Title": "Quality degradation episodes (24h)",
+		"Episode Empty": "No episodes in the last 24 hours",
+		"Episode Kind Network": "Egress (network) degraded",
+		"Episode Kind Path": "Destination path degraded",
+		"Episode Notified": "Alerted",
+		"Episode Recorded": "Recorded",
+		"Episode Resolved": "Resolved",
+		"Episode Ok Rate": "ok rate",
+		"Episode Attribution": "Attribution",
+		"Episode No Attribution": "No same-window egress/path change to attribute — recorded without alert",
+		"Episode Attr Egress": "Public egress identity changed in the same window",
+		"Episode Attr Path": "Visible path changed in the same window",
+		"Episode Attr Peer": "Other egress groups degraded in the same window — destination-side cause likely"
 	},
 	"fingerprints": {
 		"Title": "Fingerprint Coverage",

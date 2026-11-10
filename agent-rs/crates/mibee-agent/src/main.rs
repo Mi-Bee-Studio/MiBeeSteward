@@ -152,13 +152,24 @@ async fn run_agent(cfg: Config, config_path: &str) -> Result<(), String> {
             hostname: hostname_str(),
             // Probe capability declaration (#604): the center's dispatcher
             // holds back tcp/dns plans from agents that never declared them.
-            supported_modules: vec![
-                "icmp".into(),
-                "http".into(),
-                "tls".into(),
-                "tcp".into(),
-                "dns".into(),
-            ],
+            // `egress`/`trace` (#718/#719) gate the egress echo plans and the
+            // trace block riding probe plans — older centers just store the
+            // extra names.
+            supported_modules: {
+                let mut m = vec![
+                    "icmp".to_string(),
+                    "http".to_string(),
+                    "tls".to_string(),
+                    "tcp".to_string(),
+                    "dns".to_string(),
+                    "egress".to_string(),
+                ];
+                // The zero-privilege tracer is Linux-only (ping sockets +
+                // IP_RECVERR); other builds must not promise it.
+                #[cfg(target_os = "linux")]
+                m.push("trace".to_string());
+                m
+            },
             ..Default::default()
         };
         meta.fingerprint_rev = fp_rev.clone();
@@ -173,6 +184,7 @@ async fn run_agent(cfg: Config, config_path: &str) -> Result<(), String> {
         "agent:{}",
         cfg.network.name
     ))));
+    let egress_runner = Arc::new(AsyncMutex::new(mibee_agent::egress::EgressRunner::new()));
 
     let (stop_tx, stop_rx) = watch::channel(false);
     let mut tasks = tokio::task::JoinSet::new();
@@ -213,6 +225,29 @@ async fn run_agent(cfg: Config, config_path: &str) -> Result<(), String> {
         let mut stop = stop_rx.clone();
         tasks.spawn(async move {
             mibee_agent::prober::run_prober(prober, client, stop).await;
+        });
+    }
+
+    // path tracer loop (#719): idles at zero cost until a plan with a trace
+    // block arrives; Linux builds only (capability is not declared elsewhere,
+    // so non-Linux never receives trace work either).
+    #[cfg(target_os = "linux")]
+    {
+        let prober = Arc::clone(&prober);
+        let client = Arc::clone(&client);
+        let stop = stop_rx.clone();
+        tasks.spawn(async move {
+            mibee_agent::prober::run_tracer(prober, client, stop).await;
+        });
+    }
+
+    // egress echo rounds loop (#718): idles until an egress plan arrives.
+    {
+        let runner = Arc::clone(&egress_runner);
+        let client = Arc::clone(&client);
+        let stop = stop_rx.clone();
+        tasks.spawn(async move {
+            mibee_agent::egress::run_egress(runner, client, stop).await;
         });
     }
 
@@ -399,6 +434,7 @@ async fn run_agent(cfg: Config, config_path: &str) -> Result<(), String> {
     let poller_engine = Arc::clone(&engine);
     let poller_reporter = Arc::clone(&reporter);
     let poller_prober = Arc::clone(&prober);
+    let poller_egress = Arc::clone(&egress_runner);
     let cfg2 = cfg.clone();
     let db_path2 = db_path.clone();
     let client2 = Arc::clone(&client);
@@ -430,6 +466,7 @@ async fn run_agent(cfg: Config, config_path: &str) -> Result<(), String> {
                     Arc::clone(&poller_engine),
                     Arc::clone(&poller_reporter),
                     Arc::clone(&poller_prober),
+                    Arc::clone(&poller_egress),
                     &cfg2,
                     &client2,
                     &db_path2,
@@ -454,6 +491,7 @@ async fn execute_command(
     engine: Arc<ScanEngine>,
     reporter: Arc<Reporter>,
     prober: Arc<AsyncMutex<mibee_agent::prober::Prober>>,
+    egress_runner: Arc<AsyncMutex<mibee_agent::egress::EgressRunner>>,
     cfg: &Config,
     client: &Arc<CenterClient>,
     db_path: &str,
@@ -507,12 +545,22 @@ async fn execute_command(
             let result = match serde_json::from_str::<ProbePlanCommand>(&cmd.payload) {
                 Ok(plan) => {
                     let n = plan.targets.len();
+                    let trace = if plan.trace.is_some() { "trace" } else { "" };
                     prober
                         .lock()
                         .await
-                        .apply_plan(&plan.fingerprint, plan.targets);
-                    format!(r#"{{"applied":"{}","targets":{n}}}"#, plan.fingerprint)
+                        .apply_plan(&plan.fingerprint, plan.targets, plan.trace);
+                    format!(r#"{{"applied":"{}","targets":{n},"trace":"{trace}"}}"#, plan.fingerprint)
                 }
+                Err(e) => format!(r#"{{"error":"bad payload: {e}"}}"#),
+            };
+            let status = if result.contains("\"error\"") { "failed" } else { "done" };
+            let _ = client.complete_command(cmd.id, status, &result).await;
+        }
+        "egress" => {
+            // Egress echo plan (#718): fingerprint-guarded like probe plans.
+            let result = match serde_json::from_str::<mibee_agent::wire::EgressPlanCommand>(&cmd.payload) {
+                Ok(plan) => mibee_agent::egress::apply_pushed_plan(&egress_runner, plan).await,
                 Err(e) => format!(r#"{{"error":"bad payload: {e}"}}"#),
             };
             let status = if result.contains("\"error\"") { "failed" } else { "done" };

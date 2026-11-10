@@ -99,15 +99,25 @@ const (
 	// emits agent_recovered.
 	ChangeTypeAgentOffline   = "agent_offline"
 	ChangeTypeAgentRecovered = "agent_recovered"
+	// Quality degradation episodes (#720): a vantage/path group whose
+	// quality dropped clearly below its own baseline AND passed
+	// cross-target/cross-vantage confirmation. Per the #716 ruling these
+	// are the ONLY probe-side alerts: egress/route changes themselves never
+	// notify, they ride along as attribution inside the degraded payload.
+	// quality_recovered resolves an episode (paired dedup, only for
+	// episodes that actually notified).
+	ChangeTypeQualityDegraded  = "quality_degraded"
+	ChangeTypeQualityRecovered = "quality_recovered"
 )
 
 // EntityType discriminates which entity a change_log row concerns. "device" is
 // the historical (and majority) case; "probe_target" rows come from the probe
 // engine's liveness state machine (entity_id = probe_targets.id).
 const (
-	EntityTypeDevice      = "device"
-	EntityTypeProbeTarget = "probe_target"
-	EntityTypeAgent       = "agent"
+	EntityTypeDevice       = "device"
+	EntityTypeProbeTarget  = "probe_target"
+	EntityTypeAgent        = "agent"
+	EntityTypeProbeQuality = "probe_quality"
 )
 
 // Severity ranks a change event for UI triage. The change-history page defaults

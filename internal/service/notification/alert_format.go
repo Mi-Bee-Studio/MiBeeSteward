@@ -63,9 +63,10 @@ type alertEnvelope struct {
 // recoveryDedupType maps a recovery event type to the firing event type it
 // resolves. Both sides of a pair share one dedup_key (source/firing/ref).
 var recoveryDedupType = map[string]string{
-	domain.RuleEventTypeDeviceRecovered: domain.RuleEventTypeDeviceLost,
-	domain.RuleEventTypeProbeRecovered:  domain.RuleEventTypeProbeFailed,
-	domain.RuleEventTypeAgentRecovered:  domain.RuleEventTypeAgentOffline,
+	domain.RuleEventTypeDeviceRecovered:  domain.RuleEventTypeDeviceLost,
+	domain.RuleEventTypeProbeRecovered:   domain.RuleEventTypeProbeFailed,
+	domain.RuleEventTypeAgentRecovered:   domain.RuleEventTypeAgentOffline,
+	domain.RuleEventTypeQualityRecovered: domain.RuleEventTypeQualityDegraded,
 }
 
 // alertSeverity maps a Steward change event type to an envelope severity.
@@ -74,10 +75,11 @@ var recoveryDedupType = map[string]string{
 func alertSeverity(eventType string) string {
 	switch eventType {
 	case domain.RuleEventTypeDeviceLost, domain.RuleEventTypeProbeFailed,
-		domain.RuleEventTypeAgentOffline:
+		domain.RuleEventTypeAgentOffline, domain.RuleEventTypeQualityDegraded:
 		return AlertSeverityError
 	case domain.RuleEventTypeDeviceRecovered, domain.RuleEventTypeDeviceAdded,
-		domain.RuleEventTypeProbeRecovered, domain.RuleEventTypeAgentRecovered:
+		domain.RuleEventTypeProbeRecovered, domain.RuleEventTypeAgentRecovered,
+		domain.RuleEventTypeQualityRecovered:
 		return AlertSeverityInfo
 	case domain.RuleEventTypeDeviceChanged,
 		domain.RuleEventTypeSpeaksWithNew,
