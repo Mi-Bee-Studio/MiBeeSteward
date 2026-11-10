@@ -20,6 +20,8 @@
 - **agent-rs：http 拨测发送产品 User-Agent（#713）**：与 center 侧拨测修复对齐——agent 的 http 拨测此前不发 User-Agent，现在发送 `MiBeeSteward-probe/<版本> (+https://github.com/Mi-Bee-Studio/MiBeeSteward)`，同一目标的各视角轨道对被拨测站点呈现同一身份。
 - **agent-rs：UDP DNS 拨测在超时预算内重传（#715）**：agent 自研 DNS 客户端此前每次只发一个 UDP 查询——丢一个包整次拨测就超时。受影响的 armv7 agent 上表现为内置 `quality-dns-*` 轨道三天约 25% `i/o timeout`（500/1,960 次；31 对 `probe_failed`/`probe_recovered` 抖动），而同机的 TCP/53 直连检查 99.9%——上游对 UDP/53 按包丢弃、丢包率 50–87% 且按分钟级时间聚集，与事务 ID 无关。`udp_query` 现在在调用方超时预算内最多尝试 3 次（同一 socket / 稳定五元组，每次尝试新鲜事务 ID——早前尝试的迟到应答永不误配到后续尝试），与 center 的 RetryProber 阶梯对齐。假解析器双测试覆盖（丢二答一 / 全丢超时）。
 
+- **扫描器：rtsp 服务不再自动播种 TCP:554 心跳（#731）**：心跳每个 tick 都会对相机的 RTSP 端口发一次裸 TCP 连接——而小内存流媒体设备（自研 RTSP 服务器的 ESP32 类相机）每个 accept 都会孵化并销毁一个完整 RTSP 会话（任务线程），30s 默认 tick 于是成了每天 2,880 次的「会话孵化→即弃」churn，并在一台此类设备上成为周期性内存腐坏的触发时间表。rtsp 现在不再产生心跳 spec（MiotHandler 先例）：设备落到桥接的设备级 ICMP 兜底——心跳对相机要的本就是活性，CameraHandler 的既有注释也正是这个理念（「相机可能 RTSP 掉了但主机没死」）。需要端口级 RTSP 监控的运维仍可手动加 TCP 心跳。NVR 的重连器也做过同样的决定（NvrRtsp #711，5s 下限 + Retry-After）。
+
 ## [0.9.0] - 2026-11-07
 
 ### Added
