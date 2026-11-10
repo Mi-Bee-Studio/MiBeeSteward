@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -134,6 +135,38 @@ func TestHTTPProbe_ServerError(t *testing.T) {
 	}
 	if result.ErrorMessage == "" {
 		t.Error("expected error message for 500 status")
+	}
+}
+
+// TestHTTPProbe_UserAgent pins #713: an explicit UserAgent replaces Go's
+// default header, while the zero value (heartbeat) keeps the default.
+func TestHTTPProbe_UserAgent(t *testing.T) {
+	var got string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.UserAgent()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	if _, err := (&HTTPProber{UserAgent: "probe-test/1"}).Probe(context.Background(), server.URL, 5*time.Second); err != nil {
+		t.Fatalf("probe with UserAgent: %v", err)
+	}
+	if got != "probe-test/1" {
+		t.Errorf("UserAgent = %q, want probe-test/1", got)
+	}
+
+	if _, err := (&HTTPProber{}).Probe(context.Background(), server.URL, 5*time.Second); err != nil {
+		t.Fatalf("probe without UserAgent: %v", err)
+	}
+	if !strings.HasPrefix(got, "Go-http-client/") {
+		t.Errorf("zero-value prober sent %q, want Go's default User-Agent", got)
+	}
+}
+
+func TestUserAgent(t *testing.T) {
+	ua := UserAgent()
+	if !strings.HasPrefix(ua, "MiBeeSteward-probe/") || strings.HasPrefix(ua, "Go-http-client") {
+		t.Errorf("UserAgent() = %q, want a MiBeeSteward-probe product token", ua)
 	}
 }
 
