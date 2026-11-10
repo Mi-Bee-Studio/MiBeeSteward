@@ -247,3 +247,64 @@ func TestRegistrarTwoServersCoexist(t *testing.T) {
 	}
 	defer b.Stop()
 }
+
+// The A-record set collapses to the single default-route address: DNS-SD
+// clients pick among multiple A records unsafely, and auxiliary interfaces
+// (docker / vendor system bridges) poison the pick.
+func TestAnnounceIPsSingleDefaultRoute(t *testing.T) {
+	ips := announceIPsFrom(defaultRouteProbe)
+	if len(ips) == 0 {
+		t.Skipf("no default route in this environment")
+	}
+	if len(ips) != 1 {
+		t.Fatalf("announce set = %v, want exactly 1 A record", ips)
+	}
+	if ips[0].IsLoopback() {
+		t.Fatalf("announcing loopback %v", ips[0])
+	}
+}
+
+// Without a default route the fallback keeps the instance discoverable:
+// every non-loopback IPv4 (multi-address beats invisible).
+func TestAnnounceIPsFallbackWithoutRoute(t *testing.T) {
+	ips := announceIPsFrom("127.0.0.1:1") // loopback local addr → rejected
+	if len(ips) == 0 {
+		t.Fatalf("fallback produced no addresses")
+	}
+	for _, ip := range ips {
+		if ip.IsLoopback() {
+			t.Fatalf("fallback contains loopback %v", ip)
+		}
+	}
+}
+
+// A dotted instance name must not leak into the DNS label: the wire packer
+// splits at dots, which would turn the RFC 6763 single instance label into
+// two. The display name still travels exact via TXT name=.
+func TestDottedInstanceNameSanitized(t *testing.T) {
+	r := NewRegistrar("id", "living.room.5F", 8080, false)
+	if want := "living-room-5f._mibee-steward._tcp.local."; r.instanceFQDN != want {
+		t.Fatalf("instanceFQDN = %q, want %q", r.instanceFQDN, want)
+	}
+	if !reflect.DeepEqual(r.txt, TXTRecords("id", "living.room.5F", 8080, false)) {
+		t.Fatalf("TXT display name altered: %v", r.txt)
+	}
+}
+
+// Hostnames that are not DNS-safe (spaces, dots — NAS convention) fold to a
+// single valid label instead of breaking the SRV target.
+func TestHostLabelFromFolded(t *testing.T) {
+	cases := map[string]string{
+		"My NAS":   "my-nas",
+		"a..b":     "a-b",
+		"...":      "mibee-steward",
+		"":         "mibee-steward",
+		"ok-host":  "ok-host",
+		"Box (客厅)": "box",
+	}
+	for in, want := range cases {
+		if got := hostLabelFrom(in); got != want {
+			t.Fatalf("hostLabelFrom(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

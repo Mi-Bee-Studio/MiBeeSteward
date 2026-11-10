@@ -96,14 +96,52 @@ type Registrar struct {
 // HTTP API port (cfg.Server.Port); tls is the announced scheme hint (see
 // AnnounceConfig.TLS).
 func NewRegistrar(id, name string, apiPort int, tls bool) *Registrar {
-	host, _ := osHostname()
 	return &Registrar{
 		serviceFQDN:  dnsName(ServiceType + ".local"),
-		instanceFQDN: dnsName(name + "." + ServiceType + ".local"),
-		hostFQDN:     dnsName(host + ".local"),
+		instanceFQDN: dnsName(dnsInstanceLabel(name) + "." + ServiceType + ".local"),
+		hostFQDN:     dnsName(hostLabel()),
 		txt:          TXTRecords(id, name, apiPort, tls),
 		port:         apiPort,
 	}
+}
+
+// dnsInstanceLabel makes the service instance label wire-packable: the
+// packer splits names at dots (dnsmessage has no escape form), which would
+// turn a dotted instance name into two labels — RFC 6763 §4.1.1 defines the
+// instance name as ONE label. Dots become dashes; the display name still
+// travels exact via the TXT name= key.
+func dnsInstanceLabel(name string) string {
+	return strings.ReplaceAll(strings.TrimSpace(name), ".", "-")
+}
+
+// hostLabel folds the OS hostname into a DNS-safe single label ([a-z0-9-];
+// NAS hostnames commonly carry spaces) so the SRV target never breaks, with
+// a service constant as the fallback when nothing usable remains.
+func hostLabel() string {
+	h, _ := osHostname()
+	return hostLabelFrom(h)
+}
+
+func hostLabelFrom(h string) string {
+	var b strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(h) {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-':
+			b.WriteRune(r)
+			lastDash = false
+		default:
+			if !lastDash && b.Len() > 0 {
+				b.WriteByte('-')
+				lastDash = true
+			}
+		}
+	}
+	s := strings.Trim(b.String(), "-")
+	if s == "" {
+		return "mibee-steward"
+	}
+	return s
 }
 
 // Start joins the mDNS group on every multicast-capable interface, spawns
@@ -123,7 +161,7 @@ func (m *Registrar) startOn(addr string) error {
 	if err != nil {
 		return fmt.Errorf("listen mDNS %s: %w", addr, err)
 	}
-	m.ips = localIPv4s()
+	m.ips = announceIPs()
 	m.mu.Lock()
 	m.conn = conn.(*net.UDPConn)
 	m.stop = make(chan struct{})
@@ -395,9 +433,53 @@ func dnsName(s string) string {
 	return strings.ToLower(s)
 }
 
+// announceIPs selects the A-record address set: exactly the default-route
+// address when one exists. DNS-SD consumers pick among multiple A records
+// unsafely (first-wins / last-wins / arbitrary coexist — the wire carries
+// all records and the client applies whichever rule it happens to have),
+// and hosts commonly carry unreachable auxiliary addresses (docker /
+// vendor system bridges) that poison whichever pick the client makes —
+// one record removes the lottery. The route probe is a UDP *connect*: no
+// packet is ever sent. Without a default route the fallback is every
+// non-loopback IPv4 — multi-address beats invisible.
+func announceIPs() []net.IP {
+	return announceIPsFrom(defaultRouteProbe)
+}
+
+// defaultRouteProbe is a public anycast address used only as a route
+// selector for the UDP connect; nothing is transmitted.
+const defaultRouteProbe = "8.8.8.8:80"
+
+// announceIPsFrom is announceIPs with an injectable probe landmark (tests
+// force the fallback via a loopback landmark).
+func announceIPsFrom(landmark string) []net.IP {
+	if ip := probeRouteIPv4(landmark); ip != nil {
+		return []net.IP{ip}
+	}
+	return localIPv4s()
+}
+
+// probeRouteIPv4 returns the local address the kernel would route the
+// landmark through (the default-route address), or nil when there is none.
+func probeRouteIPv4(landmark string) net.IP {
+	c, err := net.DialTimeout("udp4", landmark, time.Second)
+	if err != nil {
+		return nil
+	}
+	defer c.Close()
+	host, _, err := net.SplitHostPort(c.LocalAddr().String())
+	if err != nil {
+		return nil
+	}
+	ip := net.ParseIP(host).To4()
+	if ip == nil || ip.IsUnspecified() || ip.IsLoopback() {
+		return nil
+	}
+	return ip
+}
+
 // localIPv4s collects this host's unicast IPv4 addresses (all up,
-// non-loopback interfaces) for the A records — the client picks whichever it
-// can reach, which is what a multi-homed box (eth+wifi) needs.
+// non-loopback interfaces) — the no-default-route fallback of announceIPs.
 func localIPv4s() []net.IP {
 	var ips []net.IP
 	ifaces, err := net.Interfaces()
