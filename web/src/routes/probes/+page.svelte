@@ -46,6 +46,8 @@ ProbeQualityTarget,
 		ProbeQualityHistoryReport,
 		ProbeQualityHistoryGroup,
 		ProbeQualityHistorySeries,
+		ProbeEgressVantage,
+		ProbePathSample,
 		TLSPortCerts,
 		DeviceCertificatesResponse,
 		Network
@@ -557,7 +559,7 @@ ProbeQualityTarget,
 
 	// Row label: the human network name when the vantage maps to one, else the
 	// raw vantage token; center renders with its friendly name.
-	function vantageLabel(v: ProbeQualityVantage): string {
+	function vantageLabel(v: { vantage: string; network_name?: string }): string {
 		if (v.network_name) return v.network_name;
 		if (v.vantage === 'center') return m['probes.Vantage Center']();
 		return v.vantage;
@@ -689,6 +691,69 @@ ProbeQualityTarget,
 		saveOpenPref(CERT_OPEN_KEY, certOpen);
 	}
 
+	// --- Egress & paths panel (#716/#718/#719) ---
+	// Always-on low-cadence fetch (60s) so the collapsed header can show the
+	// current public IP; expanding reveals the cards and the path table.
+	const EGRESS_OPEN_KEY = 'mibee.probes.egressOpen';
+	let egressOpenPref = loadOpenPref(EGRESS_OPEN_KEY);
+	let egressOpen = $state(egressOpenPref ?? false);
+	function toggleEgressOpen() {
+		egressOpen = !egressOpen;
+		egressOpenPref = egressOpen;
+		saveOpenPref(EGRESS_OPEN_KEY, egressOpen);
+	}
+	let egress = $state<ProbeEgressVantage[] | null>(null);
+	let egressError = $state('');
+	let paths: ProbePathSample[] | null = $state(null);
+	let pathsError = $state('');
+	let egressSourcesOpen = $state(false);
+	let pathModalSample = $state<ProbePathSample | null>(null);
+	let pathModalOpen = $state(false);
+	let traceBusyId = $state<number | null>(null);
+	// The center card is what the collapsed summary shows.
+	const centerEgress = $derived(egress?.find((v: ProbeEgressVantage) => v.vantage === 'center') ?? null);
+	const hasAgentTargets = $derived(targets.some((t) => t.vantage !== 'center'));
+
+	async function fetchEgress() {
+		try {
+			const j = await api.get<{ vantages: ProbeEgressVantage[] }>('/probe-egress');
+			egress = j.vantages ?? [];
+			egressError = '';
+		} catch (e) {
+			egressError = e instanceof Error ? e.message : String(e);
+		}
+	}
+	async function fetchPaths() {
+		try {
+			const j = await api.get<{ paths: ProbePathSample[] }>('/probe-paths');
+			paths = j.paths ?? [];
+			pathsError = '';
+		} catch (e) {
+			pathsError = e instanceof Error ? e.message : String(e);
+		}
+	}
+	async function traceNow(targetId: number) {
+		traceBusyId = targetId;
+		try {
+			const sample = await api.post<ProbePathSample>(`/probe-targets/${targetId}/trace`, {});
+			openPathModal(sample);
+			if (paths !== null) await fetchPaths();
+		} catch (e) {
+			addToast('error', e instanceof Error ? e.message : String(e));
+		} finally {
+			traceBusyId = null;
+		}
+	}
+	function pathStatusBadge(p: ProbePathSample): { cls: string; label: string } {
+		if (p.end_state === 'reached') {
+			return { cls: 'badge badge-success !text-[0.625rem]', label: m['probes.Paths Status Reached']() };
+		}
+		if (p.end_state === 'error') {
+			return { cls: 'badge badge-error !text-[0.625rem]', label: m['probes.Paths Status Error']() };
+		}
+		return { cls: 'badge badge-warning !text-[0.625rem]', label: m['probes.Paths Status MaxTtl']() };
+	}
+
 	// Row passes the search box AND the pill filters (OR across the two
 	// filters when both are active — each names its own kind of problem).
 	function matchesRow(t: ProbeTarget): boolean {
@@ -700,6 +765,7 @@ ProbeQualityTarget,
 	}
 
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
+	let egressTimer: ReturnType<typeof setInterval> | null = null;
 
 	// --- Create/Edit modal ---
 	let editModalOpen = $state(false);
@@ -813,11 +879,30 @@ ProbeQualityTarget,
 	let certModalOpen = $state(false);
 	let certPortCerts = $state<TLSPortCerts | null>(null);
 
+	// Path modal: open is writable (Modal binds it); the sample drives the
+	// content. Setting both happens in openPathModal().
+	function openPathModal(p: ProbePathSample) {
+		pathModalSample = p;
+		pathModalOpen = true;
+	}
+	function closePathModal() {
+		pathModalOpen = false;
+		pathModalSample = null;
+	}
+
 	onMount(() => {
 		fetchTargets();
 		fetchAgents();
 		fetchQuality();
+		fetchEgress();
+		fetchPaths();
 		pollTimer = setInterval(fetchTargets, 10000);
+		// Egress & paths: low-cadence refresh (60s) - the collapsed header
+		// always shows the current public IP (#716).
+		egressTimer = setInterval(() => {
+			void fetchEgress();
+			void fetchPaths();
+		}, 60000);
 		// Deep-link prefill from the device detail page's per-service create
 		// button (#606): ?create=1&module=…&target=…&device_id=… opens the
 		// create modal prefilled. Read once from window.location (the page is
@@ -837,6 +922,7 @@ ProbeQualityTarget,
 	});
 	onDestroy(() => {
 		if (pollTimer) clearInterval(pollTimer);
+		if (egressTimer) clearInterval(egressTimer);
 	});
 
 	async function fetchTargets() {
@@ -1839,6 +1925,173 @@ ProbeQualityTarget,
 				{/if}
 			</div>
 
+			<!-- Egress & paths (#716/#718/#719): the current egress identity
+			     (latest public-IP echo round + ASN + local gateway) and the
+			     latest traced path per external target. Recording only —
+			     changes never notify. The summary in the collapsed header keeps
+			     the current public IP visible without expanding. -->
+			<div class="bg-surface border border-border rounded-lg p-4 mb-6" data-egress-panel>
+				<button
+					type="button"
+					onclick={toggleEgressOpen}
+					aria-expanded={egressOpen}
+					aria-label={m['probes.Egress Panel Aria']()}
+					class="flex w-full items-start justify-between gap-4 text-left"
+				>
+					<span class="flex min-w-0 flex-1 flex-col gap-0.5">
+						<span class="flex items-center gap-2 text-sm font-semibold">
+							<ChevronDown class="h-4 w-4 transition-transform {egressOpen ? '' : '-rotate-90'}" />
+							{m['probes.Egress Panel Title']()}
+						</span>
+						<span class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted" data-egress-summary>
+							{#if egressError}
+								<span class="font-semibold text-error">{m['probes.Egress Fetch Failed']()}</span>
+							{:else if egress === null}
+								<span>…</span>
+							{:else if centerEgress === null}
+								<span>{m['probes.Egress No Data']()}</span>
+							{:else}
+								<span class="font-mono" data-egress-first-ip>{centerEgress.ips[0]?.ip ?? m['probes.Egress No Ip']()}</span>
+								{#if centerEgress.ips.length > 1}
+									<span>{m['probes.Egress Ip Count']({ count: centerEgress.ips.length })}</span>
+									<span class="hidden md:inline" title={m['probes.Egress Pool Note']()}>{m['probes.Egress Pool Badge']()}</span>
+								{/if}
+								{#if centerEgress.ips[0]?.asn}
+									<span>AS{centerEgress.ips[0].asn}</span>
+								{/if}
+								{#if paths !== null && paths.length > 0}
+									<span>{m['probes.Paths Count']({ count: paths.length })}</span>
+								{/if}
+							{/if}
+						</span>
+					</span>
+				</button>
+				{#if egressOpen}
+					<div class="mt-4 space-y-4">
+						{#if egressError}
+							<p class="text-sm text-error">{egressError}</p>
+						{:else if egress === null}
+							<p class="text-sm text-text-muted">…</p>
+						{:else}
+							<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+								{#each egress as v (v.vantage)}
+									<div class="rounded-lg border border-border p-3" data-egress-card>
+										<div class="mb-2 flex items-center justify-between gap-2">
+											<span class="text-sm font-semibold">{vantageLabel(v)}</span>
+											<span class="text-xs text-text-muted">{v.round_at ? formatTime(v.round_at) : ''}</span>
+										</div>
+										{#if v.ips.length === 0}
+											<p class="text-xs text-text-muted">{m['probes.Egress No Ip']()}</p>
+										{:else}
+											<ul class="space-y-1.5">
+												{#each v.ips as ip (ip.ip)}
+													<li class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
+														<span class="font-mono">{ip.ip}</span>
+														{#if ip.asn}
+															<span class="badge badge-info !text-[0.625rem]" title={ip.as_name}>AS{ip.asn}</span>
+														{/if}
+														<span class="text-xs text-text-muted">{ip.sources?.join(' · ')}</span>
+													</li>
+												{/each}
+											</ul>
+											{#if v.ips.length > 1}
+												<p class="mt-1.5 text-xs text-text-muted" title={m['probes.Egress Pool Note']()}>{m['probes.Egress Pool Badge']()}</p>
+											{/if}
+										{/if}
+										{#if v.local_gateway}
+											<p class="mt-2 text-xs text-text-muted">
+												{m['probes.Egress Local']()}:
+												<span class="font-mono">{v.local_iface} → {v.local_gateway}</span>
+											</p>
+										{/if}
+										{#if v.sources.length > 0}
+											<button
+												type="button"
+												class="mt-2 text-xs text-text-muted hover:text-text"
+												onclick={() => (egressSourcesOpen = !egressSourcesOpen)}
+												aria-expanded={egressSourcesOpen}
+											>
+												{m['probes.Egress Sources Ok']({ ok: v.sources.filter((s) => s.ok).length, total: v.sources.length })}
+												<ChevronDown class="inline h-3 w-3 transition-transform {egressSourcesOpen ? '' : '-rotate-90'}" />
+											</button>
+											{#if egressSourcesOpen}
+												<table class="mt-1.5 w-full text-xs" data-egress-sources>
+													{#each v.sources as s (s.source)}
+														<tr class="{s.ok ? '' : 'opacity-60'}">
+															<td class="py-0.5 pr-2">{s.source}</td>
+															<td class="py-0.5 pr-2 font-mono">{s.ok ? s.ip : ''}</td>
+															<td class="py-0.5 pr-2 text-text-muted">{s.ok ? Math.round(s.ms) + 'ms' : (s.err || '').slice(0, 40)}</td>
+														</tr>
+													{/each}
+												</table>
+											{/if}
+										{/if}
+									</div>
+								{/each}
+							</div>
+							{#if hasAgentTargets && !egress.some((v) => v.vantage !== 'center')}
+								<p class="text-xs text-text-muted">{m['probes.Egress Agent Pending']()}</p>
+							{/if}
+						{/if}
+
+						<div>
+							<h4 class="mb-2 text-sm font-semibold">{m['probes.Paths Title']()}</h4>
+							{#if pathsError}
+								<p class="text-sm text-error">{pathsError}</p>
+							{:else if paths === null}
+								<p class="text-sm text-text-muted">…</p>
+							{:else if paths.length === 0}
+								<p class="text-sm text-text-muted">{m['probes.Paths None Yet']()}</p>
+							{:else}
+								<div class="overflow-x-auto">
+									<table class="w-full text-sm" data-paths-table>
+										<thead>
+											<tr class="border-b border-border text-left text-xs text-text-muted">
+												<th class="py-1.5 pr-3">{m['probes.Column Target']()}</th>
+												<th class="py-1.5 pr-3">{m['probes.Column Vantage']()}</th>
+												<th class="py-1.5 pr-3">{m['probes.Paths Resolved']()}</th>
+												<th class="py-1.5 pr-3">{m['probes.Paths Reached']()}</th>
+												<th class="py-1.5 pr-3">{m['probes.Paths Reply Ttl']()}</th>
+												<th class="py-1.5 pr-3">{m['probes.Paths Visible']()}</th>
+												<th class="py-1.5 pr-3">{m['probes.Paths Status']()}</th>
+												<th class="py-1.5 pr-3">{m['probes.Checked At']()}</th>
+												<th class="py-1.5"></th>
+											</tr>
+										</thead>
+										<tbody>
+											{#each paths as p (p.id)}
+												<tr class="border-b border-border/50" data-path-row>
+													<td class="py-1.5 pr-3 font-medium">{p.target_name}</td>
+													<td class="py-1.5 pr-3 text-text-muted">{vantageLabel(p)}</td>
+													<td class="py-1.5 pr-3 font-mono text-xs">{p.resolved_ip}</td>
+													<td class="py-1.5 pr-3">{p.reached_ttl || '—'}</td>
+													<td class="py-1.5 pr-3">{p.reply_ttl || '—'}</td>
+													<td class="py-1.5 pr-3">{p.visible_hops}</td>
+													<td class="py-1.5 pr-3"><span class={pathStatusBadge(p).cls}>{pathStatusBadge(p).label}</span></td>
+													<td class="py-1.5 pr-3 text-xs text-text-muted">{formatTime(p.traced_at)}</td>
+													<td class="py-1.5 text-right">
+														<button type="button" class="btn btn-ghost btn-xs mr-1" onclick={() => openPathModal(p)}>{m['probes.Paths View']()}</button>
+														<button
+															type="button"
+															class="btn btn-ghost btn-xs"
+															disabled={traceBusyId === p.target_id}
+															onclick={() => traceNow(p.target_id)}
+														>
+															{traceBusyId === p.target_id ? m['probes.Paths Tracing']() : m['probes.Paths Trace Now']()}
+														</button>
+													</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+								<p class="mt-1.5 text-xs text-text-muted">{m['probes.Paths Silent Note']()}</p>
+							{/if}
+						</div>
+					</div>
+				{/if}
+			</div>
+
 			<!-- Cert expiry timeline (#276): TLS/http targets sorted by
 			     days-left. Collapsed unless something expires inside the
 			     warning window (first visit follows the data; manual toggles
@@ -2498,3 +2751,50 @@ ProbeQualityTarget,
 
 <!-- Certificate chain (shared component, same DTO as the device endpoint) -->
 <CertificateModal bind:open={certModalOpen} portCerts={certPortCerts} />
+
+<!-- Path detail (#719): hop table of one trace. -->
+<Modal bind:open={pathModalOpen} title={m['probes.Paths Modal Title']()} maxWidth="48rem" onClose={closePathModal}>
+	{#if pathModalSample}
+		<div class="space-y-3">
+			<p class="text-sm text-text-muted">
+				{pathModalSample.target_name}
+				· {vantageLabel(pathModalSample)}
+				· <span class="font-mono">{pathModalSample.resolved_ip}</span>
+				· {pathModalSample.method.toUpperCase()}
+				· {m['probes.Paths Reached']()} {pathModalSample.reached_ttl || '—'}
+				{#if pathModalSample.reply_ttl}
+					· {m['probes.Paths Reply Ttl']()} {pathModalSample.reply_ttl}
+				{/if}
+				· {formatTime(pathModalSample.traced_at)}
+			</p>
+			{#if pathModalSample.err}
+				<p class="text-sm text-error">{pathModalSample.err}</p>
+			{/if}
+			<div class="max-h-80 overflow-y-auto">
+				<table class="w-full text-sm" data-path-hops>
+					<thead>
+						<tr class="border-b border-border text-left text-xs text-text-muted">
+							<th class="py-1.5 pr-3">TTL</th>
+							<th class="py-1.5 pr-3">{m['probes.Paths Hop Ip']()}</th>
+							<th class="py-1.5 pr-3">{m['probes.Paths Hop Rtt']()}</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each pathModalSample.hops as hop (hop.ttl)}
+							<tr
+								class="border-b border-border/50 {hop.ip && hop.ip === pathModalSample.resolved_ip
+									? 'bg-success/10 font-medium'
+									: ''}"
+							>
+								<td class="py-1.5 pr-3">{hop.ttl}</td>
+								<td class="py-1.5 pr-3 font-mono">{hop.ip || '—'}</td>
+								<td class="py-1.5 pr-3">{hop.ip && hop.ms ? Math.round(hop.ms) + 'ms' : ''}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			<p class="text-xs text-text-muted">{m['probes.Paths Silent Note']()}</p>
+		</div>
+	{/if}
+</Modal>

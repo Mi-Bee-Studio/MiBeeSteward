@@ -75,35 +75,75 @@ impl std::fmt::Display for DnsError {
 /// deadline, parse, verify the transaction id. The prober's dns module
 /// (#605) uses this for pinned resolvers (egress differential) and the
 /// system nameserver alike. rcode is the caller's to interpret.
+///
+/// #715: a single-shot UDP query loses the whole probe to one dropped
+/// packet, and the affected host's upstream drops UDP/53 per-packet at
+/// 50–87% inside minute-scale clusters (same box: TCP/53 99.9%, so the path
+/// itself is fine). Up to 3 attempts inside the caller's budget — same
+/// socket (stable 5-tuple), fresh transaction id per attempt so a late
+/// reply to an earlier attempt can never satisfy a later one. Center
+/// parity: its RetryProber does the same 1+2 ladder.
 pub async fn udp_query(
     addr: std::net::SocketAddr,
     qname: &str,
     qtype: u16,
     timeout: std::time::Duration,
 ) -> Result<Message, String> {
-    let id = (std::process::id() as u16).wrapping_mul(31) ^ qname.len() as u16;
-    let q = build_query(qname, qtype, id, true);
+    const ATTEMPTS: u32 = 3;
+    let per_attempt = (timeout / ATTEMPTS).max(std::time::Duration::from_millis(50));
     let sock = tokio::net::UdpSocket::bind(if addr.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" })
         .await
         .map_err(|e| e.to_string())?;
     sock.connect(addr).await.map_err(|e| e.to_string())?;
-    sock.send(&q).await.map_err(|e| e.to_string())?;
+    let base = (std::process::id() as u16).wrapping_mul(31) ^ qname.len() as u16;
     let mut buf = vec![0u8; 1500];
-    let n = tokio::time::timeout(timeout, sock.recv(&mut buf))
-        .await
-        .map_err(|_| "i/o timeout".to_string())?
-        .map_err(|e| e.to_string())?;
-    let msg = parse_message(&buf[..n]).map_err(|e| e.to_string())?;
-    if msg.id != id {
-        return Err("mismatched dns transaction id".into());
+    let mut last_err = String::new();
+    for attempt in 0..ATTEMPTS {
+        let id = base ^ (attempt as u16).wrapping_mul(0x9E37);
+        let q = build_query(qname, qtype, id, true);
+        if let Err(e) = sock.send(&q).await {
+            last_err = e.to_string();
+            continue;
+        }
+        match tokio::time::timeout(per_attempt, sock.recv(&mut buf)).await {
+            Err(_) => {
+                last_err = "i/o timeout".to_string();
+                continue;
+            }
+            Ok(Err(e)) => {
+                last_err = e.to_string();
+                continue;
+            }
+            Ok(Ok(n)) => {
+                let msg = match parse_message(&buf[..n]) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        last_err = e.0;
+                        continue;
+                    }
+                };
+                if msg.id != id {
+                    // A stray/late reply for another attempt (or someone
+                    // else's query): retransmit with a fresh id.
+                    last_err = "mismatched dns transaction id".to_string();
+                    continue;
+                }
+                return Ok(msg);
+            }
+        }
     }
-    Ok(msg)
+    Err(last_err)
 }
 
 struct Reader<'a> {
     buf: &'a [u8],
     pos: usize,
 }
+
+/// Upper bound on compression-pointer jumps while reading one name (#714).
+/// Legitimate chains are a handful deep; the cap turns a pointer loop in a
+/// corrupt or hostile packet into an error instead of a hang.
+const MAX_POINTER_JUMPS: usize = 16;
 
 impl<'a> Reader<'a> {
     fn u8(&mut self) -> Result<u8, DnsError> {
@@ -121,26 +161,33 @@ impl<'a> Reader<'a> {
         let b = self.u16()? as u32;
         Ok(a << 16 | b)
     }
-    /// Read a (possibly compressed) name; guards pointer loops.
+    /// Read a (possibly compressed) name. RFC 1035 §4.1.4 lets a name end in
+    /// a pointer whose target may itself end in a pointer (chained
+    /// compression, e.g. DNSPod's CNAME answers), so pointers are followed
+    /// repeatedly; MAX_POINTER_JUMPS bounds the walk so loops still fail.
     fn name(&mut self, depth: usize) -> Result<String, DnsError> {
         if depth > 8 {
             return Err(DnsError("compression loop".into()));
         }
         let mut labels: Vec<String> = Vec::new();
-        let mut jumped = false;
-        let mut return_pos = 0usize;
+        let mut jumps = 0usize;
+        // The caller resumes right after the FIRST pointer: that is where
+        // this name ends in the record being parsed.
+        let mut return_pos: Option<usize> = None;
         loop {
             let len = self.u8()?;
             match len {
                 0 => break,
                 0xC0..=0xFF => {
-                    if jumped {
-                        return Err(DnsError("double pointer".into()));
+                    jumps += 1;
+                    if jumps > MAX_POINTER_JUMPS {
+                        return Err(DnsError("compression pointer loop".into()));
                     }
                     let ptr = ((len & 0x3F) as usize) << 8 | self.u8()? as usize;
-                    return_pos = self.pos;
+                    if return_pos.is_none() {
+                        return_pos = Some(self.pos);
+                    }
                     self.pos = ptr;
-                    jumped = true;
                 }
                 _ => {
                     let end = self.pos + len as usize;
@@ -152,8 +199,8 @@ impl<'a> Reader<'a> {
                 }
             }
         }
-        if jumped {
-            self.pos = return_pos;
+        if let Some(pos) = return_pos {
+            self.pos = pos;
         }
         Ok(labels.join("."))
     }
@@ -358,5 +405,133 @@ mod tests {
             }
             o => panic!("{o:?}"),
         }
+    }
+
+    /// #715: a resolver that drops the first queries and then answers must
+    /// be satisfied by a retransmit inside the same budget — the reply
+    /// carries the retry attempt's transaction id.
+    #[tokio::test]
+    async fn udp_query_retransmits_through_packet_loss() {
+        let srv = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr: std::net::SocketAddr = srv.local_addr().unwrap();
+        let seen = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let seen_c = std::sync::Arc::clone(&seen);
+        tokio::spawn(async move {
+            let mut buf = [0u8; 512];
+            loop {
+                let Ok((n, from)) = srv.recv_from(&mut buf).await else { return };
+                let seq = seen_c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if seq < 2 {
+                    continue; // drop the first two queries outright
+                }
+                // Echo the request header (so the id matches whatever
+                // attempt is asking) with QR set; counts stay as sent.
+                let mut resp = buf[..n].to_vec();
+                resp[2] |= 0x80;
+                let _ = srv.send_to(&resp, from).await;
+            }
+        });
+        let msg = udp_query(addr, "example.com", 1, std::time::Duration::from_millis(1500))
+            .await
+            .expect("retransmit must recover from two dropped queries");
+        assert_eq!(msg.answers.len(), 0);
+        assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 3, "exactly three queries hit the wire");
+    }
+
+    /// #715: when everything is dropped the budget-guarded ladder surfaces
+    /// the timeout error, not a hang.
+    #[tokio::test]
+    async fn udp_query_all_dropped_times_out() {
+        let srv = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr: std::net::SocketAddr = srv.local_addr().unwrap();
+        tokio::spawn(async move {
+            let mut buf = [0u8; 512];
+            while let Ok((_, _)) = srv.recv_from(&mut buf).await {}
+        });
+        let started = std::time::Instant::now();
+        let err = udp_query(addr, "example.com", 1, std::time::Duration::from_millis(300))
+            .await
+            .expect_err("all-dropped must fail");
+        assert!(err.contains("i/o timeout"), "err = {err}");
+        // The whole ladder stays inside (roughly) the caller's budget.
+        assert!(started.elapsed() < std::time::Duration::from_millis(1500));
+    }
+
+    /// Header + one question for `z.tld A IN` (qname at offset 12).
+    fn header_and_question(an: u16) -> Vec<u8> {
+        let mut m = Vec::new();
+        m.extend_from_slice(&0x4242u16.to_be_bytes());
+        m.extend_from_slice(&[0x81, 0x80]);
+        m.extend_from_slice(&1u16.to_be_bytes()); // qd
+        m.extend_from_slice(&an.to_be_bytes()); // an
+        m.extend_from_slice(&[0, 0, 0, 0]);
+        encode_name("z.tld", &mut m);
+        m.extend_from_slice(&[0, 1, 0, 1]);
+        m
+    }
+
+    /// #714: a name whose pointer target itself ends in a pointer (chained
+    /// compression, the shape DNSPod uses for CNAME answers) used to fail
+    /// with "double pointer" and dropped the whole response.
+    #[test]
+    fn chained_compression_pointers_resolve() {
+        let mut m = header_and_question(2);
+        // answer 1: z.tld CNAME ns.z.tld, rdata written as "ns" + pointer to qname
+        m.extend_from_slice(&[0xC0, 0x0C]);
+        m.extend_from_slice(&[0, 5, 0, 1]);
+        m.extend_from_slice(&60u32.to_be_bytes());
+        let rd_start = m.len() + 2;
+        m.extend_from_slice(&5u16.to_be_bytes());
+        m.extend_from_slice(&[2, b'n', b's', 0xC0, 0x0C]);
+        // answer 2: name = pointer to answer 1's rdata (which ends in a pointer)
+        m.extend_from_slice(&[0xC0, rd_start as u8]);
+        m.extend_from_slice(&[0, 1, 0, 1]);
+        m.extend_from_slice(&60u32.to_be_bytes());
+        m.extend_from_slice(&4u16.to_be_bytes());
+        m.extend_from_slice(&[192, 0, 2, 7]);
+
+        let msg = parse_message(&m).unwrap();
+        assert_eq!(msg.answers.len(), 2);
+        match &msg.answers[0].rdata {
+            RData::Cname(n) => assert_eq!(n, "ns.z.tld"),
+            o => panic!("{o:?}"),
+        }
+        // Parsing resumed after the first pointer: type/rdata read correctly.
+        assert_eq!(msg.answers[1].name, "ns.z.tld");
+        match &msg.answers[1].rdata {
+            RData::A(ip) => assert_eq!(*ip, std::net::Ipv4Addr::new(192, 0, 2, 7)),
+            o => panic!("{o:?}"),
+        }
+    }
+
+    /// Pointer loops (self-referencing or mutual) must still fail, not hang.
+    #[test]
+    fn compression_pointer_loops_are_errors() {
+        // answer name points at itself
+        let mut m = header_and_question(1);
+        let at = m.len() as u8;
+        m.extend_from_slice(&[0xC0, at]);
+        m.extend_from_slice(&[0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 192, 0, 2, 1]);
+        let err = parse_message(&m).unwrap_err();
+        assert!(err.0.contains("loop"), "{}", err.0);
+
+        // two names pointing at each other
+        let mut m = header_and_question(2);
+        let a = m.len() as u8;
+        m.extend_from_slice(&[0xC0, a + 16]); // -> answer 2's name
+        m.extend_from_slice(&[0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 192, 0, 2, 1]);
+        m.extend_from_slice(&[0xC0, a]); // -> answer 1's name
+        m.extend_from_slice(&[0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 192, 0, 2, 2]);
+        let err = parse_message(&m).unwrap_err();
+        assert!(err.0.contains("loop"), "{}", err.0);
+    }
+
+    /// A pointer past the end of the packet is a truncation error.
+    #[test]
+    fn out_of_range_pointer_is_an_error() {
+        let mut m = header_and_question(1);
+        m.extend_from_slice(&[0xC0, 0xFF]);
+        m.extend_from_slice(&[0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 192, 0, 2, 1]);
+        assert!(parse_message(&m).is_err());
     }
 }

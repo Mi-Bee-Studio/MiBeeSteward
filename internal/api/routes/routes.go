@@ -40,6 +40,7 @@ import (
 	"mibee-steward/internal/service/listenwatch"
 	"mibee-steward/internal/service/notification"
 	scannerv2peer "mibee-steward/internal/service/peer"
+	"mibee-steward/internal/service/probeext"
 	probetarget "mibee-steward/internal/service/probetarget"
 	scannerv2 "mibee-steward/internal/service/scannerv2"
 	scannerv2cleanup "mibee-steward/internal/service/scannerv2/cleanup"
@@ -909,7 +910,18 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	probeQualityStop := make(chan struct{})
 	go probeQualitySvc.StartMetricsLoop(context.Background(), prometheus.DefaultRegisterer, probeQualityStop)
 	probeQualityHandler := handler.NewProbeQualityHandler(probeQualitySvc)
-	registerProbeTargetRoutes(r, probeTargetHandler, probeQualityHandler)
+	// Egress/path extension (#716/#718/#719): the probe_ext.db side store
+	// (heartbeat.db pattern - additive DDL, no SchemaVersion bump) plus the
+	// center-side egress rounds and path tracer. Recording only.
+	probeExtStore, err := probeext.OpenStore(probeExtDBPathFor(cfg))
+	if err != nil {
+		slog.Error("failed to open probe_ext store", "error", err)
+		os.Exit(1)
+	}
+	probeExtSvc := probeext.NewService(cfg.Probe, probeExtStore, db.New(probeDB), slog.Default())
+	probeExtSvc.Start(context.Background())
+	probeExtHandler := handler.NewProbeExtHandler(probeExtSvc)
+	registerProbeTargetRoutes(r, probeTargetHandler, probeQualityHandler, probeExtHandler)
 	// Discover-then-probe autogen (#606): default OFF, periodic reconcile of
 	// discovered services into device-bound targets. Same stop pattern.
 	probeAutogenSvc := probetarget.NewAutogenService(db.New(probeDB), cfg.Probe.Autogen, slog.Default())
@@ -976,7 +988,7 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// service_evidence) on a single ticker, each with its own retention window.
 	// Defaults & scanner.retention_days back-compat are applied in
 	// config.normalizeRetention, so cfg.Retention is fully populated here.
-	cleanupSvc := scannerv2cleanup.New(scanQueries, hbStore.Queries(), hbStore.DB(), dbConn, cfg.Retention)
+	cleanupSvc := scannerv2cleanup.New(scanQueries, hbStore.Queries(), hbStore.DB(), dbConn, probeExtStore.Conn(), cfg.Retention)
 	cleanupSvc.Start(context.Background())
 
 	// Asset-archive lifecycle engine (#663): offline devices are archived

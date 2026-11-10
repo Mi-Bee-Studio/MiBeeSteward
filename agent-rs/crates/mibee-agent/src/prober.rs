@@ -19,6 +19,10 @@ const PENDING_MAX: usize = 100;
 const RETRY_BACKOFF: Duration = Duration::from_secs(1);
 /// HTTP keyword inspection bound (matches the center's 1 MiB body limit).
 const BODY_LIMIT: usize = 1 << 20;
+/// User-Agent for http probes, the same product token the center sends
+/// (#713: some public sites reject common tool UAs with 501).
+const PROBE_USER_AGENT: &str =
+    concat!("MiBeeSteward-probe/", env!("CARGO_PKG_VERSION"), " (+https://github.com/Mi-Bee-Studio/MiBeeSteward)");
 
 pub struct Prober {
     plan_fingerprint: String,
@@ -313,6 +317,7 @@ async fn http_probe(
 
     let client = reqwest::Client::builder()
         .timeout(timeout)
+        .user_agent(PROBE_USER_AGENT)
         .danger_accept_invalid_certs(ignore_tls)
         .resolve_to_addrs(&host, &addrs)
         .build()
@@ -663,6 +668,30 @@ mod tests {
         let (code, body) = http_probe(&format!("127.0.0.1:{port}"), None, Duration::from_secs(2)).await.unwrap();
         assert_eq!(code, 204);
         assert!(body.is_none());
+    }
+
+    /// #713 parity: http probes carry the center's product User-Agent. The
+    /// responder answers 501 unless it sees it (the www.qq.com behaviour).
+    #[tokio::test]
+    async fn http_probe_sends_product_user_agent() {
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            while let Ok((mut s, _)) = l.accept().await {
+                let mut b = [0u8; 1024];
+                let n = s.read(&mut b).await.unwrap_or(0);
+                let req = String::from_utf8_lossy(&b[..n]).to_ascii_lowercase();
+                let reply: &[u8] = if req.contains("\r\nuser-agent: mibeesteward-probe/") {
+                    b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"
+                } else {
+                    b"HTTP/1.1 501 Not Implemented\r\nContent-Length: 0\r\n\r\n"
+                };
+                let _ = s.write_all(reply).await;
+            }
+        });
+        let (code, _) = http_probe(&format!("127.0.0.1:{port}"), None, Duration::from_secs(2)).await.unwrap();
+        assert_eq!(code, 204, "probe must send the MiBeeSteward-probe User-Agent");
     }
 
     /// keyword + expected_status semantics against a local responder.
