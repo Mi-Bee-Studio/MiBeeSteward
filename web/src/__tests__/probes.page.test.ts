@@ -92,6 +92,22 @@ const mockState = vi.hoisted(() => {
 			updated_at: '2026-08-19T00:00:00Z'
 		},
 		{
+			// Disabled row (#UI-declutter): hidden by default, the
+			// data-filter-disabled pill brings it back. tcp module so the
+			// certificate-summary sweep (http/tls only) stays at 3 calls.
+			id: 6,
+			name: 'retired-endpoint',
+			module: 'tcp',
+			target: '203.0.113.99:8080',
+			interval_seconds: 300,
+			timeout_seconds: 10,
+			enabled: false,
+			notes: '',
+			vantage: 'center',
+			created_at: '2026-08-19T00:00:00Z',
+			updated_at: '2026-08-19T00:00:00Z'
+		},
+		{
 			id: 4,
 			name: 'auto-nas-web',
 			module: 'tcp',
@@ -273,7 +289,8 @@ const mockState = vi.hoisted(() => {
 		quality: seededQuality,
 		allOkQuality,
 		history: seededHistory,
-		certs: {} as Record<number, string>
+		certs: {} as Record<number, string>,
+		episodes: [] as Array<Record<string, unknown>>
 	};
 });
 
@@ -347,6 +364,9 @@ vi.mock('$lib/api/client', () => ({
 			}
 			if (url.startsWith('/probe-quality/history')) {
 				return Promise.resolve(mockState.history);
+			}
+			if (url.startsWith('/probe-quality/episodes')) {
+				return Promise.resolve({ episodes: mockState.episodes });
 			}
 			if (url.startsWith('/probe-quality')) {
 				// #613 per-category quality report; overridable per test via
@@ -579,7 +599,7 @@ describe('Probes page', () => {
 		expect(container.textContent).toContain('Latency by vantage');
 		expect(container.textContent).toContain('Status timeline');
 		const strips = Array.from(container.querySelectorAll('[role="img"]')).filter(
-			(el) => !el.closest('[data-quality-trend]')
+			(el) => !el.closest('[data-quality-trend]') && !el.closest('[data-health-bar]')
 		);
 		expect(strips.length).toBe(2);
 		// center 2/2 success, agent 0/2: the percentages render per strip.
@@ -1070,8 +1090,9 @@ describe('Probes page', () => {
 
 			const bar = container.querySelector('[data-health-summary]') as HTMLElement;
 			expect(bar).toBeTruthy();
-			// Seeded list: every latest outcome succeeds → all-healthy copy.
-			expect(bar.textContent).toContain('All 5 targets healthy');
+			// Seeded list: every latest outcome succeeds → all-healthy copy
+			// (6 targets incl. the hidden disabled row).
+			expect(bar.textContent).toContain('All 6 targets healthy');
 
 			// Egress block: one chip per vantage, worst verdict wins (center is
 			// degraded via the external category, edge-1 dns_fault, edge-2
@@ -1111,7 +1132,7 @@ describe('Probes page', () => {
 		try {
 			const { container } = render(Probes);
 			await waitFor(() => {
-				expect(container.textContent).toContain('1 of 5 failing');
+				expect(container.textContent).toContain('1 of 6 failing');
 			});
 
 			// The failing-by-module breakdown rides the count.
@@ -1162,7 +1183,7 @@ describe('Probes page', () => {
 		try {
 			const { container } = render(Probes);
 			await waitFor(() => {
-				expect(container.textContent).toContain('1 of 5 failing');
+				expect(container.textContent).toContain('1 of 6 failing');
 			});
 
 			// The pill next to the search box (same state as the bar button).
@@ -1458,6 +1479,84 @@ describe('Probes page', () => {
 		expect(certCalls() - baseline).toBe(3);
 	});
 
+	// --- #UI-declutter: charts where charts read faster -------------------
+
+	it('hides disabled targets by default; the pill and a search bring them back', async () => {
+		const { container } = render(Probes);
+		await waitFor(() => {
+			expect(container.textContent).toContain('github-tls');
+		});
+		// Hidden by default even with sections open.
+		expect(container.textContent).not.toContain('retired-endpoint');
+		// The pill carries the count; clicking reveals the row.
+		const pill = container.querySelector('[data-filter-disabled]') as HTMLElement;
+		expect(pill.textContent).toContain('1');
+		await fireEvent.click(pill);
+		await waitFor(() => {
+			expect(container.textContent).toContain('retired-endpoint');
+		});
+	});
+
+	it('a deliberate search overrides the disabled hide (pill still off)', async () => {
+		const { container } = render(Probes);
+		await waitFor(() => {
+			expect(container.textContent).toContain('github-tls');
+		});
+		const input = container.querySelector('input[aria-label="Search"]') as HTMLInputElement;
+		await fireEvent.input(input, { target: { value: 'retired' } });
+		await waitFor(() => {
+			expect(container.textContent).toContain('retired-endpoint');
+		});
+	});
+
+	it('renders the health stacked bar with count tooltips', async () => {
+		const { container } = render(Probes);
+		await waitFor(() => {
+			expect(container.querySelector('[data-health-bar]')).toBeTruthy();
+		});
+		const bar = container.querySelector('[data-health-bar]') as HTMLElement;
+		// Seeded board: 5 enabled (all healthy) + 1 paused → segments exist,
+		// incl. the paused one.
+		const segs = bar.querySelectorAll('span');
+		expect(segs.length).toBeGreaterThanOrEqual(2);
+		const titles = Array.from(segs).map((s) => s.getAttribute('title') || '');
+		expect(titles.some((t) => t.includes('1 paused'))).toBe(true);
+	});
+
+	it('renders the episode 24h strip when episodes exist', async () => {
+		mockState.episodes = [
+			{
+				id: 7,
+				kind: 'network',
+				vantage_group: 'center',
+				target_group: '',
+				started_at: '2026-11-09T23:00:00Z',
+				last_seen_at: '2026-11-10T00:30:00Z',
+				windows: 2,
+				metric_degraded: [],
+				attribution: [{ kind: 'egress_change', detail: 'x', at: '2026-11-09T23:05:00Z' }],
+				notified: true,
+				resolved_at: '2026-11-10T00:30:00Z',
+				recover_notified: true
+			}
+		];
+		try {
+			const { container } = render(Probes);
+			await waitFor(() => {
+				expect(container.querySelector('[data-episode-strip]')).toBeTruthy();
+			});
+			const strip = container.querySelector('[data-episode-strip]') as HTMLElement;
+			const bars = strip.querySelectorAll('span');
+			expect(bars.length).toBe(1);
+			// resolved episodes render warn, not error.
+			expect((bars[0] as HTMLElement).className).toContain('bg-warning');
+			// Banner text keeps the count.
+			expect(container.querySelector('[data-quality-banner]')?.textContent).toContain('1');
+		} finally {
+			mockState.episodes = [];
+		}
+	});
+
 	// --- Egress & paths panel (#716/#718/#719) ---
 	it('shows the current public IP in the collapsed egress summary', async () => {
 		const { container } = render(Probes);
@@ -1466,12 +1565,12 @@ describe('Probes page', () => {
 		});
 		// Pool note: more than one IP renders the count.
 		expect(container.querySelector('[data-egress-summary]')?.textContent).toContain('2');
-		// Collapsed by default: no cards, no paths table.
+		// Collapsed by default: no cards, no path matrix.
 		expect(container.querySelector('[data-egress-card]')).toBeNull();
-		expect(container.querySelector('[data-paths-table]')).toBeNull();
+		expect(container.querySelector('[data-paths-matrix]')).toBeNull();
 	});
 
-	it('renders egress cards and the path table when expanded', async () => {
+	it('renders egress cards and the grouped path matrix when expanded', async () => {
 		localStorage.setItem('mibee.probes.egressOpen', 'true');
 		const { container } = render(Probes);
 		await waitFor(() => {
@@ -1481,15 +1580,16 @@ describe('Probes page', () => {
 		expect(card.textContent).toContain('198.51.100.7');
 		expect(card.textContent).toContain('AS64496');
 		expect(card.textContent).toContain('192.0.2.1'); // local gateway
+		// One row per target (problem-first: site-b max_ttl above site-a).
 		const rows = container.querySelectorAll('[data-path-row]');
 		expect(rows.length).toBe(2);
-		expect(rows[0].textContent).toContain('site-a');
-		expect(rows[0].textContent).toContain('203.0.113.10');
-		expect(rows[0].textContent).toContain('12'); // reached TTL
-		expect(rows[1].textContent).toContain('site-b'); // silent-middle shape
-		// The path modal opens from the view button and lists the hops.
-		const viewBtn = rows[0].querySelector('button') as HTMLElement;
-		await fireEvent.click(viewBtn);
+		expect(rows[0].textContent).toContain('site-b');
+		expect(rows[0].textContent).toContain('TTL');
+		expect(rows[1].textContent).toContain('site-a');
+		expect(rows[1].textContent).toContain('12→—', 'reached chip: reached TTL → reply TTL');
+		// A chip opens the hop-by-hop modal (site-a carries 3 hops).
+		const chip = (rows[1] as HTMLElement).querySelector('button') as HTMLElement;
+		await fireEvent.click(chip);
 		await waitFor(() => {
 			const hops = container.querySelector('[data-path-hops]');
 			expect(hops).toBeTruthy();

@@ -65,6 +65,14 @@ ProbeQualityTarget,
 		stageData,
 		ttlData
 	} from '$lib/probePhases';
+	import {
+		type HealthKey,
+		type PathGroupRow,
+		episodeBars,
+		groupPathsByTarget,
+		healthSegments,
+		latencyHeat
+	} from '$lib/utils/probeOverview';
 
 	// --- State ---
 	let targets = $state<ProbeTarget[]>([]);
@@ -190,6 +198,45 @@ ProbeQualityTarget,
 		}
 		return parts;
 	});
+	// Stacked health bar (#UI-declutter): proportions speak faster than the
+	// "68 of 113" line. fail vs timeout split comes from the latest statuses;
+	// enabled targets with no result yet are "nodata".
+	const healthStack = $derived.by(() => {
+		const counts: Record<HealthKey, number> = { ok: 0, fail: 0, timeout: 0, nodata: 0, paused: 0 };
+		for (const t of targets) {
+			if (!t.enabled) {
+				counts.paused++;
+				continue;
+			}
+			const latest = latestOverall(t);
+			if (!latest) counts.nodata++;
+			else if (latest.status === 'success') counts.ok++;
+			else if (latest.status === 'timeout') counts.timeout++;
+			else counts.fail++;
+		}
+		return healthSegments(counts);
+	});
+	const healthSegCls: Record<HealthKey, string> = {
+		ok: 'bg-success',
+		fail: 'bg-error',
+		timeout: 'bg-warning',
+		nodata: 'bg-border',
+		paused: 'bg-surface-2 border-r border-border'
+	};
+	function healthSegTitle(key: HealthKey, count: number): string {
+		switch (key) {
+			case 'ok':
+				return m['probes.Health Ok']({ count });
+			case 'fail':
+				return m['probes.Health Fail']({ count });
+			case 'timeout':
+				return m['probes.Health Timeout']({ count });
+			case 'nodata':
+				return m['probes.Health Nodata']({ count });
+			default:
+				return m['probes.Overview Paused']({ count });
+		}
+	}
 
 	// --- Category sections (#613): the list groups into three collapsible
 	// sections in a fixed order — LAN (device-bound / auto targets), external
@@ -215,6 +262,11 @@ ProbeQualityTarget,
 	let searchQuery = $state('');
 	let problemFilter = $state(false);
 	let certFilter = $state(false);
+	// Disabled targets are hidden by default (#UI-declutter): 60 paused rows
+	// of a 113-target board were pure noise. Any explicit intent (search,
+	// problem/cert pills) overrides the hide so a deliberate lookup still
+	// finds them.
+	let showDisabled = $state(false);
 	const filterActive = $derived(problemFilter || certFilter);
 
 	function matchesSearch(t: ProbeTarget): boolean {
@@ -575,6 +627,15 @@ ProbeQualityTarget,
 		return v.vantage;
 	}
 
+	// Compact vantage token for the path matrix chips: "中心（本机）" and
+	// "agent:agent-lan-63" are too wide side by side — chips read "中心" /
+	// "agent-lan-63" (full label in the tooltip).
+	function vantageShortLabel(v: { vantage: string; network_name?: string }): string {
+		if (v.network_name) return v.network_name;
+		if (v.vantage === 'center') return m['probes.Vantage Center Short']();
+		return v.vantage.startsWith('agent:') ? v.vantage.slice('agent:'.length) : v.vantage;
+	}
+
 	function verdictLabel(verdict: string): string {
 		switch (verdict) {
 			case 'ok':
@@ -758,6 +819,21 @@ ProbeQualityTarget,
 	const activeEpisodes = $derived((episodes ?? []).filter((e) => !e.resolved_at));
 	const notifiedActive = $derived(activeEpisodes.some((e) => e.notified));
 	const showEpisodeBanner = $derived(episodes !== null && episodes.length > 0);
+	// 24h timeline strip (#UI-declutter): episode bars over the fetch window,
+	// laid out by the pure helper — "17 个" becomes a visible distribution.
+	const episodeStrip = $derived.by(() => {
+		if (!episodes || episodes.length === 0) return [];
+		return episodeBars(episodes, Date.now());
+	});
+	function episodeBarTitle(b: (typeof episodeStrip)[number]): string {
+		const e = b.episode;
+		const kind = e.kind === 'network' ? m['probes.Episode Kind Network']() : m['probes.Episode Kind Path']();
+		const state = !e.resolved_at ? m['probes.Episode State Active']() : m['probes.Episode Resolved']();
+		return `${kind} · ${e.vantage_group}${e.target_group ? ' · ' + e.target_group : ''}\n${formatTime(e.started_at)} → ${state}${e.notified ? ' · ' + m['probes.Episode Notified']() : ''}`;
+	}
+	// Paths grouped one-row-per-target (#UI-declutter): the 39-row table
+	// collapses to a colored state matrix; problem rows float to the top.
+	const pathGroups: PathGroupRow[] = $derived(paths === null ? [] : groupPathsByTarget(paths));
 	function openEpisodesModal() {
 		episodesModalOpen = true;
 	}
@@ -788,8 +864,11 @@ ProbeQualityTarget,
 
 	// Row passes the search box AND the pill filters (OR across the two
 	// filters when both are active — each names its own kind of problem).
+	// Disabled rows hide by default unless some explicit intent (search or a
+	// pill) is expressed.
 	function matchesRow(t: ProbeTarget): boolean {
 		if (!matchesSearch(t)) return false;
+		if (!showDisabled && !t.enabled && !searchQuery && !filterActive) return false;
 		if (!filterActive) return true;
 		if (problemFilter && problemRank(t) <= 1) return true;
 		if (certFilter && certExpiringIds.has(t.id)) return true;
@@ -1711,7 +1790,7 @@ ProbeQualityTarget,
 						</tr>
 					</thead>
 					<tbody>
-						{#each vantages as v (v.vantage)}
+						{#each vantages as v, vi (v.vantage)}
 							<tr class="border-b border-border/40 last:border-0">
 								<td class="py-1.5 pr-4 whitespace-nowrap">
 									<span class="truncate" title="{v.network_name ? v.vantage : ''}">{vantageLabel(v)}</span>
@@ -1719,7 +1798,11 @@ ProbeQualityTarget,
 								{#each cols as t (t.name)}
 									{@const tr = t.per_vantage?.[v.vantage]}
 									{@const st = trackState(tr)}
-									<td class="py-1.5 pr-4 font-mono whitespace-nowrap"
+									<!-- Latency heat (#UI-declutter): tint slow legs vs the
+									     target's best vantage so a 3.3s row pops next to 9ms. -->
+									{@const heat = latencyHeat(vantages.map((vv) => t.per_vantage?.[vv.vantage]?.p50_ms))[vi]}
+									<td
+										class="py-1.5 pr-4 font-mono whitespace-nowrap {heat === 'hot' ? 'rounded bg-error/10' : heat === 'warm' ? 'rounded bg-warning/10' : ''}"
 										title={tr && tr.samples ? m['probes.Vantage Samples']({ count: tr.samples }) : ''}
 									>
 										{#if st === 'none'}
@@ -1790,6 +1873,21 @@ ProbeQualityTarget,
 							{m['probes.Overview All Healthy']({ total: targets.length })}
 						{/if}
 					</p>
+					{#if healthStack.length > 0}
+						<!-- Proportions at a glance (#UI-declutter): one flex bar,
+						     segment widths are the percentages; tooltips carry counts. -->
+						<div class="mt-2 flex h-2 w-full overflow-hidden rounded-full bg-surface-2" data-health-bar
+							role="img" aria-label={failingTargets.length > 0 ? m['probes.Overview Failing']({ count: failingTargets.length, total: targets.length }) : m['probes.Overview All Healthy']({ total: targets.length })}
+						>
+							{#each healthStack as seg (seg.key)}
+								<span
+									class="{healthSegCls[seg.key]} h-full {seg.key === 'paused' ? 'opacity-70' : ''}"
+									style="width: {seg.pct}%"
+									title={healthSegTitle(seg.key, seg.count)}
+								></span>
+							{/each}
+						</div>
+					{/if}
 					{#if failingTargets.length > 0 || pausedCount > 0}
 						<p class="mt-0.5 truncate text-xs text-text-muted">
 							{#if failingTargets.length > 0}{failingByModule.join(' · ')}{/if}
@@ -1861,15 +1959,34 @@ ProbeQualityTarget,
 				type="button"
 				onclick={openEpisodesModal}
 				data-quality-banner
-				class="flex w-full items-center gap-2 rounded-lg border px-4 py-2.5 text-left {notifiedActive ? 'border-error/40 bg-error/5' : 'border-warning/40 bg-warning/5'}"
+				class="flex w-full flex-col gap-1.5 rounded-lg border px-4 py-2.5 text-left {notifiedActive ? 'border-error/40 bg-error/5' : 'border-warning/40 bg-warning/5'}"
 			>
-				<span class="text-sm font-semibold {notifiedActive ? 'text-error' : 'text-warning'}">
-					{activeEpisodes.length > 0
-						? m['probes.Episode Banner Active']({ count: activeEpisodes.length })
-						: m['probes.Episode Banner Recent']({ count: episodes!.length })}
+				<span class="flex w-full items-center gap-2">
+					<span class="text-sm font-semibold {notifiedActive ? 'text-error' : 'text-warning'}">
+						{activeEpisodes.length > 0
+							? m['probes.Episode Banner Active']({ count: activeEpisodes.length })
+							: m['probes.Episode Banner Recent']({ count: episodes!.length })}
+					</span>
+					<span class="text-xs text-text-muted">{m['probes.Episode Banner Hint']()}</span>
+					<span class="ml-auto text-xs text-text-muted">{m['probes.Episode Banner View']()} →</span>
 				</span>
-				<span class="text-xs text-text-muted">{m['probes.Episode Banner Hint']()}</span>
-				<span class="ml-auto text-xs text-text-muted">{m['probes.Episode Banner View']()} →</span>
+				{#if episodeStrip.length > 0}
+					<!-- 24h distribution strip (#UI-declutter): when it happened
+						     answers more than how many. Bars = episodes over the fetch
+						     window; red = notified AND still active. -->
+					<span class="relative block h-3.5 w-full overflow-hidden rounded bg-surface-2" data-episode-strip
+						role="img"
+						aria-label={m['probes.Episode Strip Aria']({ count: episodeStrip.length })}
+					>
+						{#each episodeStrip as b (b.episode.id)}
+							<span
+								class="absolute top-0 h-full {b.cls === 'bar-error' ? 'bg-error' : 'bg-warning'}"
+								style="left: {b.leftPct}%; width: {b.widthPct}%"
+								title={episodeBarTitle(b)}
+							></span>
+						{/each}
+					</span>
+				{/if}
 			</button>
 		{/if}
 
@@ -2215,47 +2332,53 @@ ProbeQualityTarget,
 							{:else if paths.length === 0}
 								<p class="text-sm text-text-muted">{m['probes.Paths None Yet']()}</p>
 							{:else}
-								<div class="overflow-x-auto">
-									<table class="w-full text-sm" data-paths-table>
-										<thead>
-											<tr class="border-b border-border text-left text-xs text-text-muted">
-												<th class="py-1.5 pr-3">{m['probes.Column Target']()}</th>
-												<th class="py-1.5 pr-3">{m['probes.Column Vantage']()}</th>
-												<th class="py-1.5 pr-3">{m['probes.Paths Resolved']()}</th>
-												<th class="py-1.5 pr-3">{m['probes.Paths Reached']()}</th>
-												<th class="py-1.5 pr-3">{m['probes.Paths Reply Ttl']()}</th>
-												<th class="py-1.5 pr-3">{m['probes.Paths Visible']()}</th>
-												<th class="py-1.5 pr-3">{m['probes.Paths Status']()}</th>
-												<th class="py-1.5 pr-3">{m['probes.Checked At']()}</th>
-												<th class="py-1.5"></th>
-											</tr>
-										</thead>
-										<tbody>
-											{#each paths as p (p.id)}
-												<tr class="border-b border-border/50" data-path-row>
-													<td class="py-1.5 pr-3 font-medium">{p.target_name}</td>
-													<td class="py-1.5 pr-3 text-text-muted">{vantageLabel(p)}</td>
-													<td class="py-1.5 pr-3 font-mono text-xs">{p.resolved_ip}</td>
-													<td class="py-1.5 pr-3">{p.reached_ttl || '—'}</td>
-													<td class="py-1.5 pr-3">{p.reply_ttl || '—'}</td>
-													<td class="py-1.5 pr-3">{p.visible_hops}</td>
-													<td class="py-1.5 pr-3"><span class={pathStatusBadge(p).cls}>{pathStatusBadge(p).label}</span></td>
-													<td class="py-1.5 pr-3 text-xs text-text-muted">{formatTime(p.traced_at)}</td>
-													<td class="py-1.5 text-right">
-														<button type="button" class="btn btn-ghost btn-xs mr-1" onclick={() => openPathModal(p)}>{m['probes.Paths View']()}</button>
-														<button
-															type="button"
-															class="btn btn-ghost btn-xs"
-															disabled={traceBusyId === p.target_id}
-															onclick={() => traceNow(p.target_id)}
-														>
-															{traceBusyId === p.target_id ? m['probes.Paths Tracing']() : m['probes.Paths Trace Now']()}
-														</button>
-													</td>
-												</tr>
+								<!-- One row per target (#UI-declutter): the per-vantage
+									     table (rows = target × vantage, 13 targets × 3 vantages
+									     = 39 mostly-green rows) collapsed into a state matrix —
+									     one chip per vantage colored by path state, problem rows
+									     float to the top. Click a chip for the hop-by-hop modal;
+									     full detail lives one click away, healthy rows read at a
+									     glance as a green strip. -->
+								<div class="space-y-1.5" data-paths-matrix>
+									<div class="flex items-center gap-2 text-xs text-text-muted">
+										<span>{m['probes.Paths Matrix Hint']()}</span>
+									</div>
+									{#each pathGroups as g (g.targetId)}
+										<div
+											class="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border bg-surface px-2.5 py-1.5 {g.worst === 'error' ? 'border-error/40' : g.worst === 'max_ttl' ? 'border-warning/40' : 'border-border/60'}"
+											data-path-row
+										>
+											<span class="w-44 shrink-0 truncate text-sm font-medium {g.worst === 'error' ? 'text-error' : ''}" title={g.targetName}>{g.targetName}</span>
+											{#each g.cells as c (c.sample.vantage)}
+												<button
+													type="button"
+													class="inline-flex max-w-[13rem] items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-xs transition-colors {c.state === 'reached'
+														? 'border-success/30 bg-success/5 text-success hover:bg-success/10'
+														: c.state === 'error'
+															? 'border-error/40 bg-error/10 text-error hover:bg-error/15'
+															: 'border-warning/40 bg-warning/10 text-warning hover:bg-warning/15'}"
+													title="{vantageLabel(c.sample)}: {pathStatusBadge(c.sample).label} · {m['probes.Paths Reached']()} {c.sample.reached_ttl || '—'} / {m['probes.Paths Reply Ttl']()} {c.sample.reply_ttl || '—'} · {m['probes.Paths Visible']()} {c.sample.visible_hops}\n{c.sample.resolved_ip} · {formatTime(c.sample.traced_at)}"
+													onclick={() => openPathModal(c.sample)}
+												>
+													<span class="truncate">{vantageShortLabel(c.sample)}</span>
+													{#if c.state === 'reached'}
+														<span>{c.sample.reached_ttl || '—'}→{c.sample.reply_ttl || '—'}</span>
+													{:else}
+														<span>{c.state === 'error' ? '✕' : 'TTL'}</span>
+													{/if}
+												</button>
 											{/each}
-										</tbody>
-									</table>
+											<span class="ml-auto shrink-0 text-xs text-text-muted">{formatTime(g.tracedAt)}</span>
+											<button
+												type="button"
+												class="btn btn-ghost btn-xs shrink-0"
+												disabled={traceBusyId === g.targetId}
+												onclick={() => traceNow(g.targetId)}
+											>
+												{traceBusyId === g.targetId ? m['probes.Paths Tracing']() : m['probes.Paths Trace Now']()}
+											</button>
+										</div>
+									{/each}
 								</div>
 								<p class="mt-1.5 text-xs text-text-muted">{m['probes.Paths Silent Note']()}</p>
 							{/if}
@@ -2432,6 +2555,17 @@ ProbeQualityTarget,
 						aria-pressed={problemFilter}
 						class="rounded-full border px-3 py-1.5 text-xs transition-colors {problemFilter ? 'border-error/50 bg-error/10 text-error' : 'border-border text-text-muted hover:text-text'}"
 					>{m['probes.Filter Problems']()}{#if failingTargets.length > 0} · {failingTargets.length}{/if}</button>
+					{#if pausedCount > 0}
+						<!-- Disabled targets hide by default (#UI-declutter): the pill
+						     brings the 60 paused rows back without a search. -->
+						<button
+							type="button"
+							onclick={() => (showDisabled = !showDisabled)}
+							aria-pressed={showDisabled}
+							data-filter-disabled
+							class="rounded-full border px-3 py-1.5 text-xs transition-colors {showDisabled ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border text-text-muted hover:text-text'}"
+						>{m['probes.Filter Disabled']()} · {pausedCount}</button>
+					{/if}
 					{#if certTimeline.length > 0}
 						<button
 							type="button"
