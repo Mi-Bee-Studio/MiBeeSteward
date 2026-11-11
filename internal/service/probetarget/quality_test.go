@@ -194,6 +194,11 @@ func TestQualityDefaultOn(t *testing.T) {
 	require.True(t, bare.EffectiveEnabled(), "absent key = shipped default on")
 	off := false
 	require.False(t, (config.ProbeQualityConfig{Enabled: &off}).EffectiveEnabled(), "explicit false stays off")
+
+	// Config() exposes the effective view (the handler defaults its window
+	// query param from it); without an overlay row it is the startup config.
+	svc := NewQualityService(nil, testQualityConfig(), nil)
+	require.Equal(t, 15, svc.Config().WindowMinutes)
 }
 
 // qualityWorld inserts the matrix rows + a pattern of results at one or more

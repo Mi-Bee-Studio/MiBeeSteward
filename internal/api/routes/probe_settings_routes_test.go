@@ -103,3 +103,40 @@ func TestRoutes_ProbeSettingsSwitchReseeds(t *testing.T) {
 		require.True(t, tgt.Enabled, "switch-on revives parked system rows")
 	}
 }
+
+// The LAN empty state's one-click sweep rides POST /probe-targets/autogen-sweep:
+// on an empty (no discovered services) store the sweep is a harmless no-op that
+// still reports its zero counts.
+func TestRoutes_AutogenSweepNow(t *testing.T) {
+	cfg := newTestConfig()
+	db := newTestDB(t)
+	if _, err := db.Exec(`INSERT INTO users (id, username, email, password_hash, role)
+		VALUES (1, 'testadmin', 'testadmin@example.com', 'x', 'admin')`); err != nil {
+		t.Fatalf("seed principal: %v", err)
+	}
+	handler, heartbeatSvc, shutdown := NewRouter(db, cfg)
+	t.Cleanup(func() {
+		heartbeatSvc.Stop()
+		shutdown()
+	})
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	token := tokenForRole(t, cfg.Auth.JWTSecret, "admin")
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/api/v1/probe-targets/autogen-sweep", nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := server.Client().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var payload struct {
+		Created  int `json:"created"`
+		Enabled  int `json:"enabled"`
+		Disabled int `json:"disabled"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&payload))
+	require.Zero(t, payload.Created)
+	require.Zero(t, payload.Enabled)
+	require.Zero(t, payload.Disabled)
+}

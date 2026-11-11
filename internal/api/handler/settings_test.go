@@ -11,12 +11,16 @@ package handler_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"mibee-steward/internal/api/handler"
+	"mibee-steward/internal/config"
 )
 
 // The settings-center API: admin reads/writes the auth policy overlay, and
@@ -134,12 +138,33 @@ func TestSettings_ProbeValidation(t *testing.T) {
 		`{"quality":{}}`,
 		`{"autogen":{"max_targets":5000,"enabled":true}}`,
 		`{"autogen":{"interval_seconds":1,"enabled":true}}`,
+		`not-json`,
 	} {
 		resp, err := doAuthed(t, server, http.MethodPut, "/api/v1/settings/probes", token, bytes.NewBufferString(body))
 		require.NoError(t, err)
 		resp.Body.Close()
 		require.Equal(t, http.StatusBadRequest, resp.StatusCode, "body %s must be rejected", body)
 	}
+}
+
+// The overlay-unavailable degradation (settingsSvc nil at startup): writes
+// 503, reads still serve the config layer — the production contract when the
+// system_settings table cannot load.
+func TestSettings_ProbesOverlayUnavailable(t *testing.T) {
+	h := handler.NewSettingsHandler(nil, nil, &config.Config{}, nil)
+
+	w := httptest.NewRecorder()
+	h.UpdateProbes(w, httptest.NewRequest(http.MethodPut, "/api/v1/settings/probes",
+		bytes.NewBufferString(`{"quality":{"enabled":true}}`)))
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+
+	w2 := httptest.NewRecorder()
+	h.GetProbes(w2, httptest.NewRequest(http.MethodGet, "/api/v1/settings/probes", nil))
+	require.Equal(t, http.StatusOK, w2.Code)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w2.Body.Bytes(), &resp))
+	require.Equal(t, "config", resp["quality_source"])
+	require.Equal(t, true, resp["quality"].(map[string]any)["enabled"])
 }
 
 // Non-admin roles are gated off the settings surface (CapUserManage).
