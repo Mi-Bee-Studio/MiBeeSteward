@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ProbePathSample, ProbeQualityEpisode } from '$lib/types';
 import {
+ episodeAxisTicks,
  episodeBars,
  groupPathsByTarget,
  healthSegments,
@@ -156,6 +157,48 @@ describe('episodeBars', () => {
 			now
 		);
 		expect(bars).toHaveLength(0);
+	});
+});
+
+describe('episodeAxisTicks', () => {
+	// Local-time components on purpose: the helper aligns to LOCAL clock
+	// boundaries, so fixed-UTC fixtures would only pass in UTC test hosts.
+	it('lands ticks on local 6h boundaries inside the window, flags midnight', () => {
+		const now = new Date(2026, 10, 11, 11, 32).getTime(); // 11-11 11:32 local
+		const ticks = episodeAxisTicks(now);
+		// Window = [11-10 11:32, 11-11 11:32]; first tick rounds up to 12:00,
+		// then 18:00 / 00:00 / 06:00 — 11-11 12:00 is past `now`.
+		expect(ticks).toHaveLength(4);
+		expect(ticks.map((t) => new Date(t.atMs).getHours())).toEqual([12, 18, 0, 6]);
+		expect(ticks[2].midnight).toBe(true);
+		expect(ticks.filter((t) => t.midnight)).toHaveLength(1);
+		for (const t of ticks) {
+			expect(t.pct).toBeGreaterThan(0);
+			expect(t.pct).toBeLessThan(100);
+			expect(new Date(t.atMs).getMinutes()).toBe(0);
+		}
+	});
+
+	it('includes a boundary tick at both edges when now sits on one', () => {
+		const now = new Date(2026, 10, 11, 18, 0).getTime(); // exactly 18:00
+		const ticks = episodeAxisTicks(now);
+		expect(ticks).toHaveLength(5);
+		expect(ticks[0].pct).toBeCloseTo(0, 5); // 11-10 18:00 == window start
+		expect(ticks[4].pct).toBeCloseTo(100, 5); // 11-11 18:00 == now
+		expect(ticks[1].midnight).toBe(true); // 11-11 00:00
+	});
+
+	it('keeps step alignment across arbitrary stepHours', () => {
+		const now = new Date(2026, 10, 11, 23, 10).getTime();
+		const ticks = episodeAxisTicks(now, 24 * 3600 * 1000, 12);
+		// Window = [11-10 23:10, 11-11 23:10]; ticks at 11-11 00:00 and 12:00.
+		expect(ticks).toHaveLength(2);
+		expect(ticks.map((t) => new Date(t.atMs).getHours())).toEqual([0, 12]);
+	});
+
+	it('returns no ticks when the window is shorter than one step', () => {
+		const now = new Date(2026, 10, 11, 11, 32).getTime();
+		expect(episodeAxisTicks(now, 3600 * 1000)).toEqual([]);
 	});
 });
 

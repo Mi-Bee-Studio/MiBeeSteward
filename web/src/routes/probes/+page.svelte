@@ -15,7 +15,13 @@
 	import { m } from '$lib/i18n-paraglide';
 	import { onMount, onDestroy } from 'svelte';
 	import { getErrorMessage } from '$lib/utils/error';
-	import { html, escapeAttr, formatDateTime as formatTime } from '$lib/utils/index';
+	import {
+		html,
+		escapeAttr,
+		formatClockTime,
+		formatDateTime as formatTime,
+		formatShortDate
+	} from '$lib/utils/index';
 	import { probeTargetSchema, validateField, validateForm } from '$lib/utils/validation';
 	import { addToast } from '$lib/stores/toast';
 
@@ -68,6 +74,7 @@ ProbeQualityTarget,
 	import {
 		type HealthKey,
 		type PathGroupRow,
+		episodeAxisTicks,
 		episodeBars,
 		groupPathsByTarget,
 		healthSegments,
@@ -824,6 +831,12 @@ ProbeQualityTarget,
 	const episodeStrip = $derived.by(() => {
 		if (!episodes || episodes.length === 0) return [];
 		return episodeBars(episodes, Date.now());
+	});
+	// Clock-aligned axis ticks under the strip: bars answer "when", the axis
+	// answers "what time was that" without mental subtraction.
+	const episodeAxis = $derived.by(() => {
+		if (!episodes || episodes.length === 0) return [];
+		return episodeAxisTicks(Date.now());
 	});
 	function episodeBarTitle(b: (typeof episodeStrip)[number]): string {
 		const e = b.episode;
@@ -1986,6 +1999,24 @@ ProbeQualityTarget,
 							></span>
 						{/each}
 					</span>
+					<!-- Clock-aligned axis (6h ticks): bars answer "when", the ticks
+						     answer "what time was that". Midnight ticks carry the date;
+						     decorative — aria-hidden, the modal is the accessible detail. -->
+					{#if episodeAxis.length > 0}
+						<span class="relative block h-5 w-full text-[10px] leading-none text-text-muted" data-episode-axis aria-hidden="true">
+							{#each episodeAxis as tick (tick.atMs)}
+								<span
+									class="absolute top-0 flex flex-col items-center"
+									style="left: {tick.pct}%; transform: translateX({tick.pct <= 0 ? '0' : tick.pct >= 100 ? '-100%' : '-50%'})"
+								>
+									<span class="h-1 w-px bg-border"></span>
+									<span class="mt-0.5 whitespace-nowrap tabular-nums">
+										{tick.midnight ? `${formatShortDate(tick.atMs)} ${formatClockTime(tick.atMs)}` : formatClockTime(tick.atMs)}
+									</span>
+								</span>
+							{/each}
+						</span>
+					{/if}
 				{/if}
 			</button>
 		{/if}

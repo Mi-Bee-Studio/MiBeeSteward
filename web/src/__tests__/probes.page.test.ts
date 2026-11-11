@@ -1526,19 +1526,23 @@ describe('Probes page', () => {
 	});
 
 	it('renders the episode 24h strip when episodes exist', async () => {
+		// Times relative to the test clock: the strip drops episodes that
+		// ended before [now-24h, now], so absolute fixture dates time-bomb
+		// the test once real time walks past them (it did on 2026-11-11).
+		const hoursAgo = (h: number) => new Date(Date.now() - h * 3600 * 1000).toISOString();
 		mockState.episodes = [
 			{
 				id: 7,
 				kind: 'network',
 				vantage_group: 'center',
 				target_group: '',
-				started_at: '2026-11-09T23:00:00Z',
-				last_seen_at: '2026-11-10T00:30:00Z',
+				started_at: hoursAgo(24.5),
+				last_seen_at: hoursAgo(23),
 				windows: 2,
 				metric_degraded: [],
-				attribution: [{ kind: 'egress_change', detail: 'x', at: '2026-11-09T23:05:00Z' }],
+				attribution: [{ kind: 'egress_change', detail: 'x', at: hoursAgo(24.4) }],
 				notified: true,
-				resolved_at: '2026-11-10T00:30:00Z',
+				resolved_at: hoursAgo(23),
 				recover_notified: true
 			}
 		];
@@ -1554,6 +1558,23 @@ describe('Probes page', () => {
 			expect((bars[0] as HTMLElement).className).toContain('bg-warning');
 			// Banner text keeps the count.
 			expect(container.querySelector('[data-quality-banner]')?.textContent).toContain('1');
+			// Clock-aligned axis under the strip: 6h-boundary ticks in a 24h
+			// window (4, or 5 when `now` sits exactly on a boundary), minutes
+			// always :00, midnight ticks prefixed with the date. Label values
+			// depend on the host clock/TZ, so assert shape, not exact times.
+			const axis = container.querySelector('[data-episode-axis]') as HTMLElement;
+			expect(axis).toBeTruthy();
+			expect(axis.getAttribute('aria-hidden')).toBe('true');
+			const ticks = Array.from(axis.querySelectorAll(':scope > span > span:last-child'));
+			expect(ticks.length).toBeGreaterThanOrEqual(4);
+			expect(ticks.length).toBeLessThanOrEqual(5);
+			for (const tick of ticks) {
+				const label = (tick as HTMLElement).textContent?.trim() ?? '';
+				// "HH:mm" or "M/D HH:mm" — either way the minutes are :00.
+				const match = /^(?:(\d{1,2})\/(\d{1,2}) )?(\d{1,2}):(\d{2})$/.exec(label);
+				expect(match).toBeTruthy();
+				expect(match![4]).toBe('00');
+			}
 		} finally {
 			mockState.episodes = [];
 		}
