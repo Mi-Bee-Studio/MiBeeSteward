@@ -147,6 +147,138 @@ func (h *SettingsHandler) UpdateAuth(w http.ResponseWriter, r *http.Request) {
 	h.GetAuth(w, r)
 }
 
+// probeSettingsResponse is GET /api/v1/settings/probes: the effective probe
+// policy switches plus where each came from ("overlay" = edited in web UI,
+// "config" = the YAML file), so the UI can badge them like the auth section.
+type probeSettingsResponse struct {
+	Quality    probeQualitySettings `json:"quality"`
+	QualitySrc string               `json:"quality_source"`
+	Autogen    probeAutogenSettings `json:"autogen"`
+	AutogenSrc string               `json:"autogen_source"`
+}
+
+type probeQualitySettings struct {
+	Enabled bool `json:"enabled"`
+}
+
+type probeAutogenSettings struct {
+	Enabled         bool `json:"enabled"`
+	MaxTargets      int  `json:"max_targets"`
+	IntervalSeconds int  `json:"interval_seconds"`
+}
+
+// GetProbes handles GET /api/v1/settings/probes.
+func (h *SettingsHandler) GetProbes(w http.ResponseWriter, _ *http.Request) {
+	resp := probeSettingsResponse{
+		Quality: probeQualitySettings{
+			Enabled: h.cfg.Probe.Quality.EffectiveEnabled(),
+		},
+		QualitySrc: "config",
+		Autogen: probeAutogenSettings{
+			Enabled:         h.cfg.Probe.Autogen.Enabled,
+			MaxTargets:      h.cfg.Probe.Autogen.MaxTargets,
+			IntervalSeconds: h.cfg.Probe.Autogen.IntervalSeconds,
+		},
+		AutogenSrc: "config",
+	}
+	if h.settings != nil {
+		if h.settings.Has(service.SettingProbeQuality) {
+			var p config.ProbeQualityPolicy
+			if h.settings.Get(service.SettingProbeQuality, &p) && p.Enabled != nil {
+				resp.Quality.Enabled = *p.Enabled
+				resp.QualitySrc = "overlay"
+			}
+		}
+		if h.settings.Has(service.SettingProbeAutogen) {
+			var p config.ProbeAutogenPolicy
+			if h.settings.Get(service.SettingProbeAutogen, &p) && p.Enabled != nil {
+				resp.Autogen.Enabled = *p.Enabled
+			}
+			if p.MaxTargets != nil && *p.MaxTargets > 0 {
+				resp.Autogen.MaxTargets = *p.MaxTargets
+			}
+			if p.IntervalSeconds != nil && *p.IntervalSeconds > 0 {
+				resp.Autogen.IntervalSeconds = *p.IntervalSeconds
+			}
+			if p.Enabled != nil {
+				resp.AutogenSrc = "overlay"
+			}
+		}
+	}
+	Success(w, resp)
+}
+
+// updateProbesRequest is PUT /api/v1/settings/probes. A present section
+// REPLACES its overlay policy (no merge with a previous overlay row; the UI
+// always submits the full switch set it shows).
+type updateProbesRequest struct {
+	Quality *config.ProbeQualityPolicy `json:"quality,omitempty"`
+	Autogen *config.ProbeAutogenPolicy `json:"autogen,omitempty"`
+}
+
+// UpdateProbes handles PUT /api/v1/settings/probes (admin). Writes land in
+// the system_settings overlay; the probe services merge the switches at
+// their point of use (quality reseeds, autogen sweeps) so a flip needs no
+// restart.
+func (h *SettingsHandler) UpdateProbes(w http.ResponseWriter, r *http.Request) {
+	if h.settings == nil {
+		Error(w, http.StatusServiceUnavailable, "settings overlay unavailable (database load failed at startup)")
+		return
+	}
+	var req updateProbesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Quality == nil && req.Autogen == nil {
+		Error(w, http.StatusBadRequest, "nothing to update: quality or autogen is required")
+		return
+	}
+	if req.Quality != nil && req.Quality.Enabled == nil {
+		Error(w, http.StatusBadRequest, "quality.enabled is required")
+		return
+	}
+	if req.Autogen != nil {
+		if req.Autogen.Enabled == nil {
+			Error(w, http.StatusBadRequest, "autogen.enabled is required")
+			return
+		}
+		if req.Autogen.MaxTargets != nil && (*req.Autogen.MaxTargets < 1 || *req.Autogen.MaxTargets > 1000) {
+			Error(w, http.StatusBadRequest, "autogen.max_targets must be between 1 and 1000")
+			return
+		}
+		if req.Autogen.IntervalSeconds != nil && *req.Autogen.IntervalSeconds < 10 {
+			Error(w, http.StatusBadRequest, "autogen.interval_seconds must be at least 10")
+			return
+		}
+	}
+	if req.Quality != nil {
+		if err := h.settings.Set(r.Context(), service.SettingProbeQuality, *req.Quality); err != nil {
+			slog.Error("settings: failed to persist probe quality policy", "error", err)
+			Error(w, http.StatusInternalServerError, "failed to save probe quality policy")
+			return
+		}
+	}
+	if req.Autogen != nil {
+		if err := h.settings.Set(r.Context(), service.SettingProbeAutogen, *req.Autogen); err != nil {
+			slog.Error("settings: failed to persist probe autogen policy", "error", err)
+			Error(w, http.StatusInternalServerError, "failed to save probe autogen policy")
+			return
+		}
+	}
+
+	if userID, _, ok := middleware.GetUserFromContext(r); ok {
+		h.auditRepo.Log(r.Context(), service.AuditLog{
+			UserID:       &userID,
+			Action:       "admin.settings.probes",
+			ResourceType: "settings",
+			IPAddress:    r.RemoteAddr,
+			UserAgent:    r.UserAgent(),
+		})
+	}
+	h.GetProbes(w, r)
+}
+
 // GetSystem handles GET /api/v1/system, read-only instance facts.
 func (h *SettingsHandler) GetSystem(w http.ResponseWriter, _ *http.Request) {
 	Success(w, map[string]any{

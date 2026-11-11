@@ -39,7 +39,20 @@ const (
 	// never folded into the primary judgement (cross-border variance is its
 	// own signal, not an egress fault).
 	QualityPrimaryGroup = "domestic"
+
+	// SettingKeyQuality/SettingKeyAutogen are the settings-center overlay
+	// keys this package reads (mirror of service.SettingProbeQuality /
+	// service.SettingProbeAutogen; the local consts keep the package free of
+	// the parent import, same pattern as archive.SettingKeyEngine).
+	SettingKeyQuality = "probe.quality"
+	SettingKeyAutogen = "probe.autogen"
 )
+
+// SettingsGetter is the slice of the settings-center overlay the quality and
+// autogen services need (structural interface — no parent-package import).
+type SettingsGetter interface {
+	Get(key string, dst any) bool
+}
 
 // qualityKey identifies one (target, vantage) track within a window.
 type qualityKey struct {
@@ -84,19 +97,53 @@ func TargetCategory(t db.ProbeTarget) string {
 type QualityService struct {
 	queries *db.Queries
 	cfg     config.ProbeQualityConfig
-	logger  *slog.Logger
+	// settings is the settings-center overlay (nil ⇒ YAML config only). The
+	// probe.quality overlay row carries the web-editable switches only; the
+	// merge happens at the point of use (ADR-035 pattern).
+	settings SettingsGetter
+	logger   *slog.Logger
 }
 
 func NewQualityService(queries *db.Queries, cfg config.ProbeQualityConfig, logger *slog.Logger) *QualityService {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	// Defend the documented defaults (config.Load normalizes first in
+	// production, but tests construct bare structs — an empty groups map
+	// must not silently mean "seed nothing").
+	if len(cfg.Groups) == 0 {
+		cfg.Groups = config.DefaultQualityGroups()
+	}
+	if cfg.IntervalSeconds == 0 {
+		cfg.IntervalSeconds = 120
+	}
+	if cfg.WindowMinutes == 0 {
+		cfg.WindowMinutes = 15
+	}
 	return &QualityService{queries: queries, cfg: cfg, logger: logger}
+}
+
+// SetSettingsSource wires the settings-center overlay (nil-safe, chainable).
+func (s *QualityService) SetSettingsSource(g SettingsGetter) *QualityService {
+	s.settings = g
+	return s
+}
+
+// effective resolves overlay switch ?? startup YAML config. Called at every
+// Seed/Analyze, so a settings edit takes effect without a restart.
+func (s *QualityService) effective() config.ProbeQualityConfig {
+	if s.settings != nil {
+		var p config.ProbeQualityPolicy
+		if s.settings.Get(SettingKeyQuality, &p) {
+			return p.Apply(s.cfg)
+		}
+	}
+	return s.cfg
 }
 
 // Config returns the effective quality config (the handler defaults the
 // window query param from it).
-func (s *QualityService) Config() config.ProbeQualityConfig { return s.cfg }
+func (s *QualityService) Config() config.ProbeQualityConfig { return s.effective() }
 
 // Seed reconciles the system-target matrix with the config (#608):
 //   - enabled: create missing rows, refresh drifted ones (module/target/
@@ -104,8 +151,10 @@ func (s *QualityService) Config() config.ProbeQualityConfig { return s.cfg }
 //     history cascades - removing a config entry removes the probe).
 //   - disabled: every system target is parked (disabled, kept for history).
 //
-// Called once at startup; idempotent.
+// Called once at startup and again whenever the 设置 → 拨测 switch flips (the
+// overlay subscriber); idempotent.
 func (s *QualityService) Seed(ctx context.Context) error {
+	cfg := s.effective()
 	existing, err := s.queries.ListProbeTargets(ctx)
 	if err != nil {
 		return fmt.Errorf("quality seed: list targets: %w", err)
@@ -119,7 +168,7 @@ func (s *QualityService) Seed(ctx context.Context) error {
 		}
 	}
 
-	if !s.cfg.Enabled {
+	if !cfg.EffectiveEnabled() {
 		parked := 0
 		for _, t := range systemRows {
 			if t.Enabled == 1 {
@@ -136,7 +185,7 @@ func (s *QualityService) Seed(ctx context.Context) error {
 	}
 
 	wanted := make(map[string]bool)
-	for _, targets := range s.cfg.Groups {
+	for _, targets := range cfg.Groups {
 		for _, qt := range targets {
 			wanted[qt.Name] = true
 			optsJSON, err := qualityOptionsJSON(qt.Options)
@@ -159,11 +208,25 @@ func (s *QualityService) Seed(ctx context.Context) error {
 					}
 					s.logger.Info("probe quality: target refreshed from config", "name", qt.Name)
 				}
+				// Switch-managed rows: with the matrix switch ON, a parked
+				// system row always comes back. The parked-under-off case is
+				// the seed path above; parked-while-on can only be a leftover
+				// from a disabled period (the old bug: the flip-on never
+				// revived rows, the board stayed empty until the row was
+				// deleted by hand). Per-row parking is superseded by the
+				// master switch for system targets — config still governs
+				// membership (a leg leaves by leaving the config).
+				if prev.Enabled == 0 {
+					if err := s.queries.ToggleProbeTargetEnabled(ctx, db.ToggleProbeTargetEnabledParams{Enabled: 1, ID: prev.ID}); err != nil {
+						return fmt.Errorf("quality seed: re-enable %s: %w", qt.Name, err)
+					}
+					s.logger.Info("probe quality: parked system target re-enabled (switch on)", "name", qt.Name)
+				}
 				continue
 			}
 			created, err := s.queries.CreateProbeTarget(ctx, db.CreateProbeTargetParams{
 				Name: qt.Name, Module: qt.Module, Target: qt.Target,
-				IntervalSeconds: int64(s.cfg.IntervalSeconds), TimeoutSeconds: 10,
+				IntervalSeconds: int64(cfg.IntervalSeconds), TimeoutSeconds: 10,
 				Enabled: 1, Notes: "egress-quality matrix member (#608), managed by probe.quality config",
 				Vantage: domain.ProbeVantageAll, Options: optsJSON,
 				Source: domain.ProbeSourceSystem,
@@ -267,8 +330,9 @@ type QualityReport struct {
 // deterministic; the window holds a few thousand rows at most, percentiles
 // are exact (computed in Go, no SQL approximation).
 func (s *QualityService) Analyze(ctx context.Context, windowMinutes int) (QualityReport, error) {
+	cfg := s.effective()
 	if windowMinutes <= 0 {
-		windowMinutes = s.cfg.WindowMinutes
+		windowMinutes = cfg.WindowMinutes
 	}
 	cutoff := time.Now().UTC().Add(-time.Duration(windowMinutes) * time.Minute).Format(time.RFC3339)
 	rows, err := s.queries.ListProbeResultsSince(ctx, cutoff)
@@ -349,7 +413,7 @@ func (s *QualityService) Analyze(ctx context.Context, windowMinutes int) (Qualit
 			})
 		}
 		for _, v := range sortedKeys(vantageSet) {
-			vr := judgeSimpleCategory(buckets[cat], v, statsOf, s.cfg)
+			vr := judgeSimpleCategory(buckets[cat], v, statsOf, cfg)
 			if name := networkName(v); name != "" {
 				vr.NetworkName = name
 			}
@@ -365,13 +429,13 @@ func (s *QualityService) Analyze(ctx context.Context, windowMinutes int) (Qualit
 	for _, t := range targets {
 		targetByName[t.Name] = t
 	}
-	groupNames := make([]string, 0, len(s.cfg.Groups))
-	for name := range s.cfg.Groups {
+	groupNames := make([]string, 0, len(cfg.Groups))
+	for name := range cfg.Groups {
 		groupNames = append(groupNames, name)
 	}
 	sort.Strings(groupNames)
 	for _, group := range groupNames {
-		gr := s.analyzeGroup(group, s.cfg.Groups[group], targetByName, agg, networkName)
+		gr := s.analyzeGroup(group, cfg.Groups[group], targetByName, agg, networkName, cfg)
 		cr.Groups = append(cr.Groups, gr)
 		if group != QualityPrimaryGroup {
 			continue
@@ -380,7 +444,7 @@ func (s *QualityService) Analyze(ctx context.Context, windowMinutes int) (Qualit
 		// reference groups stay nested below it in the UI.
 		cr.Vantages = gr.Vantages
 	}
-	cr.Targets = qualityMatrixTargets(s.cfg, targetByName, agg)
+	cr.Targets = qualityMatrixTargets(cfg, targetByName, agg)
 	report.Categories = append(report.Categories, cr)
 	return report, nil
 }
@@ -393,6 +457,7 @@ func (s *QualityService) analyzeGroup(
 	targetByName map[string]db.ProbeTarget,
 	agg map[qualityKey]*trackAgg,
 	networkName func(vantage string) string,
+	cfg config.ProbeQualityConfig,
 ) QualityGroupReport {
 	gr := QualityGroupReport{Name: group, Role: "reference"}
 	if group == QualityPrimaryGroup {
@@ -431,7 +496,7 @@ func (s *QualityService) analyzeGroup(
 		}
 	}
 	for _, v := range sortedKeys(vantageSet) {
-		vr := judgeVantage(cfgTargets, agg, idOf, v, s.cfg)
+		vr := judgeVantage(cfgTargets, agg, idOf, v, cfg)
 		if name := networkName(v); name != "" {
 			vr.NetworkName = name
 		}

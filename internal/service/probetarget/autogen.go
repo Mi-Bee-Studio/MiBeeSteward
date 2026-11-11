@@ -31,14 +31,51 @@ import (
 type AutogenService struct {
 	queries *db.Queries
 	cfg     config.ProbeAutogenConfig
-	logger  *slog.Logger
+	// settings is the settings-center overlay (nil ⇒ YAML config only); the
+	// probe.autogen row carries the web-editable switches, merged per sweep.
+	settings SettingsGetter
+	logger   *slog.Logger
 }
 
 func NewAutogenService(queries *db.Queries, cfg config.ProbeAutogenConfig, logger *slog.Logger) *AutogenService {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	// Defend the documented defaults (normalizeProbe's values) so a bare
+	// struct behaves like a loaded config.
+	if len(cfg.Services) == 0 {
+		cfg.Services = []string{"http", "https"}
+	}
+	if cfg.IntervalSeconds == 0 {
+		cfg.IntervalSeconds = 300
+	}
+	if cfg.MaxTargets == 0 {
+		cfg.MaxTargets = 100
+	}
+	if cfg.SweepIntervalMinutes == 0 {
+		cfg.SweepIntervalMinutes = 15
+	}
 	return &AutogenService{queries: queries, cfg: cfg, logger: logger}
+}
+
+// SetSettingsSource wires the settings-center overlay (nil-safe, chainable).
+// Every sweep re-resolves the effective policy, so flipping 设置 → 拨测's
+// autogen switch takes effect on the next sweep — and RouteSweep lets the
+// settings subscriber trigger that sweep immediately.
+func (s *AutogenService) SetSettingsSource(g SettingsGetter) *AutogenService {
+	s.settings = g
+	return s
+}
+
+// effective resolves overlay policy ?? startup YAML config.
+func (s *AutogenService) effective() config.ProbeAutogenConfig {
+	if s.settings != nil {
+		var p config.ProbeAutogenPolicy
+		if s.settings.Get(SettingKeyAutogen, &p) {
+			return p.Apply(s.cfg)
+		}
+	}
+	return s.cfg
 }
 
 // autogenName is the deterministic target name for one (device, service,
@@ -61,9 +98,11 @@ func autogenPlan(service string, ip string, port int64) (module, target string) 
 	}
 }
 
-// Sweep reconciles once. Called at startup and every
-// probe.autogen.sweep_interval_minutes.
+// Sweep reconciles once. Called at startup, every
+// probe.autogen.sweep_interval_minutes, and on demand from the settings
+// subscriber / the autogen-sweep API (设置 → 拨测, probes page empty state).
 func (s *AutogenService) Sweep(ctx context.Context) (created, enabled, disabled int, err error) {
+	cfg := s.effective()
 	existing, err := s.queries.ListProbeTargets(ctx)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("autogen: list targets: %w", err)
@@ -77,7 +116,7 @@ func (s *AutogenService) Sweep(ctx context.Context) (created, enabled, disabled 
 		}
 	}
 
-	if !s.cfg.Enabled {
+	if !cfg.Enabled {
 		// Policy turned off: park the auto population (keep rows + history).
 		for _, t := range autoByName {
 			if t.Enabled == 1 {
@@ -107,12 +146,12 @@ func (s *AutogenService) Sweep(ctx context.Context) (created, enabled, disabled 
 			agentByNetwork[n.ID] = strings.TrimSpace(*n.AgentID)
 		}
 	}
-	serviceFilter := make(map[string]bool, len(s.cfg.Services))
-	for _, svc := range s.cfg.Services {
+	serviceFilter := make(map[string]bool, len(cfg.Services))
+	for _, svc := range cfg.Services {
 		serviceFilter[strings.ToLower(strings.TrimSpace(svc))] = true
 	}
-	typeFilter := make(map[string]bool, len(s.cfg.DeviceTypes))
-	for _, dt := range s.cfg.DeviceTypes {
+	typeFilter := make(map[string]bool, len(cfg.DeviceTypes))
+	for _, dt := range cfg.DeviceTypes {
 		typeFilter[dt] = true
 	}
 
@@ -183,15 +222,15 @@ func (s *AutogenService) Sweep(ctx context.Context) (created, enabled, disabled 
 				continue
 			}
 
-			if autoCount >= s.cfg.MaxTargets {
+			if autoCount >= cfg.MaxTargets {
 				s.logger.Warn("probe autogen: max_targets reached, skipping new services",
-					"cap", s.cfg.MaxTargets, "skipped_from", targetName)
+					"cap", cfg.MaxTargets, "skipped_from", targetName)
 				break
 			}
 			deviceID := d.ID
 			if _, cerr := s.queries.CreateProbeTarget(ctx, db.CreateProbeTargetParams{
 				Name: targetName, Module: module, Target: target,
-				IntervalSeconds: int64(s.cfg.IntervalSeconds), TimeoutSeconds: 10,
+				IntervalSeconds: int64(cfg.IntervalSeconds), TimeoutSeconds: 10,
 				Enabled: 1, Notes: "auto-generated from a discovered service (#606)",
 				Vantage: vantageFor(d.NetworkID), DeviceID: &deviceID,
 				Source: domain.ProbeSourceAuto,

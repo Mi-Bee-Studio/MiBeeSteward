@@ -1194,6 +1194,16 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ProbeTarget"}
+  /probe-targets/autogen-sweep:
+    post:
+      tags: [ProbeTargets]
+      summary: "Run one autogen reconcile sweep now (设置 → 拨测 / probes page LAN empty state); reads the effective policy (overlay ?? config)"
+      responses:
+        "200":
+          description: Sweep outcome counts
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AutogenSweepResult"}
   /probe-targets/{id}:
     get:
       tags: [ProbeTargets]
@@ -1995,6 +2005,34 @@ paths:
       summary: Update auth settings
       responses:
         "200": {$ref: "#/components/responses/OK"}
+  /settings/probes:
+    get:
+      tags: [Settings]
+      summary: Effective probe policy switches (egress-quality matrix + autogen; DB overlay > YAML, absent quality key defaults ON)
+      responses:
+        "200":
+          description: Probe policy settings (effective values + per-section source overlay|config)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbeSettingsResponse"}
+    put:
+      tags: [Settings]
+      summary: Update probe policy switches (takes effect immediately — the matrix reseeds, autogen sweeps)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quality: {$ref: "#/components/schemas/ProbeQualityPolicy"}
+                autogen: {$ref: "#/components/schemas/ProbeAutogenPolicy"}
+      responses:
+        "200":
+          description: Post-update effective settings
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbeSettingsResponse"}
   /system:
     get:
       tags: [Settings]
@@ -3172,6 +3210,46 @@ components:
         p50_ms: {type: number}
         samples: {type: integer}
         last_status: {type: string}
+    ProbeSettingsResponse:
+      type: object
+      description: Effective probe policy switches plus where each came from ("overlay" = edited in web UI, "config" = the YAML file)
+      required: [quality, quality_source, autogen, autogen_source]
+      properties:
+        quality:
+          type: object
+          required: [enabled]
+          properties:
+            enabled: {type: boolean}
+        quality_source: {type: string, enum: [overlay, config]}
+        autogen:
+          type: object
+          required: [enabled, max_targets, interval_seconds]
+          properties:
+            enabled: {type: boolean}
+            max_targets: {type: integer}
+            interval_seconds: {type: integer}
+        autogen_source: {type: string, enum: [overlay, config]}
+    ProbeQualityPolicy:
+      type: object
+      description: Web-editable slice of probe.quality (the settings overlay row carries only the switch)
+      required: [enabled]
+      properties:
+        enabled: {type: boolean}
+    ProbeAutogenPolicy:
+      type: object
+      description: Web-editable slice of probe.autogen
+      required: [enabled]
+      properties:
+        enabled: {type: boolean}
+        max_targets: {type: integer, minimum: 1, maximum: 1000}
+        interval_seconds: {type: integer, minimum: 10}
+    AutogenSweepResult:
+      type: object
+      required: [created, enabled, disabled]
+      properties:
+        created: {type: integer, description: new auto targets created this sweep}
+        enabled: {type: integer, description: parked targets re-enabled (service reappeared)}
+        disabled: {type: integer, description: targets parked (service left the scan, or policy off)}
 
     SNMPCredential:
       type: object

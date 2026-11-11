@@ -3453,6 +3453,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/probe-targets/autogen-sweep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run one autogen reconcile sweep now (设置 → 拨测 / probes page LAN empty state); reads the effective policy (overlay ?? config) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sweep outcome counts */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AutogenSweepResult"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/probe-targets/{id}": {
         parameters: {
             query?: never;
@@ -6148,6 +6184,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/probes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Effective probe policy switches (egress-quality matrix + autogen; DB overlay > YAML, absent quality key defaults ON) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Probe policy settings (effective values + per-section source overlay|config) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProbeSettingsResponse"];
+                    };
+                };
+            };
+        };
+        /** Update probe policy switches (takes effect immediately — the matrix reseeds, autogen sweeps) */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        quality?: components["schemas"]["ProbeQualityPolicy"];
+                        autogen?: components["schemas"]["ProbeAutogenPolicy"];
+                    };
+                };
+            };
+            responses: {
+                /** @description Post-update effective settings */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProbeSettingsResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system": {
         parameters: {
             query?: never;
@@ -7512,6 +7611,39 @@ export interface components {
             p50_ms: number;
             samples: number;
             last_status?: string;
+        };
+        /** @description Effective probe policy switches plus where each came from ("overlay" = edited in web UI, "config" = the YAML file) */
+        ProbeSettingsResponse: {
+            quality: {
+                enabled: boolean;
+            };
+            /** @enum {string} */
+            quality_source: "overlay" | "config";
+            autogen: {
+                enabled: boolean;
+                max_targets: number;
+                interval_seconds: number;
+            };
+            /** @enum {string} */
+            autogen_source: "overlay" | "config";
+        };
+        /** @description Web-editable slice of probe.quality (the settings overlay row carries only the switch) */
+        ProbeQualityPolicy: {
+            enabled: boolean;
+        };
+        /** @description Web-editable slice of probe.autogen */
+        ProbeAutogenPolicy: {
+            enabled: boolean;
+            max_targets?: number;
+            interval_seconds?: number;
+        };
+        AutogenSweepResult: {
+            /** @description new auto targets created this sweep */
+            created: number;
+            /** @description parked targets re-enabled (service reappeared) */
+            enabled: number;
+            /** @description targets parked (service left the scan */
+            disabled: number;
         };
         /** @description Masked projection, passphrases are NEVER returned (not even ciphertext) */
         SNMPCredential: {

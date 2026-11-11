@@ -1580,8 +1580,13 @@
 		"Quality Reference": "参考组",
 		"Quality Vantage": "出口",
 		"Quality Verdict": "判定",
-		"Quality Empty": "暂无质量数据——中心启动后一个拨测周期内即可自动填充。",
+		"Quality Empty": "出口质量矩阵未启用——启用后系统会在一个拨测周期内自动填充。",
+		"Quality Enable Now": "启用出口质量矩阵",
+		"Quality Enabled Toast": "出口质量矩阵已启用，目标已重建",
 		"Quality Error": "质量报告加载失败",
+		"Ref Unreachable": "参考目标不可达",
+		"Ref Unreachable Cell": "不可达",
+		"Ref Unreachable Title": "该参考目标在所有出口都不可达（通常是目标所在区域的访问限制），不参与本网络的出口判定",
 		"Egress Panel Aria": "展开或收起出口与路径面板",
 		"Egress Panel Title": "出口与路径",
 		"Egress Fetch Failed": "出口状态加载失败",
@@ -1630,9 +1635,14 @@
 		"Category External": "外网业务拨测",
 		"Category Quality": "外网质量探测",
 		"Section Summary": "{enabled} 启用 · {ok} 正常 · {bad} 异常",
-		"Section Empty LAN": "内网暂无拨测——设备详情页可一键为服务创建拨测，或在设置中开启 probe.autogen",
+		"Section Summary With Paused": "{enabled} 启用 · {ok} 正常 · {bad} 异常 · 另 {paused} 条已停用",
+		"Section Empty LAN": "内网暂无拨测——可立即为已发现的服务一键创建，或在设置中开启自动生成",
 		"Section Empty External": "外网业务暂无拨测——点击上方“添加目标”即可监控外部站点",
-		"Section Empty Quality": "内置质量探测目标由服务端 probe.quality 配置管理",
+		"Section Empty Quality": "出口质量矩阵未开启——点右侧按钮即可启用（默认探测国内主流站点）",
+		"Autogen Sweep Now": "一键为已发现服务创建拨测",
+		"Autogen Sweep Done": "同步完成：新建 {created} · 启用 {enabled} · 停用 {disabled}",
+		"Empty Go Settings": "或到 设置 → 拨测 调整",
+		"Quality Help Thresholds": "默认值在服务器配置 probe.quality；开关可在 设置 → 拨测 调整",
 		"Section Toggle": "展开/收起{name}",
 		"Select Section": "全选{name}",
 		"No Match": "无匹配",
@@ -1730,6 +1740,22 @@
 		"Wipe": "清空演示数据",
 		"Wiped": "演示数据已清空 —— 扫描真实网段即可建立资产清单",
 		"Wipe Failed": "清空演示数据失败（需管理员）"
+	},
+	"probeSettings": {
+		"title": "拨测",
+		"saved": "拨测设置已保存，立即生效",
+		"save": "保存拨测设置",
+		"apply_note": "开关通过设置中心覆盖配置文件（无需重启）：质量矩阵立即重建目标，自动拨测立即执行一轮同步",
+		"quality": {
+			"title": "出口质量矩阵",
+			"desc": "内置的出口质量探测：从中心和每个采集器周期探测国内主流站点与公共解析，按网络给出出口判定",
+			"note": "探测点清单与判定阈值仍由配置文件 probe.quality 管理；此处开关只控制矩阵的启停"
+		},
+		"autogen": {
+			"title": "自动拨测",
+			"desc": "为已发现的服务自动生成内网拨测目标，并跟随服务上下线自动启停",
+			"params": "当前参数：拨测间隔 {interval}s · 目标上限 {max}（在配置文件 probe.autogen 中调整）"
+		}
 	},
 	"security": {
 		"title": "安全设置",

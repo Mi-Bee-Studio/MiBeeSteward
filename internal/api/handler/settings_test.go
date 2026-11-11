@@ -86,6 +86,62 @@ func TestSettings_Validation(t *testing.T) {
 	}
 }
 
+// The probe policy surface: PUT /settings/probes persists the switch in the
+// overlay and echoes the effective post-update view. (The subscriber reseed
+// wiring — the "takes effect immediately" half — is covered at the routes
+// layer where the real router runs: TestRoutes_ProbeSettingsSwitchReseeds.)
+func TestSettings_ProbePolicyLifecycle(t *testing.T) {
+	server, db := setupTestServer(t)
+	insertTestAdmin(t, db)
+	token := loginAsAdmin(t, server)
+
+	// Initial state: config-sourced, default-on (absent key = shipped ON).
+	resp, err := doAuthed(t, server, http.MethodGet, "/api/v1/settings/probes", token, nil)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var initial map[string]any
+	decodeJSON(t, resp, &initial)
+	require.Equal(t, "config", initial["quality_source"])
+	require.Equal(t, true, initial["quality"].(map[string]any)["enabled"], "absent key resolves ON")
+	require.Equal(t, "config", initial["autogen_source"])
+	require.Equal(t, false, initial["autogen"].(map[string]any)["enabled"], "autogen stays off by default")
+
+	// Flip the quality switch OFF: the overlay row lands and is echoed.
+	putBody := `{"quality":{"enabled":false},"autogen":{"enabled":true,"max_targets":50,"interval_seconds":120}}`
+	resp2, err := doAuthed(t, server, http.MethodPut, "/api/v1/settings/probes", token, bytes.NewBufferString(putBody))
+	require.NoError(t, err)
+	defer resp2.Body.Close()
+	require.Equal(t, http.StatusOK, resp2.StatusCode)
+	var updated map[string]any
+	decodeJSON(t, resp2, &updated)
+	require.Equal(t, "overlay", updated["quality_source"])
+	require.Equal(t, false, updated["quality"].(map[string]any)["enabled"])
+	require.Equal(t, "overlay", updated["autogen_source"])
+	autogen, _ := updated["autogen"].(map[string]any)
+	require.Equal(t, true, autogen["enabled"])
+	require.Equal(t, float64(50), autogen["max_targets"])
+	require.Equal(t, float64(120), autogen["interval_seconds"])
+}
+
+func TestSettings_ProbeValidation(t *testing.T) {
+	server, db := setupTestServer(t)
+	insertTestAdmin(t, db)
+	token := loginAsAdmin(t, server)
+
+	for _, body := range []string{
+		`{}`,
+		`{"quality":{}}`,
+		`{"autogen":{"max_targets":5000,"enabled":true}}`,
+		`{"autogen":{"interval_seconds":1,"enabled":true}}`,
+	} {
+		resp, err := doAuthed(t, server, http.MethodPut, "/api/v1/settings/probes", token, bytes.NewBufferString(body))
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode, "body %s must be rejected", body)
+	}
+}
+
 // Non-admin roles are gated off the settings surface (CapUserManage).
 func TestSettings_RequiresAdmin(t *testing.T) {
 	server, db := setupTestServer(t)

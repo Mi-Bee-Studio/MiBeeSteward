@@ -94,7 +94,11 @@ type ProbeTraceConfig struct {
 // its own signal, not an egress fault). Every value is configurable; the
 // defaults are only a starting point.
 type ProbeQualityConfig struct {
-	Enabled bool `koanf:"enabled"`
+	// Enabled is a pointer so an absent key (older configs carried across
+	// upgrades have no probe.quality block at all) resolves to the shipped
+	// default ON via EffectiveEnabled, while an explicit false stays off.
+	// Read it through EffectiveEnabled, never directly.
+	Enabled *bool `koanf:"enabled"`
 	// WindowMinutes is the lookback window the analyzer aggregates over.
 	WindowMinutes int `koanf:"window_minutes"`
 	// IntervalSeconds is the seeded cadence of every quality target.
@@ -112,6 +116,16 @@ type ProbeQualityConfig struct {
 	Groups map[string][]ProbeQualityTarget `koanf:"groups"`
 	// Episodes tunes the #720 degradation detector.
 	Episodes QualityEpisodeConfig `koanf:"episodes"`
+}
+
+// EffectiveEnabled resolves the matrix switch with the shipped default (on):
+// absent key = on, explicit false = off (same nil-pointer contract as
+// QualityEpisodeConfig.RequiresAttribution).
+func (q ProbeQualityConfig) EffectiveEnabled() bool {
+	if q.Enabled != nil {
+		return *q.Enabled
+	}
+	return true
 }
 
 // QualityEpisodeConfig tunes the relative-baseline degradation detector
@@ -157,6 +171,45 @@ func (e QualityEpisodeConfig) DetectorEnabled(qualityEnabled bool) bool {
 		return *e.Enabled
 	}
 	return qualityEnabled
+}
+
+// ProbeQualityPolicy is the web-editable slice of ProbeQualityConfig (设置 →
+// 拨测): the overlay row stores only these switches; everything else (matrix
+// contents, thresholds, window) keeps coming from the YAML config. Pointer
+// fields so a stored policy touches only what it names.
+type ProbeQualityPolicy struct {
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// Apply merges the policy onto a config copy (nil fields are no-ops).
+func (p ProbeQualityPolicy) Apply(cfg ProbeQualityConfig) ProbeQualityConfig {
+	if p.Enabled != nil {
+		cfg.Enabled = p.Enabled
+	}
+	return cfg
+}
+
+// ProbeAutogenPolicy is the web-editable slice of ProbeAutogenConfig.
+type ProbeAutogenPolicy struct {
+	Enabled *bool `json:"enabled,omitempty"`
+	// MaxTargets / IntervalSeconds let the web raise the cap or the cadence
+	// without a config edit; nil = keep the config/default value.
+	MaxTargets      *int `json:"max_targets,omitempty"`
+	IntervalSeconds *int `json:"interval_seconds,omitempty"`
+}
+
+// Apply merges the policy onto a config copy (nil fields are no-ops).
+func (p ProbeAutogenPolicy) Apply(cfg ProbeAutogenConfig) ProbeAutogenConfig {
+	if p.Enabled != nil {
+		cfg.Enabled = *p.Enabled
+	}
+	if p.MaxTargets != nil && *p.MaxTargets > 0 {
+		cfg.MaxTargets = *p.MaxTargets
+	}
+	if p.IntervalSeconds != nil && *p.IntervalSeconds > 0 {
+		cfg.IntervalSeconds = *p.IntervalSeconds
+	}
+	return cfg
 }
 
 // ProbeQualityTarget is one matrix member: a name (the probe_targets row
@@ -326,6 +379,12 @@ func normalizeProbe(cfg *Config) {
 	}
 	if q.OkRateThreshold == 0 {
 		q.OkRateThreshold = 0.9
+	}
+	if q.Enabled == nil {
+		// Absent key = the shipped default: matrix on (matches the example
+		// config and the OpenWrt migrate-config template's enabled=true).
+		on := true
+		q.Enabled = &on
 	}
 	if len(q.Groups) == 0 {
 		q.Groups = DefaultQualityGroups()

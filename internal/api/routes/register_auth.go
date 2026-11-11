@@ -69,6 +69,10 @@ func registerSettingsRoutes(r chi.Router, settingsHandler *handler.SettingsHandl
 		r.Use(middleware.RequireCapability(domain.CapUserManage))
 		r.Get("/auth", settingsHandler.GetAuth)
 		r.Put("/auth", settingsHandler.UpdateAuth)
+		// Probe policy switches (设置 → 拨测): the quality matrix + autogen
+		// toggles, effective without a restart (overlay ?? config).
+		r.Get("/probes", settingsHandler.GetProbes)
+		r.Put("/probes", settingsHandler.UpdateProbes)
 	})
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth)
