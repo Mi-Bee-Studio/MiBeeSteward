@@ -11,12 +11,16 @@ package handler_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"mibee-steward/internal/api/handler"
+	"mibee-steward/internal/config"
 )
 
 // The settings-center API: admin reads/writes the auth policy overlay, and
@@ -84,6 +88,83 @@ func TestSettings_Validation(t *testing.T) {
 		resp.Body.Close()
 		require.Equal(t, http.StatusBadRequest, resp.StatusCode, "body %s must be rejected", body)
 	}
+}
+
+// The probe policy surface: PUT /settings/probes persists the switch in the
+// overlay and echoes the effective post-update view. (The subscriber reseed
+// wiring — the "takes effect immediately" half — is covered at the routes
+// layer where the real router runs: TestRoutes_ProbeSettingsSwitchReseeds.)
+func TestSettings_ProbePolicyLifecycle(t *testing.T) {
+	server, db := setupTestServer(t)
+	insertTestAdmin(t, db)
+	token := loginAsAdmin(t, server)
+
+	// Initial state: config-sourced, default-on (absent key = shipped ON).
+	resp, err := doAuthed(t, server, http.MethodGet, "/api/v1/settings/probes", token, nil)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var initial map[string]any
+	decodeJSON(t, resp, &initial)
+	require.Equal(t, "config", initial["quality_source"])
+	require.Equal(t, true, initial["quality"].(map[string]any)["enabled"], "absent key resolves ON")
+	require.Equal(t, "config", initial["autogen_source"])
+	require.Equal(t, false, initial["autogen"].(map[string]any)["enabled"], "autogen stays off by default")
+
+	// Flip the quality switch OFF: the overlay row lands and is echoed.
+	putBody := `{"quality":{"enabled":false},"autogen":{"enabled":true,"max_targets":50,"interval_seconds":120}}`
+	resp2, err := doAuthed(t, server, http.MethodPut, "/api/v1/settings/probes", token, bytes.NewBufferString(putBody))
+	require.NoError(t, err)
+	defer resp2.Body.Close()
+	require.Equal(t, http.StatusOK, resp2.StatusCode)
+	var updated map[string]any
+	decodeJSON(t, resp2, &updated)
+	require.Equal(t, "overlay", updated["quality_source"])
+	require.Equal(t, false, updated["quality"].(map[string]any)["enabled"])
+	require.Equal(t, "overlay", updated["autogen_source"])
+	autogen, _ := updated["autogen"].(map[string]any)
+	require.Equal(t, true, autogen["enabled"])
+	require.Equal(t, float64(50), autogen["max_targets"])
+	require.Equal(t, float64(120), autogen["interval_seconds"])
+}
+
+func TestSettings_ProbeValidation(t *testing.T) {
+	server, db := setupTestServer(t)
+	insertTestAdmin(t, db)
+	token := loginAsAdmin(t, server)
+
+	for _, body := range []string{
+		`{}`,
+		`{"quality":{}}`,
+		`{"autogen":{"max_targets":5000,"enabled":true}}`,
+		`{"autogen":{"interval_seconds":1,"enabled":true}}`,
+		`not-json`,
+	} {
+		resp, err := doAuthed(t, server, http.MethodPut, "/api/v1/settings/probes", token, bytes.NewBufferString(body))
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode, "body %s must be rejected", body)
+	}
+}
+
+// The overlay-unavailable degradation (settingsSvc nil at startup): writes
+// 503, reads still serve the config layer — the production contract when the
+// system_settings table cannot load.
+func TestSettings_ProbesOverlayUnavailable(t *testing.T) {
+	h := handler.NewSettingsHandler(nil, nil, &config.Config{}, nil)
+
+	w := httptest.NewRecorder()
+	h.UpdateProbes(w, httptest.NewRequest(http.MethodPut, "/api/v1/settings/probes",
+		bytes.NewBufferString(`{"quality":{"enabled":true}}`)))
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+
+	w2 := httptest.NewRecorder()
+	h.GetProbes(w2, httptest.NewRequest(http.MethodGet, "/api/v1/settings/probes", nil))
+	require.Equal(t, http.StatusOK, w2.Code)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w2.Body.Bytes(), &resp))
+	require.Equal(t, "config", resp["quality_source"])
+	require.Equal(t, true, resp["quality"].(map[string]any)["enabled"])
 }
 
 // Non-admin roles are gated off the settings surface (CapUserManage).

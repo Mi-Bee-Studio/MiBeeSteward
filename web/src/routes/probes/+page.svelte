@@ -193,7 +193,10 @@ ProbeQualityTarget,
 		if (latest.status === 'timeout') return 1;
 		return 2;
 	}
-	const failingTargets = $derived(targets.filter((t) => problemRank(t) <= 1));
+	// "Failing" counts ENABLED targets only: a parked target's last result is
+	// stale by definition, and counting it made the headline claim problems
+	// the visible (enabled) board didn't show (#UI-probe-summary).
+	const failingTargets = $derived(targets.filter((t) => t.enabled && problemRank(t) <= 1));
 	const pausedCount = $derived(targets.filter((t) => !t.enabled).length);
 	// Failing breakdown by module ("http 2 · dns 1") — the one number the
 	// removed module overview cards carried that still matters for discovery.
@@ -255,9 +258,10 @@ ProbeQualityTarget,
 		label: string;
 		// Rows visible in this section after the page-level search; the
 		// summary always describes the WHOLE category so a filter can't mask
-		// its health.
+		// its health. ok/bad count ENABLED rows only (a parked row's stale
+		// last result is not a live problem); paused is reported separately.
 		rows: ProbeTarget[];
-		summary: { enabled: number; ok: number; bad: number };
+		summary: { enabled: number; ok: number; bad: number; paused: number };
 	}
 
 	// One page-level search box (replaces the single table's built-in one):
@@ -304,12 +308,61 @@ ProbeQualityTarget,
 		}
 	}
 
+	// --- Empty-state actions: the section hints used to point at config-file
+	// keys with no web path; now the empty state IS the control. The autogen
+	// sweep runs one reconcile immediately; the quality enable flips the
+	// settings-center switch (admin) which reseeds the matrix on the server.
+	let sweepRunning = $state(false);
+	let qualityEnabling = $state(false);
+	let isAdmin = $derived($auth.user?.role === 'admin');
+
+	async function runAutogenSweep() {
+		sweepRunning = true;
+		try {
+			const res = await api.post<{ created: number; enabled: number; disabled: number }>(
+				'/probe-targets/autogen-sweep',
+				{}
+			);
+			addToast(
+				'success',
+				m['probes.Autogen Sweep Done']({
+					created: res.created,
+					enabled: res.enabled,
+					disabled: res.disabled
+				})
+			);
+			await fetchTargets();
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		} finally {
+			sweepRunning = false;
+		}
+	}
+
+	async function enableQualityMatrix() {
+		qualityEnabling = true;
+		try {
+			await api.put('/settings/probes', { quality: { enabled: true } });
+			addToast('success', m['probes.Quality Enabled Toast']());
+			await fetchTargets();
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		} finally {
+			qualityEnabling = false;
+		}
+	}
+
 	const sections = $derived.by<CategorySection[]>(() => {
 		return PROBE_CATEGORIES.map((key) => {
 			const all = targets.filter((t) => probeCategory(t) === key);
 			let ok = 0;
 			let bad = 0;
+			let paused = 0;
 			for (const t of all) {
+				if (!t.enabled) {
+					paused++;
+					continue;
+				}
 				const latest = latestOverall(t);
 				if (!latest) continue;
 				if (latest.status === 'success') ok++;
@@ -324,7 +377,7 @@ ProbeQualityTarget,
 				rows: all
 					.filter(matchesRow)
 					.sort((a, b) => problemRank(a) - problemRank(b)),
-				summary: { enabled: all.filter((t) => t.enabled).length, ok, bad }
+				summary: { enabled: all.filter((t) => t.enabled).length, ok, bad, paused }
 			};
 		});
 	});
@@ -1804,6 +1857,12 @@ ProbeQualityTarget,
 					</thead>
 					<tbody>
 						{#each vantages as v, vi (v.vantage)}
+							<!-- A reference row whose every column is target-side dead
+							     (failing from ALL vantages — e.g. region-blocked
+							     international legs) is not this network's fault and not
+							     "insufficient data": it reads as 不可达 (neutral), which
+							     kills the "the matrix never initialized" misread. -->
+							{@const rowUnreachable = cols.length > 0 && cols.every((c) => c.cross_vantage === 'target_down')}
 							<tr class="border-b border-border/40 last:border-0">
 								<td class="py-1.5 pr-4 whitespace-nowrap">
 									<span class="truncate" title="{v.network_name ? v.vantage : ''}">{vantageLabel(v)}</span>
@@ -1820,6 +1879,8 @@ ProbeQualityTarget,
 									>
 										{#if st === 'none'}
 											<span class="text-text-muted">—</span>
+										{:else if t.cross_vantage === 'target_down'}
+											<span class="text-text-muted" title={m['probes.Ref Unreachable Title']()}>{m['probes.Ref Unreachable Cell']()}</span>
 										{:else}
 											<span class="inline-flex items-center gap-1.5 {trackTextCls[st]}">
 												<span class="inline-block h-2 w-2 shrink-0 rounded-full {trackDotCls[st]}"></span>
@@ -1829,9 +1890,15 @@ ProbeQualityTarget,
 									</td>
 								{/each}
 								<td class="py-1.5">
-									<span class="badge {verdictCls(v.verdict)}" style={verdictStyle(v.verdict)}>
-										{verdictLabel(v.verdict)} · {v.score}
-									</span>
+									{#if rowUnreachable}
+										<span class="badge bg-surface-2 text-text-muted border border-border" title={m['probes.Ref Unreachable Title']()}>
+											{m['probes.Ref Unreachable']()}
+										</span>
+									{:else}
+										<span class="badge {verdictCls(v.verdict)}" style={verdictStyle(v.verdict)}>
+											{verdictLabel(v.verdict)} · {v.score}
+										</span>
+									{/if}
 								</td>
 							</tr>
 						{/each}
@@ -2125,7 +2192,20 @@ ProbeQualityTarget,
 								<h4 class="text-xs font-semibold text-text">{categoryLabel('quality')}</h4>
 							</div>
 							{#if qualityEmpty}
-								<p class="text-xs text-muted italic">{m['probes.Quality Empty']()}</p>
+								<div class="flex flex-wrap items-center gap-3">
+									<p class="text-xs text-muted italic">{m['probes.Quality Empty']()}</p>
+									{#if isAdmin}
+										<button
+											type="button"
+											onclick={enableQualityMatrix}
+											disabled={qualityEnabling}
+											class="btn btn-secondary !py-1 !px-3 text-xs"
+											data-quality-empty-enable
+										>
+											{m['probes.Quality Enable Now']()}
+										</button>
+									{/if}
+								</div>
 							{:else}
 								{#each qualityGroups as g (g.name)}
 									<div class="mb-3 last:mb-0 {g.role === 'reference' ? 'opacity-80' : ''}">
@@ -2628,7 +2708,13 @@ ProbeQualityTarget,
 									{#if sec.summary.bad > 0}
 										<span class="badge badge-error !px-1.5 !py-0.5 !text-[0.625rem] shrink-0">{sec.summary.bad}</span>
 									{/if}
-									<span class="truncate text-xs text-text-muted">{m['probes.Section Summary']({ enabled: sec.summary.enabled, ok: sec.summary.ok, bad: sec.summary.bad })}</span>
+									<span class="truncate text-xs text-text-muted">
+										{#if sec.summary.paused > 0}
+											{m['probes.Section Summary With Paused']({ enabled: sec.summary.enabled, ok: sec.summary.ok, bad: sec.summary.bad, paused: sec.summary.paused })}
+										{:else}
+											{m['probes.Section Summary']({ enabled: sec.summary.enabled, ok: sec.summary.ok, bad: sec.summary.bad })}
+										{/if}
+									</span>
 								</button>
 								<!-- Section select-all: works on this section's rows
 								     only; the global batch toolbar merges selections. -->
@@ -2659,7 +2745,34 @@ ProbeQualityTarget,
 										</div>
 									{/if}
 									{#if sec.rows.length === 0}
-										<p class="py-2 text-xs text-text-muted italic">{categoryEmptyHint(sec.key)}</p>
+										<div class="py-3 flex flex-wrap items-center gap-3">
+											<p class="text-xs text-text-muted italic">{categoryEmptyHint(sec.key)}</p>
+											{#if sec.key === 'lan'}
+												<button
+													type="button"
+													onclick={runAutogenSweep}
+													disabled={sweepRunning}
+													class="btn btn-secondary !py-1 !px-3 text-xs"
+													data-lan-empty-sweep
+												>
+													{m['probes.Autogen Sweep Now']()}
+												</button>
+												{#if isAdmin}
+													<a href="/settings#probes" class="text-xs text-primary hover:underline">{m['probes.Empty Go Settings']()}</a>
+												{/if}
+											{/if}
+											{#if sec.key === 'quality' && isAdmin}
+												<button
+													type="button"
+													onclick={enableQualityMatrix}
+													disabled={qualityEnabling}
+													class="btn btn-secondary !py-1 !px-3 text-xs"
+													data-quality-empty-enable
+												>
+													{m['probes.Quality Enable Now']()}
+												</button>
+											{/if}
+										</div>
 									{:else}
 										<DataTable
 											{columns}

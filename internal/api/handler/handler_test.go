@@ -131,6 +131,8 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 		r.Use(middleware.RequireCapability(domain.CapUserManage))
 		r.Get("/auth", settingsHandler.GetAuth)
 		r.Put("/auth", settingsHandler.UpdateAuth)
+		r.Get("/probes", settingsHandler.GetProbes)
+		r.Put("/probes", settingsHandler.UpdateProbes)
 	})
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth)

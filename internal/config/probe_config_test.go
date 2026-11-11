@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func intPtr(v int) *int { return &v }
+
 // TestNormalizeProbe pins the documented-default fill for zero values and
 // the shipped default quality matrix.
 func TestNormalizeProbe(t *testing.T) {
@@ -28,10 +30,30 @@ func TestNormalizeProbe(t *testing.T) {
 	require.Equal(t, 800, p.Quality.HTTPDegradedMs)
 	require.Equal(t, 300, p.Quality.DNSDegradedMs)
 	require.InDelta(t, 0.9, p.Quality.OkRateThreshold, 0.0001)
-	require.False(t, p.Quality.Enabled, "quality is opt-in via yaml, not defaulted on")
+	require.NotNil(t, p.Quality.Enabled)
+	require.True(t, *p.Quality.Enabled, "absent key = shipped default on (upgrade-keep configs self-heal)")
 	require.False(t, p.Autogen.Enabled, "autogen stays off unless explicitly enabled")
 	require.Equal(t, []string{"http", "https"}, p.Autogen.Services)
 	require.Equal(t, 100, p.Autogen.MaxTargets)
+
+	// The web-editable policies merge field-wise onto a config copy; nil
+	// fields are no-ops (the settings overlay stores only the switches).
+	on, off := true, false
+	qcfg := ProbeQualityConfig{WindowMinutes: 15}
+	qcfg = ProbeQualityPolicy{Enabled: &on}.Apply(qcfg)
+	require.True(t, qcfg.EffectiveEnabled())
+	require.Equal(t, 15, qcfg.WindowMinutes, "non-switch fields untouched")
+	qcfg = ProbeQualityPolicy{Enabled: &off}.Apply(qcfg)
+	require.False(t, qcfg.EffectiveEnabled())
+
+	acfg := ProbeAutogenConfig{Enabled: false, MaxTargets: 100, IntervalSeconds: 300}
+	acfg = ProbeAutogenPolicy{Enabled: &on}.Apply(acfg)
+	require.True(t, acfg.Enabled)
+	require.Equal(t, 100, acfg.MaxTargets, "nil max_targets untouched")
+	acfg = ProbeAutogenPolicy{MaxTargets: intPtr(50), IntervalSeconds: intPtr(120)}.Apply(acfg)
+	require.Equal(t, 50, acfg.MaxTargets)
+	require.Equal(t, 120, acfg.IntervalSeconds)
+	require.True(t, acfg.Enabled, "nil enabled untouched")
 
 	groups := p.Quality.Groups
 	require.NotEmpty(t, groups["domestic"], "default domestic group present")

@@ -1620,4 +1620,163 @@ describe('Probes page', () => {
 			expect(hops?.querySelectorAll('tbody tr').length).toBe(3);
 		});
 	});
+
+	it('a parked target with a stale failure does not count as failing (#UI-probe-summary)', async () => {
+		localStorage.removeItem('mibee.probes.qualityOpen');
+		localStorage.removeItem('mibee.probes.certOpen');
+		const seeded = mockState.targets;
+		// retired-endpoint (parked) carries a STALE fail: the old counting
+		// turned it into a headline problem the visible board never showed.
+		mockState.targets = seeded.map((t) =>
+			t.id === 6
+				? {
+						...t,
+						last_status: 'fail',
+						last_error: 'dial tcp: connection refused',
+						vantage_latest: [
+							{ vantage: 'center', status: 'fail', latency_ms: 0, error_message: 'dial tcp: connection refused', checked_at: '2026-09-17T00:00:02Z' }
+						]
+					}
+				: t
+		);
+		try {
+			const { container } = render(Probes);
+			await waitFor(() => {
+				expect(container.textContent).toContain('nas-ssh');
+			});
+			// Headline: no live problems — the parked row rides the paused
+			// segment instead of inflating "failing".
+			expect(container.textContent).toContain('All 6 targets healthy');
+			// The section summary reports the parked row separately.
+			const external = container.querySelector('section[data-category="external"]');
+			expect(external?.textContent).toContain('2 enabled · 2 ok · 0 failing · 1 paused');
+		} finally {
+			mockState.targets = seeded;
+			localStorage.removeItem('mibee.probes.qualityOpen');
+			localStorage.removeItem('mibee.probes.certOpen');
+		}
+	});
+
+	it('an empty LAN section offers the one-click autogen sweep', async () => {
+		localStorage.removeItem('mibee.probes.qualityOpen');
+		localStorage.removeItem('mibee.probes.certOpen');
+		const seeded = mockState.targets;
+		// Leave only manual-unbound + system rows: no lan-category targets.
+		mockState.targets = seeded.filter((t) => t.id === 1 || t.id === 3);
+		vi.mocked(api.post).mockClear();
+		try {
+			const { container } = render(Probes);
+			const sweep = await waitFor(() => {
+				const btn = container.querySelector('[data-lan-empty-sweep]') as HTMLButtonElement | null;
+				expect(btn).toBeTruthy();
+				return btn!;
+			});
+			await fireEvent.click(sweep);
+			await waitFor(() => {
+				expect(vi.mocked(api.post)).toHaveBeenCalledWith('/probe-targets/autogen-sweep', {});
+			});
+		} finally {
+			mockState.targets = seeded;
+			localStorage.removeItem('mibee.probes.qualityOpen');
+			localStorage.removeItem('mibee.probes.certOpen');
+		}
+	});
+
+	it('an empty quality board offers the one-click matrix enable (admin)', async () => {
+		localStorage.removeItem('mibee.probes.certOpen');
+		localStorage.setItem('mibee.probes.qualityOpen', 'true');
+		const seeded = mockState.targets;
+		const seededQuality = mockState.quality;
+		// No system rows + an empty quality report: the dead-end hint becomes
+		// an actionable enable button.
+		mockState.targets = seeded.filter((t) => t.id !== 3);
+		mockState.quality = {
+			window_minutes: 15,
+			categories: [
+				{ category: 'lan', vantages: [], targets: [] },
+				{ category: 'external', vantages: [], targets: [] },
+				{ category: 'quality', vantages: [], targets: [], groups: [] }
+			]
+		};
+		vi.mocked(api.put).mockClear();
+		try {
+			const { container } = render(Probes);
+			const enable = await waitFor(() => {
+				const btn = container.querySelector('[data-quality-empty-enable]') as HTMLButtonElement | null;
+				expect(btn).toBeTruthy();
+				return btn!;
+			});
+			await fireEvent.click(enable);
+			await waitFor(() => {
+				expect(vi.mocked(api.put)).toHaveBeenCalledWith('/settings/probes', { quality: { enabled: true } });
+			});
+		} finally {
+			mockState.targets = seeded;
+			mockState.quality = seededQuality;
+			localStorage.removeItem('mibee.probes.qualityOpen');
+			localStorage.removeItem('mibee.probes.certOpen');
+		}
+	});
+
+	it('all-target-down reference rows read as unreachable, not insufficient', async () => {
+		localStorage.removeItem('mibee.probes.certOpen');
+		localStorage.setItem('mibee.probes.qualityOpen', 'true');
+		const seededQuality = mockState.quality;
+		// A reference group whose every leg fails from EVERY vantage (the
+		// region-blocked international case): the verdict must not read as
+		// "insufficient data · 0" (which looked like a broken init).
+		mockState.quality = {
+			window_minutes: 15,
+			categories: [
+				...seededQuality.categories.filter((c) => c.category !== 'quality'),
+				{
+					category: 'quality',
+					vantages: [],
+					targets: [],
+					groups: [
+						{
+							name: 'blocked-region',
+							role: 'reference',
+							vantages: [
+								{ vantage: 'center', verdict: 'insufficient', score: 0, reasons: ['insufficient_data'] }
+							],
+							targets: [
+								{
+									name: 'ref-http-blocked',
+									module: 'http',
+									target: 'http://198.51.100.7/',
+									cross_vantage: 'target_down',
+									per_vantage: { center: { ok_rate: 0, p50_ms: 0, samples: 7, last_status: 'fail' } }
+								},
+								{
+									name: 'ref-dns-blocked',
+									module: 'dns',
+									target: 'www.example.net',
+									cross_vantage: 'target_down',
+									per_vantage: { center: { ok_rate: 0, p50_ms: 0, samples: 7, last_status: 'fail' } }
+								}
+							]
+						}
+					]
+				}
+			]
+		};
+		try {
+			const { container } = render(Probes);
+			await waitFor(() => {
+				expect(container.textContent).toContain('ref-http-blocked');
+			});
+			const heading = Array.from(container.querySelectorAll('h5')).find((h) => h.textContent === 'blocked-region');
+			expect(heading).toBeTruthy();
+			const groupDiv = heading!.parentElement!.parentElement!;
+			expect(groupDiv.textContent).toContain('reference targets unreachable');
+			expect(groupDiv.textContent).toContain('unreachable');
+			expect(groupDiv.textContent).not.toContain('insufficient data · 0');
+			expect(groupDiv.textContent).not.toContain('0% · 0ms');
+		} finally {
+			mockState.quality = seededQuality;
+			localStorage.removeItem('mibee.probes.qualityOpen');
+			localStorage.removeItem('mibee.probes.certOpen');
+		}
+	});
 });

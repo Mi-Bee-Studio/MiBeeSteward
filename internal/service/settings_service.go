@@ -20,10 +20,17 @@ import (
 )
 
 // Settings-center overlay keys (dotted names, one system_settings row each;
-// value = JSON of the corresponding config struct).
+// value = JSON of the corresponding policy struct).
 const (
 	SettingAuthPasswordPolicy = "auth.password_policy"
 	SettingAuthLockout        = "auth.lockout"
+	// Probe policy switches (设置 → 拨测). The overlay rows carry ONLY the
+	// web-editable switches (probe.ProbeQualityPolicy / probe
+	// .ProbeAutogenPolicy shapes) — the YAML config stays the source for the
+	// matrix contents and thresholds; services merge the switch onto their
+	// startup config at the point of use.
+	SettingProbeQuality = "probe.quality"
+	SettingProbeAutogen = "probe.autogen"
 )
 
 // SettingsService is the runtime-editable settings overlay: system_settings

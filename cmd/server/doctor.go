@@ -116,19 +116,18 @@ func doctor(args []string) int {
 			detail: "jwt_secret equals initial_admin_password", fixHint: "use distinct secrets"})
 	}
 
-	// Egress-quality matrix (#608): opt-in by config, default-on for fresh
-	// installs (config.example.yaml) but ABSENT from configs kept across the
-	// v0.8.0 boundary — the upgrade-keep rule silently disabled the feature
-	// with no UI trace (#727). OpenWrt upgrades self-heal via
-	// deploy/openwrt/migrate-config.sh; this warn covers every other upgrade
-	// form (binary/systemd, Docker) whose config nothing migrates.
-	if cfg.Probe.Quality.Enabled {
+	// Egress-quality matrix (#608): default-on since v0.9.1 — an absent key
+	// (configs kept across the v0.8.0 boundary have no probe.quality block at
+	// all) now resolves ON; only an explicit `enabled: false` disables. An
+	// explicit off still warns here so the operator knows why the board is
+	// empty (the switch itself is now in 设置 → 拨测).
+	if cfg.Probe.Quality.EffectiveEnabled() {
 		checks = append(checks, doctorCheck{name: "probe.quality", status: "ok",
 			detail: "egress-quality matrix enabled"})
 	} else {
 		checks = append(checks, doctorCheck{name: "probe.quality", status: "warn",
-			detail:  "disabled: the built-in egress-quality matrix is inactive (kept pre-v0.8 configs lack the key entirely)",
-			fixHint: "add probe.quality.enabled: true — the system target matrix is reseeded at every boot"})
+			detail:  "disabled by an explicit probe.quality.enabled: false — the built-in egress-quality matrix is inactive",
+			fixHint: "flip the switch in 设置 → 拨测 (settings → probes) or remove the enabled: false line — the matrix reseeds at every boot"})
 	}
 
 	// -- Database ----------------------------------------------------------

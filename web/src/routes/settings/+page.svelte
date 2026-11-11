@@ -26,6 +26,7 @@
 	import SnmpCredentialsSettings from '$lib/components/settings/SnmpCredentialsSettings.svelte';
 	import FingerprintSettings from '$lib/components/settings/FingerprintSettings.svelte';
 	import SecuritySettings from '$lib/components/settings/SecuritySettings.svelte';
+	import ProbeSettings from '$lib/components/settings/ProbeSettings.svelte';
 
 	// Accordion: one section open at a time — opening a section collapses the
 	// others; content renders in place (no navigation to sub-pages). Section
@@ -41,6 +42,7 @@
 		| 'tags'
 		| 'fingerprints'
 		| 'security'
+		| 'probes'
 		| 'language';
 	const SECTION_IDS: SectionId[] = [
 		'profile',
@@ -52,6 +54,7 @@
 		'tags',
 		'fingerprints',
 		'security',
+		'probes',
 		'language'
 	];
 	let openSection = $state<SectionId | null>('profile');
@@ -518,6 +521,13 @@ function handleCancel2FASetup() {
 		<AccordionSection id="security" title={m["security.title"]()}
 			open={openSection === 'security'} onToggle={() => toggleSection('security')}>
 			<SecuritySettings />
+		</AccordionSection>
+
+		<!-- Probe policy section (admin): egress-quality matrix + autogen
+		     switches, the settings-center overlay (设置 → 拨测). -->
+		<AccordionSection id="probes" title={m["probeSettings.title"]()}
+			open={openSection === 'probes'} onToggle={() => toggleSection('probes')}>
+			<ProbeSettings />
 		</AccordionSection>
 
 		<!-- Language section -->

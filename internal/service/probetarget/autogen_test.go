@@ -25,6 +25,29 @@ import (
 	"mibee-steward/internal/testutil"
 )
 
+// autogenPlan maps a discovered service identity onto a module/target pair:
+// http/https probe URL semantics, everything else a plain port probe.
+func TestAutogenPlan(t *testing.T) {
+	module, target := autogenPlan("http", "192.0.2.10", 8080)
+	require.Equal(t, "http", module)
+	require.Equal(t, "http://192.0.2.10:8080/", target)
+	module, target = autogenPlan("https", "192.0.2.10", 443)
+	require.Equal(t, "http", module)
+	require.Equal(t, "https://192.0.2.10:443/", target)
+	module, target = autogenPlan("ssh", "192.0.2.10", 22)
+	require.Equal(t, "tcp", module)
+	require.Equal(t, "192.0.2.10:22", target)
+}
+
+// ipLiteralHost is the DNS-free direct-leg detector: the host part parses as
+// an IP literal; hostnames (and garbage) are resolution-dependent.
+func TestIPLiteralHost(t *testing.T) {
+	require.True(t, ipLiteralHost("203.0.113.5:53"))
+	require.True(t, ipLiteralHost("[2001:db8::1]:443"))
+	require.False(t, ipLiteralHost("www.example.com:443"))
+	require.False(t, ipLiteralHost(""))
+}
+
 func autogenCfg() config.ProbeAutogenConfig {
 	return config.ProbeAutogenConfig{
 		Enabled: true, Services: []string{"http", "https"},

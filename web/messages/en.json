@@ -1580,8 +1580,13 @@
 		"Quality Reference": "reference",
 		"Quality Vantage": "Vantage",
 		"Quality Verdict": "Verdict",
-		"Quality Empty": "No quality data yet — the built-in probe matrix fills in within one probe interval after the center starts.",
+		"Quality Empty": "The egress quality matrix is not enabled — once enabled, the board fills in within one probe interval.",
+		"Quality Enable Now": "Enable the egress quality matrix",
+		"Quality Enabled Toast": "Egress quality matrix enabled — targets reseeded",
 		"Quality Error": "Failed to load the quality report",
+		"Ref Unreachable": "reference targets unreachable",
+		"Ref Unreachable Cell": "unreachable",
+		"Ref Unreachable Title": "This reference target is unreachable from every vantage (usually a region-side access restriction) — it does not count against this network's verdict",
 		"Egress Panel Aria": "Expand or collapse the egress & paths panel",
 		"Egress Panel Title": "Egress & Paths",
 		"Egress Fetch Failed": "Failed to load egress state",
@@ -1630,9 +1635,14 @@
 		"Category External": "External business probes",
 		"Category Quality": "Egress quality probes",
 		"Section Summary": "{enabled} enabled · {ok} ok · {bad} failing",
-		"Section Empty LAN": "No LAN probes yet — create one from a device's service list, or enable probe.autogen in settings",
+		"Section Summary With Paused": "{enabled} enabled · {ok} ok · {bad} failing · {paused} paused",
+		"Section Empty LAN": "No LAN probes yet — create them for discovered services in one click, or turn on auto-generation in settings",
 		"Section Empty External": "No external business probes yet — use the Add Target button above to monitor an external site",
-		"Section Empty Quality": "Built-in matrix targets are managed by the probe.quality config",
+		"Section Empty Quality": "The egress quality matrix is off — the button on the right enables it (mainstream domestic sites by default)",
+		"Autogen Sweep Now": "Create probes for discovered services",
+		"Autogen Sweep Done": "Sweep done: {created} created · {enabled} enabled · {disabled} parked",
+		"Empty Go Settings": "or adjust in Settings → Probes",
+		"Quality Help Thresholds": "defaults live in the server's probe.quality config; the switch is in Settings → Probes",
 		"Section Toggle": "Toggle {name} section",
 		"Select Section": "Select all in {name}",
 		"No Match": "No match",
@@ -1730,6 +1740,22 @@
 		"Wipe": "Clear demo data",
 		"Wiped": "Demo data cleared — scan a real subnet to build your inventory",
 		"Wipe Failed": "Failed to clear demo data (admin only)"
+	},
+	"probeSettings": {
+		"title": "Probes",
+		"saved": "Probe settings saved — effective immediately",
+		"save": "Save probe settings",
+		"apply_note": "Switches override the config file via the settings center (no restart): the quality matrix reseeds now, autogen sweeps now",
+		"quality": {
+			"title": "Egress quality matrix",
+			"desc": "Built-in egress quality probing: the center and every agent periodically probe mainstream sites and public resolvers, producing a per-network egress verdict",
+			"note": "The probe-point list and thresholds remain managed by the probe.quality config; this switch only turns the matrix on or off"
+		},
+		"autogen": {
+			"title": "Auto-generated probes",
+			"desc": "Auto-create LAN probe targets from discovered services; targets follow their service's lifecycle automatically",
+			"params": "Current parameters: probe interval {interval}s · target cap {max} (tune in the probe.autogen config)"
+		}
 	},
 	"security": {
 		"title": "Security Settings",

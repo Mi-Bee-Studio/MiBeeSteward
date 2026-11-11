@@ -11,6 +11,7 @@ package probetarget
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"testing"
@@ -25,8 +26,9 @@ import (
 )
 
 func testQualityConfig() config.ProbeQualityConfig {
+	on := true
 	return config.ProbeQualityConfig{
-		Enabled: true, WindowMinutes: 15, IntervalSeconds: 120,
+		Enabled: &on, WindowMinutes: 15, IntervalSeconds: 120,
 		HTTPDegradedMs: 800, DNSDegradedMs: 300, OkRateThreshold: 0.9,
 		Groups: map[string][]config.ProbeQualityTarget{
 			"domestic": {
@@ -102,7 +104,8 @@ func TestQualitySeed(t *testing.T) {
 
 	// Disabled: every system target is parked (disabled), not deleted.
 	cfgOff := testQualityConfig()
-	cfgOff.Enabled = false
+	off := false
+	cfgOff.Enabled = &off
 	svcOff := NewQualityService(queries, cfgOff, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	require.NoError(t, svcOff.Seed(ctx))
 	list4, err := queries.ListProbeTargets(ctx)
@@ -111,6 +114,91 @@ func TestQualitySeed(t *testing.T) {
 	for _, tgt := range list4 {
 		require.Equal(t, int64(0), tgt.Enabled)
 	}
+}
+
+// fakeQualitySettings is an in-memory SettingsGetter standing in for the
+// settings-center overlay.
+type fakeQualitySettings struct{ values map[string]any }
+
+func (f *fakeQualitySettings) Get(key string, dst any) bool {
+	raw, ok := f.values[key]
+	if !ok {
+		return false
+	}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return false
+	}
+	return json.Unmarshal(b, dst) == nil
+}
+
+// TestQualitySeedSwitchFlip pins the settings-switch lifecycle: seed ON
+// first (rows exist), then park on off, then REVIVE on flip-on (the old bug
+// parked rows forever — the board stayed empty until each row was deleted
+// by hand).
+func TestQualitySeedSwitchFlip(t *testing.T) {
+	svc, queries := setupQuality(t)
+	ctx := context.Background()
+
+	// Baseline: switch on (no overlay row) → matrix seeded.
+	require.NoError(t, svc.Seed(ctx))
+	base, err := queries.ListProbeTargets(ctx)
+	require.NoError(t, err)
+	require.Len(t, base, 5)
+	for _, tgt := range base {
+		require.Equal(t, int64(1), tgt.Enabled)
+	}
+
+	// Switch off via the overlay policy (the 设置 → 拨测 path): seed parks.
+	off := false
+	svc.SetSettingsSource(&fakeQualitySettings{values: map[string]any{
+		SettingKeyQuality: config.ProbeQualityPolicy{Enabled: &off},
+	}})
+	require.NoError(t, svc.Seed(ctx))
+	parked, err := queries.ListProbeTargets(ctx)
+	require.NoError(t, err)
+	require.Len(t, parked, 5, "rows exist but parked")
+	for _, tgt := range parked {
+		require.Equal(t, int64(0), tgt.Enabled)
+	}
+
+	// Flip the switch on: the next seed revives every parked system row.
+	on := true
+	svc.SetSettingsSource(&fakeQualitySettings{values: map[string]any{
+		SettingKeyQuality: config.ProbeQualityPolicy{Enabled: &on},
+	}})
+	require.NoError(t, svc.Seed(ctx))
+	revived, err := queries.ListProbeTargets(ctx)
+	require.NoError(t, err)
+	require.Len(t, revived, 5)
+	for _, tgt := range revived {
+		require.Equal(t, int64(1), tgt.Enabled, "switch-on revives parked system rows")
+	}
+
+	// Clearing the overlay row falls back to the startup config (enabled):
+	// the rows stay alive.
+	svc.SetSettingsSource(&fakeQualitySettings{values: map[string]any{}})
+	require.NoError(t, svc.Seed(ctx))
+	kept, err := queries.ListProbeTargets(ctx)
+	require.NoError(t, err)
+	for _, tgt := range kept {
+		require.Equal(t, int64(1), tgt.Enabled)
+	}
+}
+
+// TestQualityDefaultOn pins the absent-key contract: a bare (unnormalized)
+// config resolves the matrix ON — kept pre-v0.8 configs that lack the whole
+// probe.quality block must not silently disable the feature.
+func TestQualityDefaultOn(t *testing.T) {
+	var bare config.ProbeQualityConfig
+	require.True(t, bare.EffectiveEnabled(), "absent key = shipped default on")
+	off := false
+	require.False(t, (config.ProbeQualityConfig{Enabled: &off}).EffectiveEnabled(), "explicit false stays off")
+
+	// Config() exposes the effective view (the handler defaults its window
+	// query param from it); without an overlay row it is the startup config.
+	svc := NewQualityService(nil, testQualityConfig(), nil)
+	require.Equal(t, 15, svc.Config().WindowMinutes)
 }
 
 // qualityWorld inserts the matrix rows + a pattern of results at one or more

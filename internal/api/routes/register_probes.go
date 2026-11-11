@@ -19,8 +19,9 @@ import (
 
 // registerProbeTargetRoutes registers /api/v1/probe-targets, the
 // egress-quality analysis endpoint (#608), and the egress/path extension
-// views (#716/#718/#719).
-func registerProbeTargetRoutes(r chi.Router, probeTargetHandler *handler.ProbeTargetHandler, probeQualityHandler *handler.ProbeQualityHandler, probeExtHandler *handler.ProbeExtHandler) {
+// views (#716/#718/#719). autogenHandler may be nil (sweep-now route is then
+// simply not registered).
+func registerProbeTargetRoutes(r chi.Router, probeTargetHandler *handler.ProbeTargetHandler, probeQualityHandler *handler.ProbeQualityHandler, probeExtHandler *handler.ProbeExtHandler, autogenHandler *handler.AutogenHandler) {
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireCapability(domain.CapProbeRead))
 		r.Get("/api/v1/probe-quality", probeQualityHandler.GetQuality)
@@ -46,6 +47,12 @@ func registerProbeTargetRoutes(r chi.Router, probeTargetHandler *handler.ProbeTa
 			r.Delete("/{id}", probeTargetHandler.DeleteTarget)
 			r.Post("/{id}/trigger", probeTargetHandler.TriggerTarget)
 			r.Post("/{id}/trace", probeExtHandler.TraceNow)
+			// On-demand autogen reconcile (设置 → 拨测 / probes page LAN
+			// empty state): run one sweep now instead of waiting for the
+			// periodic tick. Reads the effective (overlay ?? config) policy.
+			if autogenHandler != nil {
+				r.Post("/autogen-sweep", autogenHandler.SweepNow)
+			}
 		})
 	})
 }

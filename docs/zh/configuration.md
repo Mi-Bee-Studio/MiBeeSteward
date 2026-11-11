@@ -396,7 +396,7 @@ scanner:
 | `probe.notify_fail_threshold` | int | 3 | 拨测轨道（目标 × 视角）连续失败多少次后向通知管道发出 `probe_failed`。0 = 默认 3，范围 1–10；推荐 300s 周期下默认约 15 分钟内判定。环境变量 `MIBEE_PROBE_NOTIFY_FAIL_THRESHOLD`。 |
 | `notify.retry_window_minutes` | int | 30 | 可重试投递失败的有界延迟重投窗口（#633）：接收方短暂不可达时按指数退避持续重入队，窗口到期写最终失败行。0 = 默认 30，负数 = 关闭。仅内存态（进程重启即失效）。环境变量 `MIBEE_NOTIFY_RETRY_WINDOW_MINUTES`。 |
 | `agent_fleet.offline_threshold_minutes` | int | 10 | agent 的 `last_report_at` 陈旧多少分钟后发出 `agent_offline`。0 = 默认 10（推荐拨测周期下容忍两个完整静默周期），范围 1–1440。环境变量 `MIBEE_AGENT_FLEET_OFFLINE_THRESHOLD_MINUTES`。 |
-| `probe.quality.enabled` | bool | false | 网络出口质量评估：系统种入的公共拨测点矩阵，从每个视角（中心 + 全部 agent）执行、按网络分析。裸配置默认**关闭**；`configs/config.example.yaml` 以 `enabled: true` 作为推荐值出厂。环境变量 `MIBEE_PROBE_QUALITY_ENABLED`。 |
+| `probe.quality.enabled` | bool | true（键缺省=开） | 网络出口质量评估：系统种入的公共拨测点矩阵，从每个视角（中心 + 全部 agent）执行、按网络分析。**键缺失时默认开启**（升级保留的旧配置不再静默失去该特性），只有显式 `enabled: false` 才关闭。运行时开关可在 Web「设置 → 拨测」调整（设置中心覆盖，无需重启）。环境变量 `MIBEE_PROBE_QUALITY_ENABLED`。 |
 | `probe.quality.window_minutes` | int | 15 | 分析器回看窗口（5–1440）。环境变量 `MIBEE_PROBE_QUALITY_WINDOW_MINUTES`。 |
 | `probe.quality.interval_seconds` | int | 120 | 每个质量目标的种入周期（≥10）。 |
 | `probe.quality.http_degraded_ms` | int | 800 | http 腿的 p50 延迟阈值，超出即标记视角降级（叠加在成功率阈值之上）。 |
@@ -409,7 +409,7 @@ scanner:
 | `probe.quality.episodes.ok_rate_drop` | float | 0.3 | 窗口成功率在 `成功率 <= 基线 − drop` 时计为劣化（0..1）。 |
 | `probe.quality.episodes.min_windows` | int | 2 | 连续劣化的 15 分钟窗数门槛（2 ≈ 持续 30 分钟）。 |
 | `probe.quality.episodes.alert_requires_attribution` | bool | true | #716 裁定的落地：无同窗口出口/路径变更可归因的劣化段只记录（界面黄色）不通知。显式 false 允许无归因也通知。 |
-| `probe.autogen.enabled` | bool | false | 发现即拨测：从发现的服务自动创建设备绑定目标（`source=auto`）。默认关闭--它会自行写行，必须是有意识的选择。关闭时挂起整个 auto 存量（行与历史保留）。 |
+| `probe.autogen.enabled` | bool | false | 发现即拨测：从发现的服务自动创建设备绑定目标（`source=auto`）。默认关闭--它会自行写行，必须是有意识的选择（Web「设置 → 拨测」可随时开关，翻转即生效并立即同步一轮；拨测页内网分区的空态也有"一键为已发现服务创建拨测"）。关闭时挂起整个 auto 存量（行与历史保留）。 |
 | `probe.autogen.services` | []string | ["http","https"] | 可生成 auto 目标的服务身份（匹配 `host_services.service`）。 |
 | `probe.autogen.device_types` | []string | [] | 限定仅这些设备类型生成；留空 = 全部。 |
 | `probe.autogen.interval_seconds` | int | 300 | auto 目标的探测间隔（≥10）。 |
@@ -425,7 +425,7 @@ scanner:
 | `probe.trace.per_hop_ms` | int | 500 | 每跳等待（100–3000）。 |
 | `probe.trace.concurrency` | int | 2 | 并发追踪数（≤8）。 |
 
-质量种入语义（启动时执行、幂等）：开启时--缺失的矩阵行被创建（`source=system`、vantage `all`），漂移的行按配置刷新（module/target/options），配置中已删除的 `source=system` 行连**结果历史**一起删除；关闭时--所有 system 目标挂起（停用、保留历史）。在 UI 里删除的行会在下次重启时重种；要永久移除某目标，请从 `groups` 里删掉它（或关闭 `probe.quality`）。
+质量种入语义（启动时执行、幂等；「设置 → 拨测」翻转开关后立即重跑）：开启时--缺失的矩阵行被创建（`source=system`、vantage `all`），漂移的行按配置刷新（module/target/options），被挂起的 system 行**复活**（矩阵由总开关管理，行级停用对 system 目标不生效），配置中已删除的 `source=system` 行连**结果历史**一起删除；关闭时--所有 system 目标挂起（停用、保留历史）。在 UI 里删除的行会在下次重启时重种；要永久移除某目标，请从 `groups` 里删掉它（或关闭 `probe.quality`）。
 
 **示例**（与 `configs/config.example.yaml` 一致）：
 ```yaml

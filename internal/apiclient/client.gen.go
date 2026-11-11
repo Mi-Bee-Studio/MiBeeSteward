@@ -1113,6 +1113,42 @@ func (e ProbeResultStatus) Valid() bool {
 	}
 }
 
+// Defines values for ProbeSettingsResponseAutogenSource.
+const (
+	ProbeSettingsResponseAutogenSourceConfig  ProbeSettingsResponseAutogenSource = "config"
+	ProbeSettingsResponseAutogenSourceOverlay ProbeSettingsResponseAutogenSource = "overlay"
+)
+
+// Valid indicates whether the value is a known member of the ProbeSettingsResponseAutogenSource enum.
+func (e ProbeSettingsResponseAutogenSource) Valid() bool {
+	switch e {
+	case ProbeSettingsResponseAutogenSourceConfig:
+		return true
+	case ProbeSettingsResponseAutogenSourceOverlay:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeSettingsResponseQualitySource.
+const (
+	ProbeSettingsResponseQualitySourceConfig  ProbeSettingsResponseQualitySource = "config"
+	ProbeSettingsResponseQualitySourceOverlay ProbeSettingsResponseQualitySource = "overlay"
+)
+
+// Valid indicates whether the value is a known member of the ProbeSettingsResponseQualitySource enum.
+func (e ProbeSettingsResponseQualitySource) Valid() bool {
+	switch e {
+	case ProbeSettingsResponseQualitySourceConfig:
+		return true
+	case ProbeSettingsResponseQualitySourceOverlay:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProbeTargetLastStatus.
 const (
 	ProbeTargetLastStatusEmpty   ProbeTargetLastStatus = ""
@@ -1750,6 +1786,18 @@ type AuditLogList struct {
 
 	// Total Filtered count
 	Total *int64 `json:"total,omitempty"`
+}
+
+// AutogenSweepResult defines model for AutogenSweepResult.
+type AutogenSweepResult struct {
+	// Created new auto targets created this sweep
+	Created int `json:"created"`
+
+	// Disabled targets parked (service left the scan
+	Disabled int `json:"disabled"`
+
+	// Enabled parked targets re-enabled (service reappeared)
+	Enabled int `json:"enabled"`
 }
 
 // CertificateInfo One certificate in a port's chain (cert_index 0 = leaf)
@@ -2458,6 +2506,13 @@ type PipelineConfig struct {
 	} `json:"snmp"`
 }
 
+// ProbeAutogenPolicy Web-editable slice of probe.autogen
+type ProbeAutogenPolicy struct {
+	Enabled         bool `json:"enabled"`
+	IntervalSeconds *int `json:"interval_seconds,omitempty"`
+	MaxTargets      *int `json:"max_targets,omitempty"`
+}
+
 // ProbeEgressIP defines model for ProbeEgressIP.
 type ProbeEgressIP struct {
 	AsName *string `json:"as_name,omitempty"`
@@ -2791,6 +2846,11 @@ type ProbeQualityHistorySeries struct {
 	Vantage string `json:"vantage"`
 }
 
+// ProbeQualityPolicy Web-editable slice of probe.quality (the settings overlay row carries only the switch)
+type ProbeQualityPolicy struct {
+	Enabled bool `json:"enabled"`
+}
+
 // ProbeQualityReport Quality analysis (#613): computed per management category - lan (device-bound targets), external (manual business targets, simple ok/degraded verdicts) and quality (the built-in egress matrix, verdict chain egress_down > dns_fault > upstream_resolver > degraded > ok with config groups nested). Reasons are stable codes for UI localization.
 type ProbeQualityReport struct {
 	Categories    []ProbeQualityCategory `json:"categories"`
@@ -2870,6 +2930,26 @@ type ProbeResultList struct {
 	// Total Filtered count
 	Total *int64 `json:"total,omitempty"`
 }
+
+// ProbeSettingsResponse Effective probe policy switches plus where each came from ("overlay" = edited in web UI, "config" = the YAML file)
+type ProbeSettingsResponse struct {
+	Autogen struct {
+		Enabled         bool `json:"enabled"`
+		IntervalSeconds int  `json:"interval_seconds"`
+		MaxTargets      int  `json:"max_targets"`
+	} `json:"autogen"`
+	AutogenSource ProbeSettingsResponseAutogenSource `json:"autogen_source"`
+	Quality       struct {
+		Enabled bool `json:"enabled"`
+	} `json:"quality"`
+	QualitySource ProbeSettingsResponseQualitySource `json:"quality_source"`
+}
+
+// ProbeSettingsResponseAutogenSource defines model for ProbeSettingsResponse.AutogenSource.
+type ProbeSettingsResponseAutogenSource string
+
+// ProbeSettingsResponseQualitySource defines model for ProbeSettingsResponse.QualitySource.
+type ProbeSettingsResponseQualitySource string
 
 // ProbeTarget Synthetic-probe target. module (NOT method) selects the executor; last_* denormalize the newest outcome (empty/0 = never probed).
 type ProbeTarget struct {
@@ -3797,6 +3877,15 @@ type GetScannerTasksIdRunsParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// PutSettingsProbesJSONBody defines parameters for PutSettingsProbes.
+type PutSettingsProbesJSONBody struct {
+	// Autogen Web-editable slice of probe.autogen
+	Autogen *ProbeAutogenPolicy `json:"autogen,omitempty"`
+
+	// Quality Web-editable slice of probe.quality (the settings overlay row carries only the switch)
+	Quality *ProbeQualityPolicy `json:"quality,omitempty"`
+}
+
 // GetSnmpCredentialsParams defines parameters for GetSnmpCredentials.
 type GetSnmpCredentialsParams struct {
 	// Limit Page size (absent/0 → endpoint default; malformed or negative → 400; over-max clamps)
@@ -3869,6 +3958,9 @@ type PostFingerprintsMultipartRequestBody PostFingerprintsMultipartBody
 
 // PutFingerprintsMultipartRequestBody defines body for PutFingerprints for multipart/form-data ContentType.
 type PutFingerprintsMultipartRequestBody PutFingerprintsMultipartBody
+
+// PutSettingsProbesJSONRequestBody defines body for PutSettingsProbes for application/json ContentType.
+type PutSettingsProbesJSONRequestBody PutSettingsProbesJSONBody
 
 // PostTagsJSONRequestBody defines body for PostTags for application/json ContentType.
 type PostTagsJSONRequestBody = TagInput
@@ -5171,6 +5263,11 @@ type ClientInterface interface {
 	// Corresponds with POST /probe-targets (the `PostProbeTargets` operationId).
 	PostProbeTargets(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PostProbeTargetsAutogenSweep Run one autogen reconcile sweep now (设置 → 拨测 / probes page LAN empty state); reads the effective policy (overlay ?? config)
+	//
+	// Corresponds with POST /probe-targets/autogen-sweep (the `PostProbeTargetsAutogenSweep` operationId).
+	PostProbeTargetsAutogenSweep(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// DeleteProbeTargetsId Delete a target
 	//
 	// Corresponds with DELETE /probe-targets/{id} (the `DeleteProbeTargetsId` operationId).
@@ -5317,6 +5414,25 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /settings/auth (the `PutSettingsAuth` operationId).
 	PutSettingsAuth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSettingsProbes Effective probe policy switches (egress-quality matrix + autogen; DB overlay > YAML, absent quality key defaults ON)
+	//
+	// Corresponds with GET /settings/probes (the `GetSettingsProbes` operationId).
+	GetSettingsProbes(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutSettingsProbesWithBody Update probe policy switches (takes effect immediately — the matrix reseeds, autogen sweeps)
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /settings/probes (the `PutSettingsProbes` operationId).
+	PutSettingsProbesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutSettingsProbes Update probe policy switches (takes effect immediately — the matrix reseeds, autogen sweeps)
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /settings/probes (the `PutSettingsProbes` operationId).
+	PutSettingsProbes(ctx context.Context, body PutSettingsProbesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetSnmpCredentials SNMP credentials (masked, passphrases never echoed)
 	//
@@ -7654,6 +7770,21 @@ func (c *Client) PostProbeTargets(ctx context.Context, reqEditors ...RequestEdit
 	return c.Client.Do(req)
 }
 
+// PostProbeTargetsAutogenSweep Run one autogen reconcile sweep now (设置 → 拨测 / probes page LAN empty state); reads the effective policy (overlay ?? config)
+//
+// Corresponds with POST /probe-targets/autogen-sweep (the `PostProbeTargetsAutogenSweep` operationId).
+func (c *Client) PostProbeTargetsAutogenSweep(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostProbeTargetsAutogenSweepRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // DeleteProbeTargetsId Delete a target
 //
 // Corresponds with DELETE /probe-targets/{id} (the `DeleteProbeTargetsId` operationId).
@@ -8081,6 +8212,55 @@ func (c *Client) GetSettingsAuth(ctx context.Context, reqEditors ...RequestEdito
 // Corresponds with PUT /settings/auth (the `PutSettingsAuth` operationId).
 func (c *Client) PutSettingsAuth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPutSettingsAuthRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetSettingsProbes Effective probe policy switches (egress-quality matrix + autogen; DB overlay > YAML, absent quality key defaults ON)
+//
+// Corresponds with GET /settings/probes (the `GetSettingsProbes` operationId).
+func (c *Client) GetSettingsProbes(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSettingsProbesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutSettingsProbesWithBody Update probe policy switches (takes effect immediately — the matrix reseeds, autogen sweeps)
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /settings/probes (the `PutSettingsProbes` operationId).
+func (c *Client) PutSettingsProbesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutSettingsProbesRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutSettingsProbes Update probe policy switches (takes effect immediately — the matrix reseeds, autogen sweeps)
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /settings/probes (the `PutSettingsProbes` operationId).
+func (c *Client) PutSettingsProbes(ctx context.Context, body PutSettingsProbesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutSettingsProbesRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -13895,6 +14075,33 @@ func NewPostProbeTargetsRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewPostProbeTargetsAutogenSweepRequest constructs an http.Request for the PostProbeTargetsAutogenSweep method
+func NewPostProbeTargetsAutogenSweepRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/probe-targets/autogen-sweep")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewDeleteProbeTargetsIdRequest constructs an http.Request for the DeleteProbeTargetsId method
 func NewDeleteProbeTargetsIdRequest(server string, id Id) (*http.Request, error) {
 	var err error
@@ -15184,6 +15391,73 @@ func NewPutSettingsAuthRequest(server string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewGetSettingsProbesRequest constructs an http.Request for the GetSettingsProbes method
+func NewGetSettingsProbesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/settings/probes")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutSettingsProbesRequest calls the generic PutSettingsProbes builder with application/json body
+func NewPutSettingsProbesRequest(server string, body PutSettingsProbesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutSettingsProbesRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPutSettingsProbesRequestWithBody constructs an http.Request for the PutSettingsProbes method, with any body, and a specified content type
+func NewPutSettingsProbesRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/settings/probes")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -17196,6 +17470,13 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /probe-targets (the `PostProbeTargets` operationId).
 	PostProbeTargetsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PostProbeTargetsResponse, error)
 
+	// PostProbeTargetsAutogenSweepWithResponse Run one autogen reconcile sweep now (设置 → 拨测 / probes page LAN empty state); reads the effective policy (overlay ?? config)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /probe-targets/autogen-sweep (the `PostProbeTargetsAutogenSweep` operationId).
+	PostProbeTargetsAutogenSweepWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PostProbeTargetsAutogenSweepResponse, error)
+
 	// DeleteProbeTargetsIdWithResponse Delete a target
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -17400,6 +17681,27 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PUT /settings/auth (the `PutSettingsAuth` operationId).
 	PutSettingsAuthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PutSettingsAuthResponse, error)
+
+	// GetSettingsProbesWithResponse Effective probe policy switches (egress-quality matrix + autogen; DB overlay > YAML, absent quality key defaults ON)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /settings/probes (the `GetSettingsProbes` operationId).
+	GetSettingsProbesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSettingsProbesResponse, error)
+
+	// PutSettingsProbesWithBodyWithResponse Update probe policy switches (takes effect immediately — the matrix reseeds, autogen sweeps)
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /settings/probes (the `PutSettingsProbes` operationId).
+	PutSettingsProbesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutSettingsProbesResponse, error)
+
+	// PutSettingsProbesWithResponse Update probe policy switches (takes effect immediately — the matrix reseeds, autogen sweeps)
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /settings/probes (the `PutSettingsProbes` operationId).
+	PutSettingsProbesWithResponse(ctx context.Context, body PutSettingsProbesJSONRequestBody, reqEditors ...RequestEditorFn) (*PutSettingsProbesResponse, error)
 
 	// GetSnmpCredentialsWithResponse SNMP credentials (masked, passphrases never echoed)
 	//
@@ -22935,6 +23237,47 @@ func (r PostProbeTargetsResponse) ContentType() string {
 	return ""
 }
 
+type PostProbeTargetsAutogenSweepResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AutogenSweepResult
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostProbeTargetsAutogenSweepResponse) GetJSON200() *AutogenSweepResult {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r PostProbeTargetsAutogenSweepResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostProbeTargetsAutogenSweepResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostProbeTargetsAutogenSweepResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostProbeTargetsAutogenSweepResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type DeleteProbeTargetsIdResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -24083,6 +24426,88 @@ func (r PutSettingsAuthResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PutSettingsAuthResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetSettingsProbesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProbeSettingsResponse
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetSettingsProbesResponse) GetJSON200() *ProbeSettingsResponse {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSettingsProbesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSettingsProbesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSettingsProbesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSettingsProbesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PutSettingsProbesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProbeSettingsResponse
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutSettingsProbesResponse) GetJSON200() *ProbeSettingsResponse {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r PutSettingsProbesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutSettingsProbesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutSettingsProbesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutSettingsProbesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -26911,6 +27336,19 @@ func (c *ClientWithResponses) PostProbeTargetsWithResponse(ctx context.Context, 
 	return ParsePostProbeTargetsResponse(rsp)
 }
 
+// PostProbeTargetsAutogenSweepWithResponse Run one autogen reconcile sweep now (设置 → 拨测 / probes page LAN empty state); reads the effective policy (overlay ?? config)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /probe-targets/autogen-sweep (the `PostProbeTargetsAutogenSweep` operationId).
+func (c *ClientWithResponses) PostProbeTargetsAutogenSweepWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PostProbeTargetsAutogenSweepResponse, error) {
+	rsp, err := c.PostProbeTargetsAutogenSweep(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostProbeTargetsAutogenSweepResponse(rsp)
+}
+
 // DeleteProbeTargetsIdWithResponse Delete a target
 //
 // Returns a wrapper object for the known response body format(s).
@@ -27288,6 +27726,45 @@ func (c *ClientWithResponses) PutSettingsAuthWithResponse(ctx context.Context, r
 		return nil, err
 	}
 	return ParsePutSettingsAuthResponse(rsp)
+}
+
+// GetSettingsProbesWithResponse Effective probe policy switches (egress-quality matrix + autogen; DB overlay > YAML, absent quality key defaults ON)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /settings/probes (the `GetSettingsProbes` operationId).
+func (c *ClientWithResponses) GetSettingsProbesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSettingsProbesResponse, error) {
+	rsp, err := c.GetSettingsProbes(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSettingsProbesResponse(rsp)
+}
+
+// PutSettingsProbesWithBodyWithResponse Update probe policy switches (takes effect immediately — the matrix reseeds, autogen sweeps)
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /settings/probes (the `PutSettingsProbes` operationId).
+func (c *ClientWithResponses) PutSettingsProbesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutSettingsProbesResponse, error) {
+	rsp, err := c.PutSettingsProbesWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutSettingsProbesResponse(rsp)
+}
+
+// PutSettingsProbesWithResponse Update probe policy switches (takes effect immediately — the matrix reseeds, autogen sweeps)
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /settings/probes (the `PutSettingsProbes` operationId).
+func (c *ClientWithResponses) PutSettingsProbesWithResponse(ctx context.Context, body PutSettingsProbesJSONRequestBody, reqEditors ...RequestEditorFn) (*PutSettingsProbesResponse, error) {
+	rsp, err := c.PutSettingsProbes(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutSettingsProbesResponse(rsp)
 }
 
 // GetSnmpCredentialsWithResponse SNMP credentials (masked, passphrases never echoed)
@@ -30828,6 +31305,32 @@ func ParsePostProbeTargetsResponse(rsp *http.Response) (*PostProbeTargetsRespons
 	return response, nil
 }
 
+// ParsePostProbeTargetsAutogenSweepResponse parses an HTTP response from a PostProbeTargetsAutogenSweepWithResponse call
+func ParsePostProbeTargetsAutogenSweepResponse(rsp *http.Response) (*PostProbeTargetsAutogenSweepResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostProbeTargetsAutogenSweepResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AutogenSweepResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseDeleteProbeTargetsIdResponse parses an HTTP response from a DeleteProbeTargetsIdWithResponse call
 func ParseDeleteProbeTargetsIdResponse(rsp *http.Response) (*DeleteProbeTargetsIdResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -31519,6 +32022,58 @@ func ParsePutSettingsAuthResponse(rsp *http.Response) (*PutSettingsAuthResponse,
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest OK
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSettingsProbesResponse parses an HTTP response from a GetSettingsProbesWithResponse call
+func ParseGetSettingsProbesResponse(rsp *http.Response) (*GetSettingsProbesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSettingsProbesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProbeSettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutSettingsProbesResponse parses an HTTP response from a PutSettingsProbesWithResponse call
+func ParsePutSettingsProbesResponse(rsp *http.Response) (*PutSettingsProbesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutSettingsProbesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProbeSettingsResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

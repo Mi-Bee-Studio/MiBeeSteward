@@ -12,6 +12,7 @@ package routes
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
@@ -911,10 +912,14 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	}()
 	agentProbeReportHandler := handler.NewAgentProbeReportHandler(probeTargetSvc)
 	probeTargetHandler := handler.NewProbeTargetHandler(probeTargetSvc, scanQueries)
-	// Egress-quality matrix (#608): seed the system targets from config at
+	// Egress-quality matrix (#608): seed the system targets from the effective
+	// config (settings overlay ?? YAML, default-on for an absent key) at
 	// startup (idempotent), then keep the verdict gauges fresh on a ticker.
 	// A seed failure must not block boot - the panel degrades to no-data.
 	probeQualitySvc := probetarget.NewQualityService(db.New(probeDB), cfg.Probe.Quality, slog.Default())
+	if settingsSvc != nil {
+		probeQualitySvc = probeQualitySvc.SetSettingsSource(settingsSvc)
+	}
 	if err := probeQualitySvc.Seed(context.Background()); err != nil {
 		slog.Warn("probe quality: seed failed, matrix inactive this boot", "error", err)
 	}
@@ -930,16 +935,41 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// cross-confirmation, attribution, impact-only alerting. Shares the
 	// probe_ext store + the change recorder the probe engine uses.
 	episodeSvc := probeext.NewEpisodeService(probeExtStore, db.New(probeDB), probeDB, cfg.Probe.Quality.Episodes, changeRecorder, slog.Default())
-	if cfg.Probe.Quality.Episodes.DetectorEnabled(cfg.Probe.Quality.Enabled) {
+	if cfg.Probe.Quality.Episodes.DetectorEnabled(cfg.Probe.Quality.EffectiveEnabled()) {
 		episodeSvc.Start(context.Background())
 	}
 	probeExtHandler := handler.NewProbeExtHandler(probeExtSvc, episodeSvc)
-	registerProbeTargetRoutes(r, probeTargetHandler, probeQualityHandler, probeExtHandler)
 	// Discover-then-probe autogen (#606): default OFF, periodic reconcile of
-	// discovered services into device-bound targets. Same stop pattern.
+	// discovered services into device-bound targets. Same stop pattern. The
+	// overlay (设置 → 拨测) merges into every sweep, so the switch flips
+	// without a restart.
 	probeAutogenSvc := probetarget.NewAutogenService(db.New(probeDB), cfg.Probe.Autogen, slog.Default())
+	if settingsSvc != nil {
+		probeAutogenSvc = probeAutogenSvc.SetSettingsSource(settingsSvc)
+	}
 	probeAutogenStop := make(chan struct{})
 	go probeAutogenSvc.StartSweepLoop(context.Background(), probeAutogenStop)
+	probeAutogenHandler := handler.NewAutogenHandler(probeAutogenSvc)
+	registerProbeTargetRoutes(r, probeTargetHandler, probeQualityHandler, probeExtHandler, probeAutogenHandler)
+	// Settings-center subscribers: a 设置 → 拨测 flip takes effect immediately
+	// (reseed the matrix / run one autogen sweep), not on the next tick.
+	if settingsSvc != nil {
+		settingsSvc.SetSubscriber(service.SettingProbeQuality, func(json.RawMessage) {
+			if err := probeQualitySvc.Seed(context.Background()); err != nil {
+				slog.Warn("probe quality: reseed after settings change failed", "error", err)
+			}
+		})
+		settingsSvc.SetSubscriber(service.SettingProbeAutogen, func(json.RawMessage) {
+			created, enabled, disabled, err := probeAutogenSvc.Sweep(context.Background())
+			if err != nil {
+				slog.Warn("probe autogen: sweep after settings change failed", "error", err)
+				return
+			}
+			if created+enabled+disabled > 0 {
+				slog.Info("probe autogen: sweep after settings change", "created", created, "enabled", enabled, "disabled", disabled)
+			}
+		})
+	}
 
 	// --- SNMP credential management (issue #135, SNMPv3) ---
 	// CRUD for SNMP credentials (v1/v2c community strings + v3 USM auth/priv).
