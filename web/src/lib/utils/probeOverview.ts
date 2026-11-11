@@ -137,6 +137,39 @@ export function episodeBars(episodes: ProbeQualityEpisode[], nowMs: number, wind
 	return bars.sort((a, b) => a.leftPct - b.leftPct);
 }
 
+export interface EpisodeAxisTick {
+	/** horizontal position as % of the strip width */
+	pct: number;
+	/** tick time in ms — the caller formats it */
+	atMs: number;
+	/** tick sits on local midnight — the caller prefixes the date */
+	midnight: boolean;
+}
+
+/**
+ * Clock-aligned tick times for the episode strip's axis. Ticks land on
+ * local-time boundaries (default every 6h) so a bar can be matched to
+ * wall-clock time at a glance; ticks on local midnight set `midnight` so
+ * the caller can show which day it is. Window edges are deliberately NOT
+ * ticked: rolling "now/−24h" labels go stale between polls, clock-aligned
+ * ones keep their meaning. Empty when the window is shorter than one step.
+ */
+export function episodeAxisTicks(nowMs: number, windowMs = 24 * 3600 * 1000, stepHours = 6): EpisodeAxisTick[] {
+	const start = nowMs - windowMs;
+	// Round the window start down to the hour, then advance to the next
+	// local hour that is a multiple of stepHours (setHours keeps local
+	// alignment across DST shifts; fixed-ms stepping would drift).
+	const first = new Date(start);
+	first.setMinutes(0, 0, 0);
+	first.setHours(first.getHours() + ((stepHours - (first.getHours() % stepHours)) % stepHours));
+	if (first.getTime() < start) first.setHours(first.getHours() + stepHours);
+	const ticks: EpisodeAxisTick[] = [];
+	for (const t = new Date(first); t.getTime() <= nowMs; t.setHours(t.getHours() + stepHours)) {
+		ticks.push({ pct: ((t.getTime() - start) / windowMs) * 100, atMs: t.getTime(), midnight: t.getHours() === 0 });
+	}
+	return ticks;
+}
+
 // --- Health summary: stacked bar segments ----------------------------------
 
 export type HealthKey = 'ok' | 'fail' | 'timeout' | 'nodata' | 'paused';

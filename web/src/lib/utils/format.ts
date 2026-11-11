@@ -44,6 +44,43 @@ export function formatTime(iso: string | number | Date | null | undefined): stri
 }
 
 /**
+ * Locale-aware HH:mm clock time (no seconds). The full formatTime string is
+ * too wide for dense timeline axes (episode strip ticks); hour12:false keeps
+ * both locales on the compact 24h form.
+ */
+export function formatClockTime(iso: string | number | Date | null | undefined): string {
+	if (iso == null || iso === '') return '-';
+	try {
+		const locale = getLocale();
+		return new Date(iso).toLocaleTimeString(locale === 'zh' ? 'zh-CN' : 'en-US', {
+			hour: '2-digit',
+			minute: '2-digit',
+			hour12: false
+		});
+	} catch {
+		return String(iso);
+	}
+}
+
+/**
+ * Locale-aware short date (M/D). Used together with formatClockTime for
+ * timeline axis ticks that land on midnight, where a bare "00:00" cannot
+ * say which day it is.
+ */
+export function formatShortDate(iso: string | number | Date | null | undefined): string {
+	if (iso == null || iso === '') return '-';
+	try {
+		const locale = getLocale();
+		return new Date(iso).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en-US', {
+			month: 'numeric',
+			day: 'numeric'
+		});
+	} catch {
+		return String(iso);
+	}
+}
+
+/**
  * Human-readable duration from milliseconds ("940ms" / "108.3s"), shared by
  * the scan-results run history and the dashboard scan-activity table: the
  * two surfaces used to disagree (raw ms vs formatted) for the same column
