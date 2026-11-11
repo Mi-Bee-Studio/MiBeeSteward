@@ -89,6 +89,11 @@ var (
 	ErrPinned = errors.New("device is pinned force_archive; force is required to restore")
 	// ErrInvalidPin: SetPin called with a value outside the pin set.
 	ErrInvalidPin = errors.New("invalid archive_pin value")
+	// ErrIPConflict: restore requested for an archived device whose last
+	// recorded (ip, network) slot is now held by an ACTIVE device (#737). The
+	// archived record's ip_address is history; two live rows cannot share the
+	// slot, so the user resolves the duplicate consciously first.
+	ErrIPConflict = errors.New("the device's last recorded IP is now held by an active device; edit this record's address or remove the duplicate before restoring")
 )
 
 // Service is the archive lifecycle engine.
@@ -293,6 +298,17 @@ func (s *Service) restoreCheck(ctx context.Context, cfg config.ArchiveConfig) {
 			continue
 		}
 		minutes := int(now.Sub(*r.OnlineSince).Minutes())
+		// IP-conflict guard (#737): the archived device's recorded address may
+		// meanwhile have been claimed by an active device. Auto-restore skips
+		// (the row stays archived, the claim stays visible); a manual restore
+		// surfaces the conflict to the user as a 409.
+		if _, err := s.queries.FindLiveIPOccupant(ctx, db.FindLiveIPOccupantParams{
+			IpAddress: r.IpAddress, ID: r.ID, NetworkID: r.NetworkID,
+		}); err == nil {
+			s.logger.Warn("archive: restore skipped, recorded IP now held by an active device",
+				"device_id", r.ID, "ip", r.IpAddress)
+			continue
+		}
 		if _, err := s.queries.RestoreArchivedDevice(ctx, db.RestoreArchivedDeviceParams{
 			UpdatedAt: now, ID: r.ID,
 		}); err != nil {
@@ -367,7 +383,11 @@ func (s *Service) ArchiveDeviceManually(ctx context.Context, id int64, reason st
 // RestoreDeviceManually returns an archived device to the asset library. A
 // force_archive pin blocks the restore unless force is set, in which case the
 // pin is cleared first (pin_cleared event) so the device cannot come back as
-// a zombie still-pinned row.
+// a zombie still-pinned row. Restoring into an address an ACTIVE device now
+// holds is rejected (ErrIPConflict): the archived record's ip_address is its
+// last recorded address (history), and two live rows cannot share the slot —
+// the user resolves the duplicate consciously (edit the address, or delete
+// the tombstone) instead of the restore silently corrupting either record.
 func (s *Service) RestoreDeviceManually(ctx context.Context, id int64, force bool) error {
 	dev, err := s.queries.GetDevice(ctx, id)
 	if err != nil {
@@ -384,6 +404,11 @@ func (s *Service) RestoreDeviceManually(ctx context.Context, id int64, force boo
 		if err := s.setPin(ctx, dev.ID, PinNone, now); err != nil {
 			return err
 		}
+	}
+	if _, err := s.queries.FindLiveIPOccupant(ctx, db.FindLiveIPOccupantParams{
+		IpAddress: dev.IpAddress, ID: dev.ID, NetworkID: dev.NetworkID,
+	}); err == nil {
+		return ErrIPConflict
 	}
 	if _, err := s.queries.RestoreArchivedDevice(ctx, db.RestoreArchivedDeviceParams{
 		UpdatedAt: now, ID: id,

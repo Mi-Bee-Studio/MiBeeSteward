@@ -1062,7 +1062,12 @@ CREATE INDEX IF NOT EXISTS idx_device_tags_tag ON device_tags(tag_id);
 -- briefly carried (2026-08..09, post-#312 fresh installs) and recreates it
 -- as UNIQUE after the de-dup sweep.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_uuid ON devices(device_uuid);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_ip_network ON devices(ip_address, network_id);
+-- The (ip, network) slot is unique among LIVE rows only (#737): an archived
+-- device's ip_address is historical ("the last IP it was recorded at") and
+-- must not block a new occupant of that address, nor be hijacked by one. The
+-- identity resolver treats archived rows as slot-invisible (the MAC-primary
+-- path still finds them — that is how an archived device returns).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_ip_network ON devices(ip_address, network_id) WHERE archived_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_devices_mac_address ON devices(mac_address);
 CREATE INDEX IF NOT EXISTS idx_devices_scan_mac_expr ON devices(json_extract(scan_attributes, '$.mac'));
 CREATE INDEX IF NOT EXISTS idx_devices_scan_vendor_expr ON devices(json_extract(scan_attributes, '$.vendor'));

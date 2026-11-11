@@ -28,7 +28,7 @@ SET online_since = ?, updated_at = ?
 WHERE archived_at IS NOT NULL AND status = 'online' AND online_since IS NULL;
 
 -- name: ListArchivedOnline :many
-SELECT id, archive_pin, online_since
+SELECT id, archive_pin, online_since, ip_address, network_id
 FROM devices
 WHERE archived_at IS NOT NULL AND status = 'online' AND online_since IS NOT NULL;
 
@@ -116,3 +116,13 @@ FROM change_log
 WHERE entity_type = 'device' AND entity_id = ?
 ORDER BY detected_at DESC
 LIMIT ?;
+
+-- name: FindLiveIPOccupant :one
+-- The LIVE row currently holding this device's last recorded (ip, network)
+-- slot (#737): restoring an archived record whose address was meanwhile
+-- claimed by an active device would push both into the partial slot index.
+-- COALESCE keeps the NULL-network case comparable; ids are positive.
+SELECT id FROM devices
+WHERE ip_address = ? AND archived_at IS NULL AND id != ?
+  AND COALESCE(network_id, -1) = COALESCE(?, -1)
+LIMIT 1;

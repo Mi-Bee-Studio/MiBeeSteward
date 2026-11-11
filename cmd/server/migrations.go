@@ -26,8 +26,11 @@ import (
 // earlier); 3 is the first fresh-only generation. Version 9 adds the asset
 // archive layer (archived_at/pin/override/periodic columns +
 // asset_archive_events), the tag dictionary (tags + device_tags), and the
-// asset register columns (#662).
-const SchemaVersion = 9
+// asset register columns (#662). Version 10 makes the (ip, network) slot
+// unique among LIVE rows only — an archived device's ip_address is its last
+// recorded address (history), so a new occupant of that address must not be
+// blocked by — or morph — the archived record (#737).
+const SchemaVersion = 10
 
 // runMigrations creates a fresh database from the embedded schema and stamps
 // the version, or verifies an existing database is at the current version.
