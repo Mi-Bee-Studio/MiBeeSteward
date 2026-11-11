@@ -116,6 +116,8 @@ func (h *ArchiveHandler) RestoreDevice(w http.ResponseWriter, r *http.Request) {
 			Error(w, http.StatusConflict, "device is not archived")
 		case errors.Is(err, archive.ErrPinned):
 			Error(w, http.StatusConflict, "device is pinned force_archive; retry with force=true")
+		case errors.Is(err, archive.ErrIPConflict):
+			Error(w, http.StatusConflict, err.Error())
 		default:
 			Error(w, http.StatusInternalServerError, "failed to restore device")
 		}

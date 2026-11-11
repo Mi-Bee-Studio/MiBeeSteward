@@ -58,6 +58,30 @@ func (q *Queries) CountArchivedDevices(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const findLiveIPOccupant = `-- name: FindLiveIPOccupant :one
+SELECT id FROM devices
+WHERE ip_address = ? AND archived_at IS NULL AND id != ?
+  AND COALESCE(network_id, -1) = COALESCE(?, -1)
+LIMIT 1
+`
+
+type FindLiveIPOccupantParams struct {
+	IpAddress string `json:"ip_address"`
+	ID        int64  `json:"id"`
+	NetworkID *int64 `json:"network_id"`
+}
+
+// The LIVE row currently holding this device's last recorded (ip, network)
+// slot (#737): restoring an archived record whose address was meanwhile
+// claimed by an active device would push both into the partial slot index.
+// COALESCE keeps the NULL-network case comparable; ids are positive.
+func (q *Queries) FindLiveIPOccupant(ctx context.Context, arg FindLiveIPOccupantParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, findLiveIPOccupant, arg.IpAddress, arg.ID, arg.NetworkID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const insertArchiveEvent = `-- name: InsertArchiveEvent :exec
 
 
@@ -220,7 +244,7 @@ func (q *Queries) ListArchivedDevices(ctx context.Context, arg ListArchivedDevic
 }
 
 const listArchivedOnline = `-- name: ListArchivedOnline :many
-SELECT id, archive_pin, online_since
+SELECT id, archive_pin, online_since, ip_address, network_id
 FROM devices
 WHERE archived_at IS NOT NULL AND status = 'online' AND online_since IS NOT NULL
 `
@@ -229,6 +253,8 @@ type ListArchivedOnlineRow struct {
 	ID          int64      `json:"id"`
 	ArchivePin  string     `json:"archive_pin"`
 	OnlineSince *time.Time `json:"online_since"`
+	IpAddress   string     `json:"ip_address"`
+	NetworkID   *int64     `json:"network_id"`
 }
 
 func (q *Queries) ListArchivedOnline(ctx context.Context) ([]ListArchivedOnlineRow, error) {
@@ -240,7 +266,13 @@ func (q *Queries) ListArchivedOnline(ctx context.Context) ([]ListArchivedOnlineR
 	items := []ListArchivedOnlineRow{}
 	for rows.Next() {
 		var i ListArchivedOnlineRow
-		if err := rows.Scan(&i.ID, &i.ArchivePin, &i.OnlineSince); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.ArchivePin,
+			&i.OnlineSince,
+			&i.IpAddress,
+			&i.NetworkID,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

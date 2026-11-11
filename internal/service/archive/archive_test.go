@@ -383,3 +383,52 @@ func TestAutoArchive_NoMacDeviceSameRule(t *testing.T) {
 	lateArchived, _, _ := deviceState(t, conn, late)
 	require.True(t, lateArchived, "no-MAC device past 7d must be archived (same rule as with-MAC)")
 }
+
+// TestRestoreManually_IPConflict (#737): an archived record's ip_address is
+// its LAST RECORDED address. When an ACTIVE device meanwhile holds that
+// address, a manual restore must be rejected (ErrIPConflict) — two live rows
+// cannot share the slot, and the user resolves the duplicate consciously.
+// Once the address is free again, the same restore succeeds.
+func TestRestoreManually_IPConflict(t *testing.T) {
+	conn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	ghost := insertDevice(t, conn, "ghost", "scanner_v2", "offline", "aa:bb:cc:dd:ee:10", "192.0.2.10",
+		nil, ptr(time.Now().AddDate(0, 0, -2)), nil)
+	occupant := insertDevice(t, conn, "newcomer", "scanner_v2", "online", "bb:bb:bb:bb:bb:05", "192.0.2.10",
+		nil, nil, nil)
+
+	svc := newSvc(t, conn)
+	err = svc.RestoreDeviceManually(context.Background(), ghost, false)
+	require.ErrorIs(t, err, ErrIPConflict, "the recorded address is now held by an active device")
+
+	// The address frees up → the same restore succeeds.
+	_, err = conn.ExecContext(context.Background(), `DELETE FROM devices WHERE id = ?`, occupant)
+	require.NoError(t, err)
+	require.NoError(t, svc.RestoreDeviceManually(context.Background(), ghost, false))
+	archived, _, _ := deviceState(t, conn, ghost)
+	require.False(t, archived)
+}
+
+// TestRestore_AutoSkipWhenIPClaimed (#737): the auto-restore path skips when
+// the recorded address is claimed by an active device — the row stays
+// archived (its online clock keeps running) instead of pushing a second live
+// row into the slot.
+func TestRestore_AutoSkipWhenIPClaimed(t *testing.T) {
+	conn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	ctx := context.Background()
+
+	ghost := insertDevice(t, conn, "ghost", "scanner_v2", "online", "aa:bb:cc:dd:ee:11", "192.0.2.11",
+		nil, ptr(time.Now().AddDate(0, 0, -2)), ptr(time.Now().Add(-61*time.Minute)))
+	insertDevice(t, conn, "newcomer", "scanner_v2", "online", "bb:bb:bb:bb:bb:06", "192.0.2.11",
+		nil, nil, nil)
+
+	newSvc(t, conn).runOnce(ctx)
+
+	archived, _, _ := deviceState(t, conn, ghost)
+	require.True(t, archived, "restore must be skipped while an active device holds the recorded IP")
+	require.Equal(t, int64(0), countEvents(t, conn, ghost, EventRestored, TriggerAutoRestore))
+}

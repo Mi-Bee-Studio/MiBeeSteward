@@ -89,6 +89,14 @@
 		return '';
 	}
 
+	// IP is NOT device identity (#737): an archived record whose name is
+	// literally its address and that never collected a MAC is an unidentified
+	// gadget — present it as such, with the address as the LAST RECORDED IP
+	// (IPs get reassigned; the record is history, not a live claim).
+	function isIpOnly(item: ArchiveItem): boolean {
+		return !item.mac_address && (!item.name || item.name === item.ip_address);
+	}
+
 	onMount(load);
 </script>
 
@@ -117,23 +125,32 @@
 		<div class="overflow-x-auto rounded-lg border border-border bg-card">
 			<table class="w-full text-sm">
 				<thead class="bg-muted/50 text-xs uppercase tracking-wide text-muted">
-					<tr>
-						<th class="px-3 py-2 text-left">{m['devices.Device Name']()}</th>
-						<th class="px-3 py-2 text-left">IP / MAC</th>
-						<th class="px-3 py-2 text-left">{m['devices.Type']()}</th>
-						<th class="px-3 py-2 text-left">{m['devices.Status']()}</th>
-						<th class="px-3 py-2 text-left">{m['archive.Archived At']()}</th>
-						<th class="px-3 py-2 text-left">{m['archive.Badges']()}</th>
-						<th class="px-3 py-2 text-right">{m['archive.Actions']()}</th>
-					</tr>
+						<tr>
+							<th class="px-3 py-2 text-left">{m['devices.Device Name']()}</th>
+							<th class="px-3 py-2 text-left">{m['archive.Last Recorded']()}</th>
+							<th class="px-3 py-2 text-left">{m['devices.Type']()}</th>
+							<th class="px-3 py-2 text-left">{m['devices.Status']()}</th>
+							<th class="px-3 py-2 text-left">{m['archive.Archived At']()}</th>
+							<th class="px-3 py-2 text-left">{m['archive.Badges']()}</th>
+							<th class="px-3 py-2 text-right">{m['archive.Actions']()}</th>
+						</tr>
 				</thead>
 				<tbody class="divide-y divide-border">
 					{#each items as item (item.id)}
 						<tr class="hover:bg-muted/20">
 							<td class="px-3 py-2">
-								<a href="/archive/{item.id}" class="font-medium text-primary hover:underline"
-									>{item.name}</a
-								>
+								{#if isIpOnly(item)}
+									<a href="/archive/{item.id}" class="font-medium text-primary hover:underline"
+										>{m['archive.Unidentified']()}</a
+									>
+									<span class="ml-1 rounded-full border border-border bg-surface-2 px-2 py-0.5 text-xs text-text-muted">
+										{m['archive.Ip Only']()}
+									</span>
+								{:else}
+									<a href="/archive/{item.id}" class="font-medium text-primary hover:underline"
+										>{item.name}</a
+									>
+								{/if}
 								{#if item.network_name}<span class="ml-1 text-xs text-muted">({item.network_name})</span
 									>{/if}
 							</td>
@@ -199,6 +216,10 @@
 				</tbody>
 			</table>
 		</div>
+
+		{#if items.some(isIpOnly)}
+			<p class="mt-2 text-xs text-muted">{m['archive.Ip Only Note']()}</p>
+		{/if}
 
 		<div class="mt-4">
 			<Pagination

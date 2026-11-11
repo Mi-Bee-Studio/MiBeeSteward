@@ -423,25 +423,27 @@ func (r *SQLiteRepository) RecordDevice(ctx context.Context, ip string, d scanne
 			`SELECT id FROM devices WHERE mac_address = ? LIMIT 1`, mac).Scan(&existingID)
 		if err == sql.ErrNoRows {
 			// No global MAC match → try (ip, network_id) so a device first seen
-			// MAC-less (matched by IP) still gets enriched here.
+			// MAC-less (matched by IP) still gets enriched here. Live rows only
+			// (#737): enriching an archive record is the MAC-match branch's job
+			// (the return path), never an IP-slot fallback.
 			if r.networkID.Valid {
 				err = tx.QueryRowContext(ctx,
-					`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
+					`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? AND archived_at IS NULL LIMIT 1`,
 					ip, r.networkID.Int64).Scan(&existingID)
 			} else {
 				err = tx.QueryRowContext(ctx,
-					`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL LIMIT 1`,
+					`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL AND archived_at IS NULL LIMIT 1`,
 					ip).Scan(&existingID)
 			}
 		}
 	default:
 		if r.networkID.Valid {
 			err = tx.QueryRowContext(ctx,
-				`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
+				`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? AND archived_at IS NULL LIMIT 1`,
 				ip, r.networkID.Int64).Scan(&existingID)
 		} else {
 			err = tx.QueryRowContext(ctx,
-				`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL LIMIT 1`,
+				`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL AND archived_at IS NULL LIMIT 1`,
 				ip).Scan(&existingID)
 		}
 	}
@@ -523,16 +525,20 @@ func identityNetworkClause(networkID sql.NullInt64) (string, []any) {
 // repository can resolve identities across many networks.
 func (r *SQLiteRepository) ResolveDeviceIdentity(ctx context.Context, mac, ip string, networkID sql.NullInt64) (scannerv2.IdentityResolution, error) {
 	if mac == "" {
-		// No MAC → identity is (ip, network_id).
+		// No MAC → identity is (ip, network_id), among LIVE rows only (#737):
+		// an archived row's ip_address is historical — a new MAC-less occupant
+		// at that address starts a fresh record instead of morphing the
+		// archive entry. (The archived row keeps its identity and returns via
+		// MAC-primary when its own device comes back.)
 		var targetID int64
 		var err error
 		if networkID.Valid {
 			err = r.db.QueryRowContext(ctx,
-				`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
+				`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? AND archived_at IS NULL LIMIT 1`,
 				ip, networkID.Int64).Scan(&targetID)
 		} else {
 			err = r.db.QueryRowContext(ctx,
-				`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL LIMIT 1`,
+				`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL AND archived_at IS NULL LIMIT 1`,
 				ip).Scan(&targetID)
 		}
 		if err == sql.ErrNoRows {
@@ -561,14 +567,17 @@ func (r *SQLiteRepository) ResolveDeviceIdentity(ctx context.Context, mac, ip st
 			return scannerv2.IdentityResolution{IsNew: true}, nil
 		}
 		// MAC not seen before. Fall back to (ip, network_id) with empty mac so a
-		// device first seen MAC-less gets its mac filled on this scan.
+		// device first seen MAC-less gets its mac filled on this scan. Archived
+		// rows are excluded (#737): a specific new MAC must never adopt an
+		// archive record — the unknown device stays what it was, the newcomer
+		// starts its own row (the partial slot index allows the coexistence).
 		if networkID.Valid {
 			err = r.db.QueryRowContext(ctx,
-				`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? AND mac_address = '' LIMIT 1`,
+				`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? AND mac_address = '' AND archived_at IS NULL LIMIT 1`,
 				ip, networkID.Int64).Scan(&targetID)
 		} else {
 			err = r.db.QueryRowContext(ctx,
-				`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL AND mac_address = '' LIMIT 1`,
+				`SELECT id FROM devices WHERE ip_address = ? AND network_id IS NULL AND mac_address = '' AND archived_at IS NULL LIMIT 1`,
 				ip).Scan(&targetID)
 		}
 		if err == sql.ErrNoRows {
@@ -577,17 +586,20 @@ func (r *SQLiteRepository) ResolveDeviceIdentity(ctx context.Context, mac, ip st
 			// reporting a never-seen MAC at an occupied address. Concluding
 			// IsNew here made the INSERT violate the unique index and the
 			// report was dropped. The ip-holder is the authority for its slot
-			// (replacement doctrine): take it over.
+			// (replacement doctrine): take it over. Live holders only (#737):
+			// an archived row must not be taken over — its record is history;
+			// the newcomer's INSERT succeeds because the partial slot index
+			// ignores archived rows.
 			var holderID int64
 			var holderMAC string
 			var holdErr error
 			if networkID.Valid {
 				holdErr = r.db.QueryRowContext(ctx,
-					`SELECT id, mac_address FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
+					`SELECT id, mac_address FROM devices WHERE ip_address = ? AND network_id = ? AND archived_at IS NULL LIMIT 1`,
 					ip, networkID.Int64).Scan(&holderID, &holderMAC)
 			} else {
 				holdErr = r.db.QueryRowContext(ctx,
-					`SELECT id, mac_address FROM devices WHERE ip_address = ? AND network_id IS NULL LIMIT 1`,
+					`SELECT id, mac_address FROM devices WHERE ip_address = ? AND network_id IS NULL AND archived_at IS NULL LIMIT 1`,
 					ip).Scan(&holderID, &holderMAC)
 			}
 			if holdErr == nil && holderMAC != "" {
@@ -655,17 +667,18 @@ func (r *SQLiteRepository) ResolveDeviceIdentity(ctx context.Context, mac, ip st
 
 	// MAC matched a device on a DIFFERENT ip than the one being scanned. Check
 	// whether the scanned ip is held by another device with its own different
-	// mac: that signals a device replacement.
+	// mac: that signals a device replacement. Live holders only (#737) — an
+	// archived record's IP is history, never a replacement conflict.
 	var ipHolderID int64
 	var ipHolderMAC string
 	var ipLookErr error
 	if networkID.Valid {
 		ipLookErr = r.db.QueryRowContext(ctx,
-			`SELECT id, mac_address FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`,
+			`SELECT id, mac_address FROM devices WHERE ip_address = ? AND network_id = ? AND archived_at IS NULL LIMIT 1`,
 			ip, networkID.Int64).Scan(&ipHolderID, &ipHolderMAC)
 	} else {
 		ipLookErr = r.db.QueryRowContext(ctx,
-			`SELECT id, mac_address FROM devices WHERE ip_address = ? AND network_id IS NULL LIMIT 1`,
+			`SELECT id, mac_address FROM devices WHERE ip_address = ? AND network_id IS NULL AND archived_at IS NULL LIMIT 1`,
 			ip).Scan(&ipHolderID, &ipHolderMAC)
 	}
 	if ipLookErr == sql.ErrNoRows {
@@ -1046,7 +1059,7 @@ func (r *SQLiteRepository) updateDeviceIdentity(ctx context.Context, in scannerv
 				"ip", in.IP, "device_id", in.TargetID, "error", err)
 			if netClause, netArg := identityNetworkClause(in.NetworkID); netClause != "" {
 				_, _ = r.db.ExecContext(ctx,
-					`DELETE FROM devices WHERE ip_address = ? AND `+netClause+` AND mac_address = '' AND id != ?`,
+					`DELETE FROM devices WHERE ip_address = ? AND `+netClause+` AND mac_address = '' AND archived_at IS NULL AND id != ?`,
 					append([]any{in.IP}, append(netArg, in.TargetID)...)...)
 			}
 			_, err = r.db.ExecContext(ctx, `
@@ -1276,9 +1289,15 @@ func (r *SQLiteRepository) RecordHeartbeats(ctx context.Context, ip string, spec
 
 	// Resolve device_id for the IP. If no device, skip (device creation is
 	// RecordDevice's job; if it didn't run/persist yet, heartbeats are
-	// retried on the next scan).
+	// retried on the next scan). Live rows win over archived ones (#737: an
+	// archived record and a live row can share an address; a heartbeat
+	// belongs to the live occupant — unless the archived row IS the only
+	// occupant, in which case it is the returning device and its status flip
+	// starts the restore clock).
 	var deviceID int64
-	if err := tx.QueryRowContext(ctx, `SELECT id FROM devices WHERE ip_address = ? LIMIT 1`, ip).Scan(&deviceID); err != nil {
+	if err := tx.QueryRowContext(ctx,
+		`SELECT id FROM devices WHERE ip_address = ?
+		 ORDER BY (archived_at IS NULL) DESC, last_seen DESC LIMIT 1`, ip).Scan(&deviceID); err != nil {
 		if err == sql.ErrNoRows {
 			r.logger.Debug("record heartbeats: no device for ip", "ip", ip)
 			return tx.Rollback() //nolint:errcheck
@@ -1506,7 +1525,7 @@ func (r *SQLiteRepository) AnchorLocalInterfaces(ctx context.Context, networkID 
 		}
 		res, err := r.db.ExecContext(ctx, `
 			UPDATE devices SET mac_address = ?, updated_at = ?
-			WHERE ip_address = ? AND `+netClause+` AND (mac_address IS NULL OR mac_address = '')`,
+			WHERE ip_address = ? AND `+netClause+` AND (mac_address IS NULL OR mac_address = '') AND archived_at IS NULL`,
 			append([]any{mac, scannerv2.DBTime(time.Now()), p.IP}, netArg...)...)
 		if err != nil {
 			r.logger.Debug("anchor local interface failed", "ip", p.IP, "error", err)
@@ -1653,7 +1672,7 @@ func (r *SQLiteRepository) recordRoutes(ctx context.Context, deviceID int64, rou
 		var toID int64
 		err := r.db.QueryRowContext(ctx,
 			`SELECT id FROM devices WHERE ip_address = ? AND id != ?
-			 ORDER BY (status='online') DESC, last_seen DESC LIMIT 1`,
+			 ORDER BY (archived_at IS NULL) DESC, (status='online') DESC, last_seen DESC LIMIT 1`,
 			rt.NextHop, deviceID).Scan(&toID)
 		if err != nil {
 			continue // next hop not in the inventory (yet)
@@ -1820,11 +1839,15 @@ func (r *SQLiteRepository) EnrichDeviceByMAC(ctx context.Context, mac string, fi
 // (ip, network_id) identity rule. Returns 0 if the device doesn't exist yet.
 func (r *SQLiteRepository) resolveDeviceID(ctx context.Context, ip string) (int64, error) {
 	// Try by IP + this repo's network first (the common case, the device was
-	// upserted by RecordDevice on this scan or a prior one).
+	// upserted by RecordDevice on this scan or a prior one). Live rows win
+	// over archived ones at the same address (#737: with the partial slot
+	// index an archived record and a live row can share an IP — attribution
+	// goes to the live occupant, the archive entry is history).
 	if r.networkID.Valid {
 		var id int64
 		err := r.db.QueryRowContext(ctx,
-			`SELECT id FROM devices WHERE ip_address = ? AND network_id = ? LIMIT 1`, ip, r.networkID.Int64).Scan(&id)
+			`SELECT id FROM devices WHERE ip_address = ? AND network_id = ?
+			 ORDER BY (archived_at IS NULL) DESC, last_seen DESC LIMIT 1`, ip, r.networkID.Int64).Scan(&id)
 		if err == nil {
 			return id, nil
 		}
@@ -1832,7 +1855,8 @@ func (r *SQLiteRepository) resolveDeviceID(ctx context.Context, ip string) (int6
 	// Fall back to IP alone (legacy NULL-network or cross-network match).
 	var id int64
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id FROM devices WHERE ip_address = ? LIMIT 1`, ip).Scan(&id)
+		`SELECT id FROM devices WHERE ip_address = ?
+		 ORDER BY (archived_at IS NULL) DESC, last_seen DESC LIMIT 1`, ip).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
