@@ -7,6 +7,16 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, waitFor, fireEvent } from '@testing-library/svelte';
 
+// Every echarts instance Chart.svelte creates lands here so tests can assert
+// on dispose/setOption behavior (the 2D/3D toggle rebuilds keyed instances).
+const { chartInstances } = vi.hoisted(() => ({
+	chartInstances: [] as Array<{
+		setOption: ReturnType<typeof vi.fn>;
+		dispose: ReturnType<typeof vi.fn>;
+		resize: ReturnType<typeof vi.fn>;
+	}>
+}));
+
 // Mock external-behavior modules so the page loads under jsdom. Chart.svelte
 // guards echarts.init in try/catch, so the default cards render fine without
 // a canvas.
@@ -16,7 +26,15 @@ vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 // unconditionally, so stub the echarts barrel the Chart wrapper imports.
 vi.mock('$lib/charts/echarts', () => ({
 	echarts: {
-		init: vi.fn(() => ({ setOption: vi.fn(), dispose: vi.fn(), resize: vi.fn() }))
+		init: vi.fn(() => {
+			const inst = {
+				setOption: vi.fn(),
+				dispose: vi.fn(),
+				resize: vi.fn()
+			};
+			chartInstances.push(inst);
+			return inst;
+		})
 	}
 }));
 vi.mock('$lib/api/client', () => ({
@@ -234,5 +252,55 @@ describe('Dashboard page', () => {
 
 		await fireEvent.click(btn2d!);
 		expect(btn2d!.getAttribute('aria-pressed')).toBe('true');
+	});
+
+	it('toggling 3D rebuilds the keyed chart instances and applies custom-series options', async () => {
+		chartInstances.length = 0;
+		const { container } = render(Dashboard);
+		await waitFor(() => {
+			expect(container.querySelector('.skeleton-rect')).toBeNull();
+		});
+		// Cards with data mount Chart (status pie, type pie, gauge — the
+		// location/lifecycle/tag cards sit in EmptyState under this fixture).
+		await waitFor(() => {
+			expect(chartInstances.length).toBeGreaterThanOrEqual(3);
+		});
+		const findInstance = (seriesType: string) =>
+			chartInstances.find((i) =>
+				i.setOption.mock.calls.some(
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+					(c: any[]) => (c[0]?.series?.[0]?.type as string) === seriesType
+				)
+			);
+
+		// 2D baseline: pie options applied (the bar cards sit in EmptyState
+		// under this data-less fixture, so only the two pies + gauge mount).
+		expect(findInstance('pie')).toBeTruthy();
+
+		const pill = container.querySelector('[role="group"][aria-label]');
+		const btn3d = Array.from(pill!.querySelectorAll('button')).find(
+			(b) => b.textContent?.trim() === '3D'
+		);
+		await fireEvent.click(btn3d!);
+
+		// The keyed cards WITH data (status pie, type pie) dispose + re-init and
+		// receive custom-series options. (The location/lifecycle/tag cards have
+		// no data in this fixture — they sit in the EmptyState branch and mount
+		// no Chart at all, in both dimensions.) The gauge — no 3D analog, no
+		// reinitKey — keeps its instance.
+		await waitFor(() => {
+			const disposed = chartInstances.filter((i) => i.dispose.mock.calls.length > 0);
+			expect(disposed.length).toBe(2);
+		});
+		await waitFor(() => {
+			const customInstances = chartInstances.filter((i) =>
+				i.setOption.mock.calls.some(
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+					(c: any[]) => (c[0]?.series as any)?.[0]?.type === 'custom'
+				)
+			);
+			expect(customInstances.length).toBe(2);
+		});
+		expect(findInstance('gauge')?.dispose.mock.calls.length ?? 0).toBe(0);
 	});
 });

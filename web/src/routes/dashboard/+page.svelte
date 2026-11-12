@@ -212,12 +212,18 @@ import { buildPie3d, buildVBar3d, buildHBar3d, type Pie3dItem } from '$lib/chart
 	// chart3d.ts) — no echarts-gl (not echarts-6-compatible) and no extra
 	// dependency. Preference persists in localStorage; the gauge card has no
 	// 3D analog and stays 2D in both modes.
+	//
+	// A writable STORE, not $state: this page is prerendered, and under
+	// hydration a bare $state flip did not re-render the chart options'
+	// template expressions (the same sickness that forced `loading` into a
+	// store — see the note above loadAll). The $store auto-subscription path
+	// is the reliable one on this page.
 	const CHART_DIM_KEY = 'dashboard.chartDim';
-	let chartDim = $state<'2d' | '3d'>(
+	const chartDim = writable<'2d' | '3d'>(
 		browser && localStorage.getItem(CHART_DIM_KEY) === '3d' ? '3d' : '2d'
 	);
 	function setChartDim(dim: '2d' | '3d') {
-		chartDim = dim;
+		chartDim.set(dim);
 		if (browser) {
 			try {
 				localStorage.setItem(CHART_DIM_KEY, dim);
@@ -1268,17 +1274,17 @@ import { buildPie3d, buildVBar3d, buildHBar3d, type Pie3dItem } from '$lib/chart
 			>
 				<button
 					onclick={() => setChartDim('2d')}
-					aria-pressed={chartDim === '2d'}
+					aria-pressed={$chartDim === '2d'}
 					class="px-2.5 py-1.5 transition-colors
-						{chartDim === '2d' ? 'bg-primary text-text-inverse' : 'text-text-muted hover:text-text hover:bg-surface-2'}"
+						{$chartDim === '2d' ? 'bg-primary text-text-inverse' : 'text-text-muted hover:text-text hover:bg-surface-2'}"
 				>
 					2D
 				</button>
 				<button
 					onclick={() => setChartDim('3d')}
-					aria-pressed={chartDim === '3d'}
+					aria-pressed={$chartDim === '3d'}
 					class="px-2.5 py-1.5 border-l border-border transition-colors
-						{chartDim === '3d' ? 'bg-primary text-text-inverse' : 'text-text-muted hover:text-text hover:bg-surface-2'}"
+						{$chartDim === '3d' ? 'bg-primary text-text-inverse' : 'text-text-muted hover:text-text hover:bg-surface-2'}"
 				>
 					3D
 				</button>
@@ -1393,8 +1399,8 @@ import { buildPie3d, buildVBar3d, buildHBar3d, type Pie3dItem } from '$lib/chart
 					</div>
 					<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
 						<Chart
-							reinitKey={chartDim}
-							option={chartDim === '3d'
+							reinitKey={$chartDim}
+							option={$chartDim === '3d'
 								? buildStatusPie3d(stats || { by_status: { online: 0, offline: 0, unknown: 0 } })
 								: buildStatusPie(stats || { by_status: { online: 0, offline: 0, unknown: 0 } })}
 							height="100%"
@@ -1421,8 +1427,8 @@ import { buildPie3d, buildVBar3d, buildHBar3d, type Pie3dItem } from '$lib/chart
 					</div>
 					<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
 						<Chart
-							reinitKey={chartDim}
-							option={chartDim === '3d'
+							reinitKey={$chartDim}
+							option={$chartDim === '3d'
 								? buildTypePie3d(overview?.devices.by_type ?? {})
 								: buildTypePie(overview?.devices.by_type ?? {})}
 							height="100%"
@@ -1438,8 +1444,8 @@ import { buildPie3d, buildVBar3d, buildHBar3d, type Pie3dItem } from '$lib/chart
 					</div>
 					<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
 						<Chart
-							reinitKey={chartDim}
-							option={chartDim === '3d'
+							reinitKey={$chartDim}
+							option={$chartDim === '3d'
 								? buildLocationBar3d(devices)
 								: buildLocationBar(devices)}
 							height="100%"
@@ -1455,8 +1461,8 @@ import { buildPie3d, buildVBar3d, buildHBar3d, type Pie3dItem } from '$lib/chart
 					</div>
 					<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
 						<Chart
-							reinitKey={chartDim}
-							option={chartDim === '3d' ? buildLifecycleBar3d() : buildLifecycleBar()}
+							reinitKey={$chartDim}
+							option={$chartDim === '3d' ? buildLifecycleBar3d() : buildLifecycleBar()}
 							height="100%"
 						/>
 					</div>
@@ -1470,8 +1476,8 @@ import { buildPie3d, buildVBar3d, buildHBar3d, type Pie3dItem } from '$lib/chart
 					</div>
 					<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
 						<Chart
-							reinitKey={chartDim}
-							option={chartDim === '3d' ? buildTagBar3d() : buildTagBar()}
+							reinitKey={$chartDim}
+							option={$chartDim === '3d' ? buildTagBar3d() : buildTagBar()}
 							height="100%"
 						/>
 					</div>

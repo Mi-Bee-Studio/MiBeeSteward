@@ -145,4 +145,15 @@ describe('buildHBar3d', () => {
 		const yAxis = opt.yAxis as { data: string[] };
 		expect(yAxis.data[0]).toBe('very-long-...');
 	});
+
+	it('treats all-zero entries as no data (the 2D builders contract)', () => {
+		const opt = buildHBar3d(
+			[
+				{ label: 'a', value: 0 },
+				{ label: 'b', value: 0 }
+			],
+			{ color: '#6366f1', labelColor: '', axisColor: '', splitColor: '' }
+		);
+		expect(opt.series).toBeUndefined();
+	});
 });

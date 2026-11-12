@@ -256,7 +256,11 @@ export function buildPie3d(items: Pie3dItem[], style: { legendColor: string }): 
 			{
 				type: 'custom',
 				renderItem,
-				data: items.map((it) => ({ name: it.name, value: it.value }))
+				data: items.map((it) => ({ name: it.name, value: it.value })),
+				// Custom series defaults to a cartesian grid — without axes in the
+				// option the first setOption throws ("xAxis 0 not found"). The pie
+				// lays itself out from api.getWidth/getHeight instead.
+				coordinateSystem: 'none'
 			}
 		]
 	} as EChartsOption;
@@ -274,7 +278,9 @@ const DY = 5;
  * top parallelogram + right parallelogram. Axes stay 2D for readability.
  */
 export function buildVBar3d(entries: Bar3dEntry[], style: Bar3dStyle): EChartsOption {
-	if (entries.length === 0) return emptyOption();
+	// All-zero input reads as "no data" (the 2D builders' contract): rendering
+	// an empty 3D grid would show bare axes where 2D shows the EmptyState.
+	if (entries.length === 0 || !entries.some((e) => e.value > 0)) return emptyOption();
 
 	const renderItem: RenderItem = (params, api) => {
 		const idx = params.dataIndex as number;
@@ -363,7 +369,8 @@ export function buildVBar3d(entries: Bar3dEntry[], style: Bar3dStyle): EChartsOp
  * toward the upper-right, value label kept after the cap.
  */
 export function buildHBar3d(entries: Bar3dEntry[], style: Bar3dStyle): EChartsOption {
-	if (entries.length === 0) return emptyOption();
+	// All-zero input reads as "no data" (the 2D builders' contract).
+	if (entries.length === 0 || !entries.some((e) => e.value > 0)) return emptyOption();
 
 	const renderItem: RenderItem = (params, api) => {
 		const idx = params.dataIndex as number;
