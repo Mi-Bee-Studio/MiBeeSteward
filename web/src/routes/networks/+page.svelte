@@ -203,7 +203,14 @@
 			sortable: true,
 			render: (row: Record<string, unknown>) => {
 				const v = row.last_seen as string | null | undefined;
-				return v ? html`<span class="text-xs text-text-muted">${v}</span>` : '<span class="text-text-muted">-</span>';
+				// Localize: the API writes RFC3339Nano — a raw nanosecond stamp is
+				// unreadable (first visible once agent-fed networks populated
+				// this section, #737 sweep).
+				if (!v) return '<span class="text-text-muted">-</span>';
+				const d = new Date(v);
+				return Number.isNaN(d.getTime())
+					? html`<span class="text-xs text-text-muted">${v}</span>`
+					: html`<span class="text-xs text-text-muted">${d.toLocaleString()}</span>`;
 			}
 		}
 	]);

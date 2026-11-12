@@ -194,15 +194,44 @@
 	}
 
 	// deviceLabel extracts a human-friendly device identity (name or IP) for the
-	// "Device" column. Three shapes:
+	// "Device" column. Four shapes:
+	//  - probe liveness (entity_type=probe_target): after_data.target_name —
+	//    the probe target is the entity; "#id" told the user nothing (#737)
+	//  - quality episodes (entity_type=probe_quality): the affected vantage
+	//    (+ destination group), agent ids mapped to their network name
 	//  - added:   after_data  = full DeviceSnapshot → use name / ip_address
 	//  - lost:    before_data = full DeviceSnapshot → use name / ip_address
-		//  - changed: before/after snapshots (or legacy diff map) → name/ip old
-		//             value (the stable identity: the new value is the change)
-		// Falls back to the entity_id ("#211") only if no snapshot/diff is present.
+	//  - changed: before/after snapshots (or legacy diff map) → name/ip old
+	//             value (the stable identity: the new value is the change)
+	// Falls back to the entity_id ("#211") only if no snapshot/diff is present.
 		function deviceLabel(row: Record<string, unknown>): string {
 			const ct = String(row.change_type);
 			const eid = row.entity_id ? '#' + row.entity_id : '';
+			const et = String(row.entity_type ?? '');
+			if (et === 'probe_target') {
+				// probe_failed/probe_recovered: after_data names the target.
+				const after = tryParse(String(row.after_data ?? '')) as Record<string, unknown> | null;
+				const name = after && typeof after === 'object' ? after.target_name : null;
+				return String(name ?? eid);
+			}
+			if (et === 'probe_quality') {
+				// quality_degraded/recovered: an episode covers a vantage (group)
+				// plus a destination group. Render the vantage readably.
+				const after = tryParse(String(row.after_data ?? '')) as Record<string, unknown> | null;
+				if (after && typeof after === 'object') {
+					const vg = String(after.vantage_group ?? '');
+					let v: string;
+					if (vg === 'center') v = m['changes.Vantage Center']();
+					else if (vg.startsWith('agent:')) {
+						const aid = vg.slice(6);
+						const net = networks.find((n) => n.agent_id === aid);
+						v = net ? net.name : aid;
+					} else v = vg;
+					const tg = after.target_group ? ' · ' + after.target_group : '';
+					return v + tg;
+				}
+				return eid;
+			}
 			if (ct === 'device_changed') {
 				// The before-snapshot is the stable identity; a legacy diff map has
 				// no snapshot, so fall back to its old values.

@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -153,6 +154,34 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 	}
 	if reportedCIDR != "" {
 		h.maybeBackfillNetworkCIDR(r.Context(), *networkID, reportedCIDR)
+	}
+
+	// 观测网段 (#503/#737): the runner's recordSubnets only runs for LOCAL
+	// scans (its gateway source is the center's own /proc/net/route), so
+	// agent-fed networks never populated the networks page's observed-subnets
+	// section. The agent reports its DETECTED on-link subnets
+	// (meta.self_interfaces, #686) — record them here, keyed
+	// (network_id, cidr), refreshed on every report. The gateway column stays
+	// empty (the agent's route-table gateway is not on the wire yet).
+	if rep.Meta != nil {
+		now := time.Now().UTC()
+		for _, si := range rep.Meta.SelfInterfaces {
+			if si.CIDR == "" || strings.HasPrefix(si.CIDR, "127.") {
+				continue
+			}
+			if _, err := h.queries.GetSubnetByCIDR(r.Context(), db.GetSubnetByCIDRParams{
+				NetworkID: *networkID, Cidr: si.CIDR,
+			}); err == nil {
+				_, _ = h.queries.UpdateSubnetLastSeen(r.Context(), db.UpdateSubnetLastSeenParams{
+					LastSeen: &now, NetworkID: *networkID, Cidr: si.CIDR,
+				})
+			} else {
+				_ = h.queries.UpsertSubnet(r.Context(), db.UpsertSubnetParams{
+					NetworkID: *networkID, Cidr: si.CIDR,
+					Metadata: "{}", FirstSeen: &now, LastSeen: &now,
+				})
+			}
+		}
 	}
 
 	if len(rep.Hosts) == 0 {

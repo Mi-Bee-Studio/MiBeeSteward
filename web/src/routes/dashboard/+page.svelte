@@ -829,9 +829,12 @@
 				applyWidgetPatch(w.id, {
 					listItems: (o?.abnormal ?? []).map((d) => ({
 						title: displayName(d),
-						subtitle: displayName(d) !== d.ip_address ? d.ip_address : undefined,
+						subtitle:
+							displayName(d) !== d.ip_address && !d.ip_address.startsWith('#park:')
+								? d.ip_address
+								: undefined,
 						status: 'offline',
-						href: `/devices?search=${d.ip_address}`
+						href: `/devices?search=${d.name || d.ip_address}`
 					}))
 				});
 				break;
