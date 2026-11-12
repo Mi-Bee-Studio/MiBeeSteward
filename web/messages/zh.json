@@ -326,6 +326,7 @@
 	},
 	"dashboard": {
 		"Dashboard": "仪表盘",
+		"Chart Dim": "图表维度（2D/3D）",
 		"Drag to Reorder": "拖拽组件以调整顺序",
 		"Attention Title": "需要关注",
 		"Attention Offline": "{count} 台离线",

@@ -17,7 +17,8 @@ import {
 	PieChart,
 	ScatterChart,
 	GraphChart,
-	TreeChart
+	TreeChart,
+	CustomChart
 } from 'echarts/charts';
 import {
 	TitleComponent,
@@ -44,6 +45,8 @@ import { CanvasRenderer } from 'echarts/renderers';
 //   - GeoComponent           (map/geo coordinates)
 //   - CalendarComponent      (calendar heatmap coordinates)
 //   - RadarComponent          (radar coordinates)
+// CustomChart backs the dashboard's isometric 3D chart builders
+// (lib/charts/chart3d.ts, dashboard 2D/3D toggle).
 echarts.use([
 	GaugeChart,
 	LineChart,
@@ -52,6 +55,7 @@ echarts.use([
 	ScatterChart,
 	GraphChart,
 	TreeChart,
+	CustomChart,
 	TitleComponent,
 	TooltipComponent,
 	GridComponent,

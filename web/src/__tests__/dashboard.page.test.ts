@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { render, waitFor } from '@testing-library/svelte';
+import { render, waitFor, fireEvent } from '@testing-library/svelte';
 
 // Mock external-behavior modules so the page loads under jsdom. Chart.svelte
 // guards echarts.init in try/catch, so the default cards render fine without
@@ -55,7 +55,8 @@ vi.mock('$lib/api/client', () => ({
 						last_discovery: undefined
 					},
 					abnormal: [
-						{ id: 34, name: 'nanopineo', ip_address: '192.168.2.169', type: 'embedded', status: 'offline' }
+						{ id: 34, name: 'nanopineo', ip_address: '192.168.2.169', type: 'embedded', status: 'offline' },
+						{ id: 35, name: 'parked-dev', ip_address: '#park:6', type: 'other', status: 'offline' }
 					],
 					generated: '2026-09-14T00:00:00Z'
 				});
@@ -184,5 +185,54 @@ describe('Dashboard page', () => {
 		} finally {
 			api.get = origGet;
 		}
+	});
+
+	it('offline list suppresses the parked sentinel as subtitle and search term', async () => {
+		const { container } = render(Dashboard);
+		await waitFor(() => {
+			expect(container.querySelector('.skeleton-rect')).toBeNull();
+		});
+
+		// The default-layout offline card mirrors the #740 widget fix: a parked
+		// row (#park:<id> address claimed by another device) must not leak the
+		// sentinel as a subtitle or a search term.
+		const parkedLink = Array.from(container.querySelectorAll('a')).find((a) =>
+			(a.textContent ?? '').includes('parked-dev')
+		);
+		expect(parkedLink).toBeTruthy();
+		// '#park' URL-encodes to '%23park' — either form must be absent (the
+		// device's own name 'parked-dev' legitimately contains 'park').
+		const href = (parkedLink as HTMLAnchorElement).href;
+		expect(href).not.toContain('%23park');
+		expect(href).not.toContain('#park');
+		expect((parkedLink as HTMLAnchorElement).href).toContain(
+			`search=${encodeURIComponent('parked-dev')}`
+		);
+		expect(parkedLink!.textContent).not.toContain('#park:');
+	});
+
+	it('chart dimension pill starts on 2D and flips to 3D on click', async () => {
+		const { container } = render(Dashboard);
+		await waitFor(() => {
+			expect(container.querySelector('.skeleton-rect')).toBeNull();
+		});
+
+		// The pill group carries the i18n'd aria-label; its two buttons are
+		// the bare "2D"/"3D" literals (same convention as the topology pill).
+		const pill = container.querySelector('[role="group"][aria-label]');
+		expect(pill).toBeTruthy();
+		const btn2d = Array.from(pill!.querySelectorAll('button')).find((b) => b.textContent?.trim() === '2D');
+		const btn3d = Array.from(pill!.querySelectorAll('button')).find((b) => b.textContent?.trim() === '3D');
+		expect(btn2d).toBeTruthy();
+		expect(btn3d).toBeTruthy();
+		expect(btn2d!.getAttribute('aria-pressed')).toBe('true');
+		expect(btn3d!.getAttribute('aria-pressed')).toBe('false');
+
+		await fireEvent.click(btn3d!);
+		expect(btn3d!.getAttribute('aria-pressed')).toBe('true');
+		expect(btn2d!.getAttribute('aria-pressed')).toBe('false');
+
+		await fireEvent.click(btn2d!);
+		expect(btn2d!.getAttribute('aria-pressed')).toBe('true');
 	});
 });

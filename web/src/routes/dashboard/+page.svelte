@@ -9,19 +9,21 @@
 -->
 
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { writable } from 'svelte/store';
-	import Chart from '$lib/components/Chart.svelte';
-	import DashboardWidget from '$lib/components/DashboardWidget.svelte';
-	import WidgetPicker from '$lib/components/WidgetPicker.svelte';
-	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
-	import Modal from '$lib/components/Modal.svelte';
-	import NetworkSuggestModal from '$lib/components/NetworkSuggestModal.svelte';
-	import OnboardingChecklist from '$lib/components/OnboardingChecklist.svelte';
-	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
-	import EmptyState from '$lib/components/EmptyState.svelte';
-	import { api } from '$lib/api/client';
-	import { m } from '$lib/i18n-paraglide';
+import { onMount } from 'svelte';
+import { writable } from 'svelte/store';
+import Chart from '$lib/components/Chart.svelte';
+import DashboardWidget from '$lib/components/DashboardWidget.svelte';
+import WidgetPicker from '$lib/components/WidgetPicker.svelte';
+import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+import Modal from '$lib/components/Modal.svelte';
+import NetworkSuggestModal from '$lib/components/NetworkSuggestModal.svelte';
+import OnboardingChecklist from '$lib/components/OnboardingChecklist.svelte';
+import PageSkeleton from '$lib/components/PageSkeleton.svelte';
+import EmptyState from '$lib/components/EmptyState.svelte';
+import { browser } from '$app/environment';
+import { api } from '$lib/api/client';
+import { m } from '$lib/i18n-paraglide';
+import { buildPie3d, buildVBar3d, buildHBar3d, type Pie3dItem } from '$lib/charts/chart3d';
 	import { Plus, RotateCw, Puzzle, BarChart3, AlertTriangle, CheckCircle2, Radar, CircleHelp } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import { formatDuration } from '$lib/utils/format';
@@ -204,11 +206,44 @@
 		return getCSSVar('--color-primary', '#6366f1');
 	}
 
+	// ── Chart dimension (2D/3D toggle) ──
+	// Mirrors the topology view's 2D/3D segmented pill. The 3D forms are
+	// isometric pseudo-3D drawn by custom-series builders (lib/charts/
+	// chart3d.ts) — no echarts-gl (not echarts-6-compatible) and no extra
+	// dependency. Preference persists in localStorage; the gauge card has no
+	// 3D analog and stays 2D in both modes.
+	const CHART_DIM_KEY = 'dashboard.chartDim';
+	let chartDim = $state<'2d' | '3d'>(
+		browser && localStorage.getItem(CHART_DIM_KEY) === '3d' ? '3d' : '2d'
+	);
+	function setChartDim(dim: '2d' | '3d') {
+		chartDim = dim;
+		if (browser) {
+			try {
+				localStorage.setItem(CHART_DIM_KEY, dim);
+			} catch {
+				/* private mode: preference just won't persist */
+			}
+		}
+	}
+
 	// ── Chart builders (for default fallback layout) ──
+	// Each family card shares its data preparation between the 2D builder and
+	// the 3D wrapper (statusPieItems / typePieItems / locationEntries /
+	// lifecycleEntries / tagEntries), so the two dimensions can never drift.
+
+	// statusPieItems: the shared status-slice payload (2D donut + 3D pie).
+	function statusPieItems(data: DeviceStats): Pie3dItem[] {
+		const { online = 0, offline = 0, unknown = 0 } = data.by_status;
+		return [
+			{ name: m["devices.Online"](), value: online, color: getPrimaryColor() },
+			{ name: m["devices.Offline"](), value: offline, color: getCSSVar('--color-error', '#ef4444') },
+			{ name: m["devices.Unknown"](), value: unknown, color: getTextMutedColor() }
+		];
+	}
 
 	function buildStatusPie(data: DeviceStats): EChartsOption {
-		const { online = 0, offline = 0, unknown = 0 } = data.by_status;
-		const primary = getPrimaryColor();
+		const items = statusPieItems(data);
 		return {
 			backgroundColor: 'transparent',
 			tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
@@ -228,13 +263,13 @@
 				emphasis: {
 					label: { show: true, fontSize: 14, fontWeight: 'bold', color: getTextColor() }
 				},
-				data: [
-					{ value: online, name: m["devices.Online"](), itemStyle: { color: primary } },
-					{ value: offline, name: m["devices.Offline"](), itemStyle: { color: getCSSVar('--color-error', '#ef4444') } },
-					{ value: unknown, name: m["devices.Unknown"](), itemStyle: { color: getTextMutedColor() } }
-				]
+				data: items.map((it) => ({ value: it.value, name: it.name, itemStyle: { color: it.color } }))
 			}]
 		};
+	}
+
+	function buildStatusPie3d(data: DeviceStats): EChartsOption {
+		return buildPie3d(statusPieItems(data), { legendColor: getTextMutedColor() });
 	}
 
 	function buildHeartbeatGauge(data: DeviceStats): EChartsOption {
@@ -272,14 +307,14 @@
 		};
 	}
 
-	function buildTypePie(byType: Record<string, number>): EChartsOption {
-		// Color map keyed on the RAW type token (pc/embedded/...), NOT the
-		// translated label. The old version keyed on the translated label, which
-		// broke under i18n (zh label "嵌入式" never matched the "Embedded" key, so
-		// every non-PC slice fell back to cyan).
-		const primary = getPrimaryColor();
+	// typePieItems: full-population type slices (2D donut + 3D pie). Color map
+	// keyed on the RAW type token (pc/embedded/...), NOT the translated label.
+	// The old version keyed on the translated label, which broke under i18n
+	// (zh label "嵌入式" never matched the "Embedded" key, so every non-PC
+	// slice fell back to cyan).
+	function typePieItems(byType: Record<string, number>): Pie3dItem[] {
 		const colorByType: Record<string, string> = {
-			pc: primary,
+			pc: getPrimaryColor(),
 			embedded: getCSSVar('--color-accent', '#818cf8'),
 			iot: getCSSVar('--color-accent-purple', '#a78bfa'),
 			server: getCSSVar('--color-success', '#22c55e'),
@@ -313,12 +348,17 @@
 		const source = (overview?.devices.by_type && Object.keys(overview.devices.by_type).length > 0)
 			? overview.devices.by_type
 			: byType;
-		const entries = Object.entries(source).sort((a, b) => b[1] - a[1]);
-		const pieData = entries.map(([type, value]) => ({
-			value,
-			name: typeLabel[type] ?? type,
-			itemStyle: { color: colorByType[type] ?? getCSSVar('--color-accent-cyan', '#67e8f9') }
-		}));
+		return Object.entries(source)
+			.sort((a, b) => b[1] - a[1])
+			.map(([type, value]) => ({
+				name: typeLabel[type] ?? type,
+				value,
+				color: colorByType[type] ?? getCSSVar('--color-accent-cyan', '#67e8f9')
+			}));
+	}
+
+	function buildTypePie(byType: Record<string, number>): EChartsOption {
+		const pieData = typePieItems(byType);
 		return {
 			backgroundColor: 'transparent',
 			tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
@@ -339,14 +379,19 @@
 					label: { show: true, fontSize: 14, fontWeight: 'bold', color: getTextColor() }
 				},
 				data: pieData.length > 0
-					? pieData
+					? pieData.map((it) => ({ value: it.value, name: it.name, itemStyle: { color: it.color } }))
 					: [{ value: 0, name: m["dashboard.No Data"](), itemStyle: { color: getBorderColor() } }]
 			}]
 		};
 	}
 
-	function buildLocationBar(devs: Device[]): EChartsOption {
-		// Prefer full-population overview.by_location; fall back to the sample.
+	function buildTypePie3d(byType: Record<string, number>): EChartsOption {
+		return buildPie3d(typePieItems(byType), { legendColor: getTextMutedColor() });
+	}
+
+	// locationEntries: count-sorted location distribution, full population
+	// preferred (2D bars + 3D bars).
+	function locationEntries(devs: Device[]): [string, number][] {
 		const sample: Record<string, number> = {};
 		for (const d of devs) {
 			const loc = d.location || 'N/A';
@@ -355,7 +400,11 @@
 		const source = (overview?.devices.by_location && Object.keys(overview.devices.by_location).length > 0)
 			? overview.devices.by_location
 			: sample;
-		const entries = Object.entries(source).sort((a, b) => b[1] - a[1]);
+		return Object.entries(source).sort((a, b) => b[1] - a[1]);
+	}
+
+	function buildLocationBar(devs: Device[]): EChartsOption {
+		const entries = locationEntries(devs);
 		const border = getBorderColor();
 		const primary = getPrimaryColor();
 		if (entries.length === 0) {
@@ -393,6 +442,20 @@
 		};
 	}
 
+	function buildLocationBar3d(devs: Device[]): EChartsOption {
+		return buildVBar3d(
+			locationEntries(devs).map(([label, value]) => ({ label, value })),
+			{
+				color: getPrimaryColor(),
+				labelColor: getTextMutedColor(),
+				axisColor: getBorderColor(),
+				splitColor: `${getBorderColor()}40`,
+				rotate: 30,
+				truncate: 8
+			}
+		);
+	}
+
 	// buildLifecycleBar (#669): ACTIVE-device lifecycle distribution as a
 	// horizontal bar. Fixed state order (not count-sorted) so the ledger reads
 	// like the lifecycle itself: in_use → spare → repair → lent → retired.
@@ -406,18 +469,23 @@
 			default: return s;
 		}
 	}
-	function buildLifecycleBar(): EChartsOption {
-		const src = overview?.devices.by_lifecycle ?? {};
-		const order = ['in_use', 'spare', 'repair', 'lent', 'retired'];
-		const entries = order.map((s) => [s, src[s] ?? 0] as [string, number]);
-		const border = getBorderColor();
-		const colors: Record<string, string> = {
+	const LIFECYCLE_ORDER = ['in_use', 'spare', 'repair', 'lent', 'retired'];
+	// lifecycleColorMap: the shared per-state palette (2D bars + 3D bars).
+	function lifecycleColorMap(): Record<string, string> {
+		return {
 			in_use: getCSSVar('--color-success', '#34d399'),
 			spare: getPrimaryColor(),
 			repair: getCSSVar('--color-warning', '#fbbf24'),
 			lent: getCSSVar('--color-accent', '#67e8f9'),
 			retired: getTextMutedColor()
 		};
+	}
+
+	function buildLifecycleBar(): EChartsOption {
+		const src = overview?.devices.by_lifecycle ?? {};
+		const entries = LIFECYCLE_ORDER.map((s) => [s, src[s] ?? 0] as [string, number]);
+		const border = getBorderColor();
+		const colors = lifecycleColorMap();
 		const total = entries.reduce((a, e) => a + e[1], 0);
 		if (total === 0) {
 			return {
@@ -445,12 +513,32 @@
 		};
 	}
 
+	function buildLifecycleBar3d(): EChartsOption {
+		const src = overview?.devices.by_lifecycle ?? {};
+		const colorMap = lifecycleColorMap();
+		return buildHBar3d(
+			LIFECYCLE_ORDER.map((s) => ({ label: lifecycleStateLabel(s), value: src[s] ?? 0 })),
+			{
+				color: getPrimaryColor(),
+				colors: LIFECYCLE_ORDER.map((s) => colorMap[s] ?? getPrimaryColor()),
+				labelColor: getTextMutedColor(),
+				axisColor: getBorderColor(),
+				splitColor: `${getBorderColor()}40`,
+				valueLabelColor: getTextMutedColor()
+			}
+		);
+	}
+
 	// buildTagBar (#669): ACTIVE-device count per dictionary tag, count-sorted,
 	// top 8 (long tails make unreadable bars). Caliber: a device counts once
 	// per carried tag, so the sum can exceed the active total.
-	function buildTagBar(): EChartsOption {
+	function tagEntries(): [string, number][] {
 		const src = overview?.devices.by_tag ?? {};
-		const entries = Object.entries(src).sort((a, b) => b[1] - a[1]).slice(0, 8);
+		return Object.entries(src).sort((a, b) => b[1] - a[1]).slice(0, 8);
+	}
+
+	function buildTagBar(): EChartsOption {
+		const entries = tagEntries();
 		const border = getBorderColor();
 		if (entries.length === 0) {
 			return {
@@ -477,6 +565,22 @@
 				label: { show: true, position: 'right', color: getTextMutedColor() }
 			}]
 		};
+	}
+
+	function buildTagBar3d(): EChartsOption {
+		// Reversed like the 2D bars: category axis reads bottom-up, so the
+		// largest tag ends up on top.
+		return buildHBar3d(
+			tagEntries().map(([label, value]) => ({ label, value })).reverse(),
+			{
+				color: getPrimaryColor(),
+				labelColor: getTextMutedColor(),
+				axisColor: getBorderColor(),
+				splitColor: `${getBorderColor()}40`,
+				valueLabelColor: getTextMutedColor(),
+				truncate: 10
+			}
+		);
 	}
 
 	// ── Prometheus → ECharts option builders ──
@@ -1153,6 +1257,32 @@
 			{/if}
 		</div>
 		<div class="flex items-center gap-2">
+			<!-- Chart dimension pill (2D/3D), mirrors the topology view's toggle.
+			     Persists in localStorage; swaps every pie/bar card to its
+			     isometric custom-series form (see lib/charts/chart3d.ts). -->
+			<div
+				class="flex border border-border rounded-lg overflow-hidden text-sm shrink-0"
+				role="group"
+				aria-label={m["dashboard.Chart Dim"]()}
+				title={m["dashboard.Chart Dim"]()}
+			>
+				<button
+					onclick={() => setChartDim('2d')}
+					aria-pressed={chartDim === '2d'}
+					class="px-2.5 py-1.5 transition-colors
+						{chartDim === '2d' ? 'bg-primary text-text-inverse' : 'text-text-muted hover:text-text hover:bg-surface-2'}"
+				>
+					2D
+				</button>
+				<button
+					onclick={() => setChartDim('3d')}
+					aria-pressed={chartDim === '3d'}
+					class="px-2.5 py-1.5 border-l border-border transition-colors
+						{chartDim === '3d' ? 'bg-primary text-text-inverse' : 'text-text-muted hover:text-text hover:bg-surface-2'}"
+				>
+					3D
+				</button>
+			</div>
 			<button
 				onclick={() => (helpOpen = true)}
 				class="btn btn-secondary shrink-0"
@@ -1262,7 +1392,13 @@
 						<p class="text-xs text-muted mt-0.5">{m["dashboard.Card Status Desc"]()}</p>
 					</div>
 					<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
-						<Chart option={buildStatusPie(stats || { by_status: { online: 0, offline: 0, unknown: 0 } })} height="100%" />
+						<Chart
+							reinitKey={chartDim}
+							option={chartDim === '3d'
+								? buildStatusPie3d(stats || { by_status: { online: 0, offline: 0, unknown: 0 } })
+								: buildStatusPie(stats || { by_status: { online: 0, offline: 0, unknown: 0 } })}
+							height="100%"
+						/>
 					</div>
 				</div>
 
@@ -1284,7 +1420,13 @@
 						<p class="text-xs text-muted mt-0.5">{m["dashboard.Card Types Desc"]()}</p>
 					</div>
 					<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
-						<Chart option={buildTypePie(overview?.devices.by_type ?? {})} height="100%" />
+						<Chart
+							reinitKey={chartDim}
+							option={chartDim === '3d'
+								? buildTypePie3d(overview?.devices.by_type ?? {})
+								: buildTypePie(overview?.devices.by_type ?? {})}
+							height="100%"
+						/>
 					</div>
 				</div>
 
@@ -1295,7 +1437,13 @@
 						<p class="text-xs text-muted mt-0.5">{m["dashboard.Card Location Desc"]()}</p>
 					</div>
 					<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
-						<Chart option={buildLocationBar(devices)} height="100%" />
+						<Chart
+							reinitKey={chartDim}
+							option={chartDim === '3d'
+								? buildLocationBar3d(devices)
+								: buildLocationBar(devices)}
+							height="100%"
+						/>
 					</div>
 				</div>
 
@@ -1306,7 +1454,11 @@
 						<p class="text-xs text-muted mt-0.5">{m["dashboard.Card Lifecycle Desc"]()}</p>
 					</div>
 					<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
-						<Chart option={buildLifecycleBar()} height="100%" />
+						<Chart
+							reinitKey={chartDim}
+							option={chartDim === '3d' ? buildLifecycleBar3d() : buildLifecycleBar()}
+							height="100%"
+						/>
 					</div>
 				</div>
 
@@ -1317,7 +1469,11 @@
 						<p class="text-xs text-muted mt-0.5">{m["dashboard.Card Tag Desc"]()}</p>
 					</div>
 					<div class="p-2 md:p-4 h-[200px] md:h-[280px]">
-						<Chart option={buildTagBar()} height="100%" />
+						<Chart
+							reinitKey={chartDim}
+							option={chartDim === '3d' ? buildTagBar3d() : buildTagBar()}
+							height="100%"
+						/>
 					</div>
 				</div>
 
@@ -1387,11 +1543,17 @@
 					{#if overview?.abnormal?.length}
 						<div class="divide-y divide-border/50">
 							{#each overview.abnormal as dev}
-								<a href="/devices?search={dev.ip_address}" class="flex items-center justify-between px-2 py-2 hover:bg-surface-2 rounded transition-colors">
+								{@const label = displayName(dev)}
+								<!-- Parked rows (#741 follow-up to the #740 widget fix): the
+								     default-layout card leaked the raw '#park:<id>' sentinel
+								     as subtitle + search term — suppress it here exactly like
+								     the widget card, and search by the label instead. -->
+								{@const searchable = !dev.ip_address.startsWith('#park:') && label !== dev.ip_address ? dev.ip_address : label}
+								<a href={`/devices?search=${searchable}`} class="flex items-center justify-between px-2 py-2 hover:bg-surface-2 rounded transition-colors">
 									<div class="flex items-center gap-2 min-w-0">
 										<span class="inline-block w-2 h-2 rounded-full bg-error shrink-0"></span>
-										<span class="text-sm truncate">{displayName(dev)}</span>
-										{#if displayName(dev) !== dev.ip_address}
+										<span class="text-sm truncate" title={dev.ip_address.startsWith('#park:') ? m['devices.Parked Hint']() : undefined}>{label}</span>
+										{#if label !== dev.ip_address && !dev.ip_address.startsWith('#park:')}
 											<span class="text-xs text-muted font-mono truncate">{dev.ip_address}</span>
 										{/if}
 									</div>

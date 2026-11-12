@@ -9,8 +9,8 @@
 -->
 
 <script lang="ts">
-	import { echarts, type EChartsOption } from '$lib/charts/echarts';
-	import { onMount } from 'svelte';
+import { echarts, type EChartsOption } from '$lib/charts/echarts';
+import { onMount, untrack } from 'svelte';
 	import { m } from '$lib/i18n-paraglide';
 	import { LoaderCircle } from '@lucide/svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
@@ -20,6 +20,7 @@
 		width = '100%',
 		height = '300px',
 		loading = false,
+		reinitKey,
 		onclick,
 		ondblclick
 	}: {
@@ -30,6 +31,12 @@
 		// Parent components toggle this during refetches so the chart doesn't
 		// visually freeze on stale data while waiting for the next payload.
 		loading?: boolean;
+		// When this key changes, the instance is disposed and re-created
+		// before applying the new option. Changing a series' TYPE through
+		// merge-mode setOption is not supported by echarts (the dashboard's
+		// 2D/3D toggle swaps pie/bar for custom series) — the callers key
+		// this on whatever field selects the chart family.
+		reinitKey?: string | number;
 		// onclick fires for ECharts series clicks (node/edge). The payload is the
 		// raw ECharts event object; inspect dataType ('node'|'edge') + data.value.
 		onclick?: (params: Record<string, unknown>) => void;
@@ -100,6 +107,30 @@
 			instance?.dispose();
 			instance = undefined;
 		};
+	});
+
+	// Re-create the instance when the family key changes (2D/3D toggle):
+	// setOption(merge) must not see a series type swap on the same index.
+	// DECLARED BEFORE the setOption effect below so that, on a key flip, the
+	// fresh instance exists before the (re-run) setOption effect applies the
+	// new option to it. The body runs UNTRACKED — it reads AND writes the
+	// `instance` state, and tracking the read would re-trigger this effect on
+	// its own write (effect_update_depth_exceeded). The first run is a no-op:
+	// onMount owns initial init.
+	let reinitArmed = false;
+	$effect(() => {
+		void reinitKey; // the ONLY tracked dependency
+		if (!reinitArmed) {
+			reinitArmed = true;
+			return;
+		}
+		untrack(() => {
+			if (instance) {
+				instance.dispose();
+				instance = undefined;
+			}
+			initChart();
+		});
 	});
 
 	$effect(() => {
