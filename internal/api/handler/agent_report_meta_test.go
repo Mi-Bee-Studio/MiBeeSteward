@@ -23,6 +23,7 @@ import (
 	"mibee-steward/internal/api/handler"
 	"mibee-steward/internal/api/middleware"
 	sqldb "mibee-steward/internal/db"
+	"mibee-steward/internal/domain"
 	"mibee-steward/internal/service"
 	scannerv2runner "mibee-steward/internal/service/scannerv2/runner"
 	"mibee-steward/internal/service/scannerv2/store"
@@ -249,4 +250,68 @@ func userIDJSON(t *testing.T, db *sql.DB, username string) string {
 	var id int64
 	require.NoError(t, db.QueryRow(`SELECT id FROM users WHERE username = ?`, username).Scan(&id))
 	return strconv.FormatInt(id, 10)
+}
+
+// TestAgentReport_RecordsDetectedSubnets (#737 follow-up): the runner's
+// recordSubnets only runs for LOCAL scans, so agent-fed networks never
+// populated the networks page's 观测网段 section. The agent's DETECTED
+// on-link subnets (meta.self_interfaces) must land in the subnets table —
+// keyed (network_id, cidr), refreshed (not duplicated) by later reports.
+func TestAgentReport_RecordsDetectedSubnets(t *testing.T) {
+	dbConn, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { dbConn.Close() })
+	queries := sqldb.New(dbConn)
+	middleware.SetAgentQueries(queries)
+	t.Cleanup(func() { middleware.SetAgentQueries(nil) })
+
+	net, err := queries.CreateNetwork(context.Background(), sqldb.CreateNetworkParams{Name: "lan-obs"})
+	require.NoError(t, err)
+	networkID := net.ID
+	plaintext, hash := middleware.GenerateAgentToken()
+	_, err = queries.CreateAgentToken(context.Background(), sqldb.CreateAgentTokenParams{
+		AgentID: "agent-obs", TokenHash: hash, NetworkID: &networkID, Name: "obs agent",
+	})
+	require.NoError(t, err)
+
+	rn := scannerv2runner.New(nil, queries, dbConn, nil, 0, nil)
+	rn.SetRepo(store.NewSQLiteRepository(dbConn, store.Options{}, nil))
+	h := handler.NewAgentReportHandler(rn, queries, dbConn, nil)
+	r := chi.NewMux()
+	r.Use(chimw.RequestID)
+	r.Use(chimw.Recoverer)
+	r.Route("/api/v1/agents", func(r chi.Router) {
+		r.Use(middleware.RequireAgentToken)
+		r.Post("/report", h.Report)
+	})
+	srv := httptest.NewServer(r)
+	t.Cleanup(func() { srv.Close() })
+
+	postReport(t, srv, plaintext, domain.AgentReport{
+		AgentID: "agent-obs",
+		Meta: &domain.AgentMeta{
+			Version: "mibee-agent-rs/0.2.2-test",
+			SelfInterfaces: []domain.AgentSelfInterface{
+				{Name: "eth0", CIDR: "192.168.88.0/24", Primary: true},
+				{Name: "wg0", CIDR: "10.99.0.0/24"},
+			},
+		},
+		Hosts: []domain.ReportedHost{{IP: "192.168.88.5", Alive: true, MAC: "aa:bb:cc:dd:ee:88"}},
+	})
+
+	var n int
+	require.NoError(t, dbConn.QueryRow(
+		`SELECT COUNT(*) FROM subnets WHERE network_id = ?`, networkID).Scan(&n))
+	require.Equal(t, 2, n, "both detected subnets recorded")
+
+	// A later report refreshes, never duplicates.
+	postReport(t, srv, plaintext, domain.AgentReport{
+		AgentID: "agent-obs",
+		Meta: &domain.AgentMeta{SelfInterfaces: []domain.AgentSelfInterface{
+			{Name: "eth0", CIDR: "192.168.88.0/24", Primary: true},
+		}},
+	})
+	require.NoError(t, dbConn.QueryRow(
+		`SELECT COUNT(*) FROM subnets WHERE network_id = ?`, networkID).Scan(&n))
+	require.Equal(t, 2, n, "no duplicate rows on refresh")
 }

@@ -984,8 +984,18 @@ interface AddDevicesResponse {
 			key: 'ip_address',
 			label: m['devices.IP Address'](),
 			sortable: true,
-			render: (row: Record<string, unknown>) =>
-				row.ip_address ? `<span class="font-mono">${escapeHtml(String(row.ip_address))}</span>` : '-'
+			render: (row: Record<string, unknown>) => {
+				const ip = row.ip_address ? String(row.ip_address) : '';
+				// #737 presentation: a parked row (its address was claimed by
+				// another device, e.g. a randomized-MAC client) has no live IP —
+				// the raw '#park:<id>' sentinel told the user nothing.
+				if (ip.startsWith('#park:')) {
+					return `<span class="text-xs text-muted" title="${m['devices.Parked Hint']()}">${m['devices.Parked Badge']()}</span>`;
+				}
+				return ip
+					? `<span class="font-mono">${escapeHtml(ip)}</span>`
+					: '-';
+			}
 		},
 		// Optional (user-toggleable) columns: included only if selected in the
 		// ColumnPicker. Order follows the optionalColumns definition so toggling
@@ -1483,7 +1493,7 @@ interface AddDevicesResponse {
 					>
 						<ChevronRight class="w-3.5 h-3.5 rotate-90" />
 					</button>
-					{#if device.ip_address}
+					{#if device.ip_address && !String(device.ip_address).startsWith('#park:')}
 						<span class="font-mono text-xs text-muted">{device.ip_address}</span>
 					{/if}
 					<span class="text-xs px-1.5 py-0.5 rounded bg-accent/10 text-accent">{typeLabel[t] || typeLabel['other']!}</span>

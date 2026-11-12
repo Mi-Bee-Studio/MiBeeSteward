@@ -146,3 +146,29 @@ describe('Compact filter bar (#UI-compact)', () => {
 		});
 	});
 });
+
+describe('Devices page — parked rows (#737)', () => {
+	it('a parked IP (#park:<id>) renders the release badge, never the raw sentinel', async () => {
+		h.stats = { by_status: { offline: 1 }, by_type: { other: 1 } };
+		h.networks = [{ id: 1, name: 'lan-62', cidr: '192.0.2.0/24' }];
+		h.devices = [
+			{
+				id: 6,
+				name: 'esp32c6-11DB60',
+				type: 'other',
+				ip_address: '#park:6',
+				mac_address: 'aa:bb:cc:dd:ee:06',
+				status: 'offline',
+				scan_source: 'scanner_v2',
+				network_id: 1
+			}
+		];
+		h.total = 1;
+		const { container } = render(Devices);
+		await waitFor(() => {
+			expect(container.textContent).toContain('esp32c6-11DB60');
+		});
+		expect(container.textContent).toContain('address released');
+		expect(container.textContent).not.toContain('#park:6');
+	});
+});
