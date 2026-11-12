@@ -275,7 +275,7 @@ import { buildPie3d, buildVBar3d, buildHBar3d, type Pie3dItem } from '$lib/chart
 	}
 
 	function buildStatusPie3d(data: DeviceStats): EChartsOption {
-		return buildPie3d(statusPieItems(data), { legendColor: getTextMutedColor() });
+		return buildPie3d(statusPieItems(data));
 	}
 
 	function buildHeartbeatGauge(data: DeviceStats): EChartsOption {
@@ -392,7 +392,7 @@ import { buildPie3d, buildVBar3d, buildHBar3d, type Pie3dItem } from '$lib/chart
 	}
 
 	function buildTypePie3d(byType: Record<string, number>): EChartsOption {
-		return buildPie3d(typePieItems(byType), { legendColor: getTextMutedColor() });
+		return buildPie3d(typePieItems(byType));
 	}
 
 	// locationEntries: count-sorted location distribution, full population

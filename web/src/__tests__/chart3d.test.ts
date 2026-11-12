@@ -28,8 +28,8 @@ describe('buildPie3d', () => {
 		{ name: '未知', value: 1, color: '#6b7280' }
 	];
 
-	it('builds a custom series with aligned data, legend, and tooltip', () => {
-		const opt = buildPie3d(items, { legendColor: '#6b7280' });
+	it('builds a custom series with aligned data and tooltip, no legend', () => {
+		const opt = buildPie3d(items);
 		const series = opt.series as { type: string; data: { name: string; value: number }[] }[];
 		expect(series).toHaveLength(1);
 		expect(series[0].type).toBe('custom');
@@ -37,11 +37,10 @@ describe('buildPie3d', () => {
 		expect(series[0].data.map((d) => d.value)).toEqual([7, 2, 1]);
 		expect(typeof (series[0] as { renderItem?: unknown }).renderItem).toBe('function');
 
-		const legend = opt.legend as { data: string[]; selectedMode: boolean };
-		expect(legend.data).toEqual(['在线', '离线', '未知']);
-		// Display-only legend: selection filtering is not guaranteed for
-		// custom series, so clicking must not be offered at all.
-		expect(legend.selectedMode).toBe(false);
+		// echarts collects legend entries per SERIES for custom series —
+		// legend.data matched against data-item names never renders. The slice
+		// labels carry the name mapping instead, so no dead legend is shipped.
+		expect(opt.legend).toBeUndefined();
 
 		const tooltip = opt.tooltip as { trigger: string; formatter: (p: { dataIndex: number }) => string };
 		expect(tooltip.trigger).toBe('item');
@@ -50,23 +49,18 @@ describe('buildPie3d', () => {
 		expect(tooltip.formatter({ dataIndex: 1 })).toBe('离线: 2 (20%)');
 	});
 
-	it('keeps zero-value items in legend/tooltip data but renders no slice', () => {
+	it('keeps zero-value items in tooltip data but renders no slice', () => {
 		const withZero = [...items, { name: '空', value: 0, color: '#000000' }];
-		const opt = buildPie3d(withZero, { legendColor: '#6b7280' });
+		const opt = buildPie3d(withZero);
 		const series = opt.series as { data: unknown[] }[];
 		expect(series[0].data).toHaveLength(4);
-		const legend = opt.legend as { data: string[] };
-		expect(legend.data).toContain('空');
 	});
 
 	it('returns an empty option (no series) for all-zero input', () => {
-		const opt = buildPie3d(
-			[
-				{ name: 'a', value: 0, color: '#000000' },
-				{ name: 'b', value: 0, color: '#111111' }
-			],
-			{ legendColor: '#6b7280' }
-		);
+		const opt = buildPie3d([
+			{ name: 'a', value: 0, color: '#000000' },
+			{ name: 'b', value: 0, color: '#111111' }
+		]);
 		expect(opt.series).toBeUndefined();
 	});
 });

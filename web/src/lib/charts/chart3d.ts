@@ -113,7 +113,7 @@ const piePoint = (cx: number, cy: number, rx: number, ry: number, a: number): Pt
  * click. Detail lives in the tooltip, which keeps the 2D pie's
  * "name: value (pct%)" shape.
  */
-export function buildPie3d(items: Pie3dItem[], style: { legendColor: string }): EChartsOption {
+export function buildPie3d(items: Pie3dItem[]): EChartsOption {
 	const total = items.reduce((a, it) => a + Math.max(0, it.value), 0);
 	if (total <= 0) return emptyOption();
 
@@ -212,15 +212,22 @@ export function buildPie3d(items: Pie3dItem[], style: { legendColor: string }): 
 			}
 		];
 
-		// Percent label on the top face when the slice is wide enough.
-		if (g.a2 - g.a1 >= 0.21) {
+		// Name + percent label on the top face when the slice is wide enough.
+		// 0.4 rad ≈ 6.4% share: below that, labels collide on many-slice pies
+		// (the 62.40 eight-type pie) — the tooltip still names every slice.
+		// (The legend component collects per-SERIES names only — legend.data
+		// entries matching data-item names never render for custom series —
+		// so the slice label is the only on-chart name mapping in 3D mode.)
+		if (g.a2 - g.a1 >= 0.4) {
 			const p = piePoint(cx, cy, rx * 0.62, ry * 0.62, (g.a1 + g.a2) / 2);
+			const pct = Math.round((it.value / total) * 100);
+			const text = it.name.length <= 6 ? `${it.name} ${pct}%` : `${pct}%`;
 			children.push({
 				type: 'text',
 				silent: true,
 				z: baseZ + 3,
 				style: {
-					text: `${Math.round((it.value / total) * 100)}%`,
+					text,
 					x: p[0],
 					y: p[1],
 					align: 'center',
@@ -244,14 +251,9 @@ export function buildPie3d(items: Pie3dItem[], style: { legendColor: string }): 
 	return {
 		backgroundColor: 'transparent',
 		tooltip: { trigger: 'item', formatter: pctFormatter },
-		legend: {
-			data: items.map((it) => it.name),
-			selectedMode: false,
-			orient: 'vertical',
-			right: 10,
-			top: 'center',
-			textStyle: { color: style.legendColor }
-		},
+		// No legend: echarts collects legend entries per SERIES for custom
+		// series (legend.data matched against data-item names never renders),
+		// so the slice labels carry the name mapping instead.
 		series: [
 			{
 				type: 'custom',

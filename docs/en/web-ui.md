@@ -12,7 +12,7 @@ The first visit to `http://<host>:8080` redirects to the login page. Sign in wit
 
 ## Dashboard
 
-The dashboard is the landing view: device status distribution, heartbeat success rate, device type distribution, and other widget cards; recent scan activity (alive / new / duration); and the offline devices that need attention. Two ledger-caliber cards join the grid (#669): **lifecycle distribution** (the active fleet by ledger state, archive excluded) and **device count by tag** (per dictionary tag — a device counts once per carried tag, so the sum may exceed the total). The widget layout is customizable (add/remove widgets), and a scan can be kicked off from the top-right corner.
+The dashboard is the landing view: device status distribution, heartbeat success rate, device type distribution, and other widget cards; recent scan activity (alive / new / duration); and the offline devices that need attention. Two ledger-caliber cards join the grid (#669): **lifecycle distribution** (the active fleet by ledger state, archive excluded) and **device count by tag** (per dictionary tag — a device counts once per carried tag, so the sum may exceed the total). Every default chart card (status pie, type pie, location bar, lifecycle bar, tag bar) carries a **2D/3D toggle** (#741) next to the page actions: 3D re-renders it as an isometric pseudo-3D chart — extruded pies and cuboid bars drawn by echarts custom series, no extra dependency — with the preference persisting per browser; the heartbeat gauge has no 3D analog and stays 2D. The widget layout is customizable (add/remove widgets), and a scan can be kicked off from the top-right corner.
 
 ![Dashboard](images/dashboard.webp)
 
