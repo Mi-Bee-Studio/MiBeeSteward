@@ -326,6 +326,7 @@
 	},
 	"dashboard": {
 		"Dashboard": "Dashboard",
+		"Chart Dim": "Chart dimension (2D/3D)",
 		"Drag to Reorder": "Drag widgets to reorder",
 		"Attention Title": "Needs attention",
 		"Attention Offline": "{count} offline",
