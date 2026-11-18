@@ -109,6 +109,11 @@ type ProbeQualityConfig struct {
 	DNSDegradedMs  int `koanf:"dns_degraded_ms"`
 	// OkRateThreshold (0..1) is the minimum success rate within the window.
 	OkRateThreshold float64 `koanf:"ok_rate_threshold"`
+	// LossPctThreshold (#744) is the burst-sampled packet loss percentage
+	// that marks a vantage degraded, on top of the ok-rate threshold.
+	LossPctThreshold float64 `koanf:"loss_pct_threshold"`
+	// JitterDegradedMs (#744) is the burst jitter budget in milliseconds.
+	JitterDegradedMs float64 `koanf:"jitter_degraded_ms"`
 	// Groups maps a group name to its probe points. The reserved names
 	// "domestic" (primary verdict) and "international" (reference, excluded
 	// from the primary verdict) drive the analyzer's grouping; other names
@@ -379,6 +384,12 @@ func normalizeProbe(cfg *Config) {
 	}
 	if q.OkRateThreshold == 0 {
 		q.OkRateThreshold = 0.9
+	}
+	if q.LossPctThreshold == 0 {
+		q.LossPctThreshold = 5
+	}
+	if q.JitterDegradedMs == 0 {
+		q.JitterDegradedMs = 30
 	}
 	if q.Enabled == nil {
 		// Absent key = the shipped default: matrix on (matches the example

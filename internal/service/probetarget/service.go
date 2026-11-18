@@ -399,6 +399,8 @@ func (s *Service) attachVantageLatest(ctx context.Context, resp *domain.ProbeTar
 			LatencyMs:    r.LatencyMs,
 			ErrorMessage: r.ErrorMessage,
 			CheckedAt:    r.CheckedAt,
+			LossPct:      r.LossPct,
+			JitterMs:     r.JitterMs,
 		})
 	}
 	resp.VantageLatest = latest
@@ -463,11 +465,12 @@ func parseProbeOptions(s string) *domain.ProbeOptions {
 
 // probeOptionsEmpty reports whether an option block carries no semantic
 // content (all fields zero). Slices forbid struct equality, hence the
-// explicit field walk.
+// explicit field walk. Burst fields count as content (#744).
 func probeOptionsEmpty(o *domain.ProbeOptions) bool {
 	return o == nil || (o.Method == "" && len(o.ExpectedStatus) == 0 && o.Keyword == "" &&
 		o.KeywordMode == "" && !o.IgnoreTLSErrors && o.Record == "" && o.Resolver == "" &&
-		len(o.ExpectedIPs) == 0 && o.Send == "" && o.Expect == "" && o.ExpectMode == "")
+		len(o.ExpectedIPs) == 0 && o.Send == "" && o.Expect == "" && o.ExpectMode == "" &&
+		o.BurstCount == 0 && o.BurstIntervalMs == 0)
 }
 
 // checkDeviceExists guards the device binding (#606): a bound target whose
@@ -495,6 +498,8 @@ func toResultResponse(r db.ProbeResult) domain.ProbeResultResponse {
 		CertNotAfter: r.CertNotAfter,
 		CheckedAt:    r.CheckedAt,
 		Vantage:      r.Vantage,
+		LossPct:      r.LossPct,
+		JitterMs:     r.JitterMs,
 	}
 	if r.CertTrusted >= 0 {
 		v := r.CertTrusted == 1

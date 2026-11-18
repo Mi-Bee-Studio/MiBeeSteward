@@ -26,6 +26,10 @@ import (
 
 // Quality verdicts (#608). The per-vantage reason strings are STABLE CODES:
 // the UI maps them to localized text, unknown codes fall back to raw.
+// Burst-sampling additions (#744/#745): loss_burst / jitter_high (burst
+// means over threshold) and udp_egress_blocked.tcp_alive_udp_dead (every
+// icmp leg dead while TCP-reachable legs pass — attribution only, it never
+// mints a verdict on its own).
 const (
 	QualityVerdictOK               = "ok"
 	QualityVerdictDegraded         = "degraded"
@@ -277,6 +281,10 @@ type QualityTrackStats struct {
 	P50Ms      float64 `json:"p50_ms"`
 	Samples    int     `json:"samples"`
 	LastStatus string  `json:"last_status,omitempty"`
+	// Burst sampling means (#744) over the window's rows of a burst target
+	// (options burst_count > 1); 0 = not a burst target / no rows.
+	LossPct  float64 `json:"loss_pct,omitempty"`
+	JitterMs float64 `json:"jitter_ms,omitempty"`
 }
 
 // QualityTargetMatrix is one matrix column: the per-vantage stats of one
@@ -335,13 +343,13 @@ func (s *QualityService) Analyze(ctx context.Context, windowMinutes int) (Qualit
 		windowMinutes = cfg.WindowMinutes
 	}
 	cutoff := time.Now().UTC().Add(-time.Duration(windowMinutes) * time.Minute).Format(time.RFC3339)
-	rows, err := s.queries.ListProbeResultsSince(ctx, cutoff)
-	if err != nil {
-		return QualityReport{}, fmt.Errorf("quality analyze: results since: %w", err)
-	}
 	targets, err := s.queries.ListProbeTargets(ctx)
 	if err != nil {
 		return QualityReport{}, fmt.Errorf("quality analyze: list targets: %w", err)
+	}
+	rows, err := s.queries.ListProbeResultsSince(ctx, cutoff)
+	if err != nil {
+		return QualityReport{}, fmt.Errorf("quality analyze: results since: %w", err)
 	}
 	nets, err := s.queries.ListNetworks(ctx)
 	if err != nil {
@@ -351,6 +359,16 @@ func (s *QualityService) Analyze(ctx context.Context, windowMinutes int) (Qualit
 	for _, n := range nets {
 		if n.AgentID != nil && strings.TrimSpace(*n.AgentID) != "" {
 			networkByAgent[strings.TrimSpace(*n.AgentID)] = n.Name
+		}
+	}
+
+	// Burst targets (#744): rows of a target with burst_count > 1 carry
+	// window-mean-able loss/jitter; everything else keeps the columns at
+	// zero regardless of stray row values.
+	burstTargets := make(map[int64]bool, len(targets))
+	for _, t := range targets {
+		if opts := parseProbeOptions(t.Options); opts != nil && opts.BurstCount > 1 {
+			burstTargets[t.ID] = true
 		}
 	}
 
@@ -365,6 +383,12 @@ func (s *QualityService) Analyze(ctx context.Context, windowMinutes int) (Qualit
 		}
 		a.samples++
 		a.last = r.Status
+		if burstTargets[r.TargetID] {
+			a.lossSum += r.LossPct
+			a.lossN++
+			a.jitterSum += r.JitterMs
+			a.jitterN++
+		}
 		if r.Status == "success" {
 			a.ok++
 			a.latencies = append(a.latencies, r.LatencyMs)
@@ -559,8 +583,17 @@ func judgeSimpleCategory(
 	vr.Reasons = vr.Reasons[:0]
 
 	okSum := 0.0
+	icmpAll, icmpFail, nonIcmpPass := 0, 0, false
 	for _, l := range legs {
 		okSum += l.st.OkRate
+		if l.module == "icmp" {
+			icmpAll++
+			if l.st.OkRate < 0.5 {
+				icmpFail++
+			}
+		} else if l.st.OkRate >= cfg.OkRateThreshold {
+			nonIcmpPass = true
+		}
 	}
 	if okSum/float64(len(legs)) < cfg.OkRateThreshold {
 		vr.Reasons = append(vr.Reasons, "ok_rate_low")
@@ -575,6 +608,25 @@ func judgeSimpleCategory(
 			break
 		}
 	}
+	// Burst metrics (#744): stable codes on the burst-sampled means.
+	for _, l := range legs {
+		if l.st.LossPct > cfg.LossPctThreshold {
+			vr.Reasons = append(vr.Reasons, "loss_burst")
+			break
+		}
+	}
+	for _, l := range legs {
+		if l.st.JitterMs > cfg.JitterDegradedMs {
+			vr.Reasons = append(vr.Reasons, "jitter_high")
+			break
+		}
+	}
+	// #745 attribution: every icmp leg dead while a non-icmp leg still
+	// passes reads as a UDP-path problem, not an outage. Attribution only —
+	// it appends to an already-degraded verdict, never mints one.
+	if icmpAll > 0 && icmpFail == icmpAll && nonIcmpPass && len(vr.Reasons) > 0 {
+		vr.Reasons = append(vr.Reasons, "udp_egress_blocked.tcp_alive_udp_dead")
+	}
 	vr.Score = okRateScore(legs)
 	if len(vr.Reasons) > 0 {
 		vr.Verdict = QualityVerdictDegraded
@@ -587,11 +639,17 @@ func judgeSimpleCategory(
 
 // trackAgg accumulates one (target, vantage) window; latencies count only
 // successes (a failure's latency is the timeout burn, not network RTT).
+// Burst metrics (#744) average over EVERY row of a burst target — a clean
+// 0%-loss round is real data, excluding it would bias the mean upward.
 type trackAgg struct {
 	samples   int
 	ok        int
 	last      string
 	latencies []float64
+	lossSum   float64
+	lossN     int
+	jitterSum float64
+	jitterN   int
 }
 
 func (a *trackAgg) stats() QualityTrackStats {
@@ -603,6 +661,12 @@ func (a *trackAgg) stats() QualityTrackStats {
 	sort.Float64s(sorted)
 	if n := len(sorted); n > 0 {
 		st.P50Ms = sorted[(n-1)/2]
+	}
+	if a.lossN > 0 {
+		st.LossPct = a.lossSum / float64(a.lossN)
+	}
+	if a.jitterN > 0 {
+		st.JitterMs = a.jitterSum / float64(a.jitterN)
 	}
 	return st
 }
@@ -672,7 +736,7 @@ func judgeVantage(
 		return a.stats(), true
 	}
 
-	var directs, dnses, others []qualityLeg
+	var directs, dnses, others, pings []qualityLeg
 	for _, qt := range cfgTargets {
 		st, ok := stat(qt.Name)
 		if !ok || st.Samples == 0 {
@@ -698,13 +762,15 @@ func judgeVantage(
 		switch {
 		case qt.Module == "dns":
 			dnses = append(dnses, leg)
+		case qt.Module == "icmp":
+			pings = append(pings, leg) // the UDP-path legs (#745)
 		case qt.Module == "tcp" && ipLiteralHost(qt.Target):
 			directs = append(directs, leg)
 		default:
 			others = append(others, leg) // http legs and host-named tcp legs
 		}
 	}
-	all := append(append(directs, dnses...), others...)
+	all := append(append(append(directs, pings...), dnses...), others...)
 	if len(all) == 0 {
 		return vr
 	}
@@ -769,7 +835,8 @@ func judgeVantage(
 			return vr
 		}
 	}
-	// 4. degraded / ok: overall ok-rate and per-module p50 budgets.
+	// 4. degraded / ok: overall ok-rate, per-module p50 budgets, and the
+	//    burst-sampled loss/jitter codes (#744).
 	var reasons []string
 	okSum := 0.0
 	for _, l := range all {
@@ -786,6 +853,27 @@ func judgeVantage(
 		if l.st.P50Ms > 0 && l.st.P50Ms > budget {
 			reasons = append(reasons, "latency_high")
 			break
+		}
+	}
+	for _, l := range all {
+		if l.st.LossPct > cfg.LossPctThreshold {
+			reasons = append(reasons, "loss_burst")
+			break
+		}
+	}
+	for _, l := range all {
+		if l.st.JitterMs > cfg.JitterDegradedMs {
+			reasons = append(reasons, "jitter_high")
+			break
+		}
+	}
+	// #745 attribution: every icmp leg dead while a TCP-reachable leg still
+	// passes = this network drops UDP; it is not offline. Attribution only —
+	// appended to an already-degraded verdict, never minting one.
+	if len(pings) > 0 && allFailed(pings) && len(reasons) > 0 {
+		tcpAlive := len(directs)+len(others) > 0 && (!allFailed(directs) || !allFailed(others))
+		if tcpAlive {
+			reasons = append(reasons, "udp_egress_blocked.tcp_alive_udp_dead")
 		}
 	}
 	vr.Score = okRateScore(all)

@@ -48,7 +48,8 @@ func openEpisodeWorld(t *testing.T) (*EpisodeService, *fakeRecorder, *sql.DB, *S
 			status TEXT NOT NULL, latency_ms REAL NOT NULL DEFAULT 0, status_code INTEGER NOT NULL DEFAULT 0,
 			error_message TEXT NOT NULL DEFAULT '', tls_version TEXT NOT NULL DEFAULT '',
 			cert_not_after TEXT NOT NULL DEFAULT '', cert_trusted INTEGER NOT NULL DEFAULT -1,
-			checked_at TEXT NOT NULL DEFAULT '', vantage TEXT NOT NULL DEFAULT 'center')`,
+			checked_at TEXT NOT NULL DEFAULT '', vantage TEXT NOT NULL DEFAULT 'center',
+			loss_pct REAL NOT NULL DEFAULT 0, jitter_ms REAL NOT NULL DEFAULT 0)`,
 	} {
 		if _, err := conn.Exec(ddl); err != nil {
 			t.Fatal(err)
