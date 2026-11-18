@@ -382,6 +382,12 @@ pub struct ProbeTargetOptions {
     pub expect: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub expect_mode: String, // contains | regex
+    // icmp (#744): burst sampling — one round becomes N echoes so loss and
+    // jitter become measurable. Absent = legacy single ping.
+    #[serde(default, skip_serializing_if = "is_zero_i64")]
+    pub burst_count: i64,
+    #[serde(default, skip_serializing_if = "is_zero_i64")]
+    pub burst_interval_ms: i64,
 }
 
 /// POST /api/v1/agents/probe-report row — Go `probetarget.AgentResultReport`.
@@ -410,6 +416,13 @@ pub struct ProbeResultReport {
     /// the center stores whatever stages a row actually carries.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phases: Option<ProbePhases>,
+    /// Burst sampling metrics (#744, icmp module) — Go `probe.Result`
+    /// LossPct/JitterMs. Zero = not measured; skipped on the wire the same
+    /// way the Go JSON omitempty drops them.
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub loss_pct: f64,
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub jitter_ms: f64,
 }
 
 /// Per-stage breakdown of one probe run — Go `probe.Phases` (same snake_case

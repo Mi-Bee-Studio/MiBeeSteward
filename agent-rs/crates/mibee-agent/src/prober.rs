@@ -261,13 +261,24 @@ pub async fn run_probe(spec: &ProbeTargetSpec, vantage: &str) -> ProbeResultRepo
         ..Default::default()
     };
     match spec.module.as_str() {
-        "icmp" => match icmp_ping(&spec.target, timeout).await {
-            Some(()) => report.status = "success".into(),
-            None => {
+        "icmp" => {
+            // Burst sampling (#744): burst_count > 1 turns the round into N
+            // sequential echoes and populates loss_pct/jitter_ms; the default
+            // single ping keeps the legacy report shape (no burst fields).
+            let burst = opts.map(|o| o.burst_count).unwrap_or(0).max(0) as usize;
+            let interval_ms = opts.map(|o| o.burst_interval_ms).unwrap_or(0);
+            let out = icmp_ping_burst(&spec.target, burst, interval_ms, timeout).await;
+            if out.recv > 0 {
+                report.status = "success".into();
+            } else {
                 report.status = "timeout".into();
                 report.error_message = "no echo reply".into();
             }
-        },
+            if burst > 1 {
+                report.loss_pct = loss_pct(out.sent, out.recv);
+                report.jitter_ms = jitter_ms(&out.rtts_ms);
+            }
+        }
         "http" => {
             let mut stages = crate::wire::ProbePhases::default();
             let outcome = http_probe(&spec.target, opts, timeout, &mut stages).await;
@@ -369,14 +380,76 @@ pub async fn run_probe(spec: &ProbeTargetSpec, vantage: &str) -> ProbeResultRepo
     report
 }
 
-/// ICMP with hostname resolution (#604): IP literals connect directly, a
-/// hostname resolves through the system resolver first.
-async fn icmp_ping(target: &str, timeout: Duration) -> Option<()> {
-    let ip: std::net::IpAddr = match target.parse() {
-        Ok(ip) => ip,
-        Err(_) => crate::engine::probes::tls::resolve_host(target).await?,
+/// Raw outcome of one ICMP burst round — the Rust twin of Go's
+/// `probe.burstOutcome` (#744).
+#[derive(Debug, Default, PartialEq)]
+pub(crate) struct IcmpBurstOutcome {
+    /// Received echo RTTs in milliseconds, arrival order.
+    pub rtts_ms: Vec<f64>,
+    pub sent: usize,
+    pub recv: usize,
+}
+
+/// Burst round (#744): `count` sequential echoes (one outstanding at a time,
+/// the classic ping shape) `interval_ms` apart, each waiting up to `timeout`
+/// for its own reply. count 0/1 = a single ping. Sent counts ATTEMPTED
+/// echoes (resolution failure = nothing attempted), recv the replies.
+pub(crate) async fn icmp_ping_burst(
+    target: &str,
+    count: usize,
+    interval_ms: i64,
+    timeout: Duration,
+) -> IcmpBurstOutcome {
+    let count = count.max(1);
+    let ip: Option<std::net::IpAddr> = match target.parse() {
+        Ok(ip) => Some(ip),
+        Err(_) => crate::engine::probes::tls::resolve_host(target).await,
     };
-    crate::engine::probes::datagram_ping(ip, timeout).await
+    let mut out = IcmpBurstOutcome::default();
+    let Some(ip) = ip else {
+        return out; // unresolvable: nothing sent, loss undefined (stays 0)
+    };
+    out.sent = count;
+    let interval = if interval_ms > 0 {
+        Duration::from_millis(interval_ms as u64)
+    } else {
+        Duration::from_millis(20)
+    };
+    for i in 0..count {
+        if i > 0 {
+            tokio::time::sleep(interval).await;
+        }
+        if let Some(rtt_ms) =
+            crate::engine::probes::datagram_ping_ms(ip, timeout).await
+        {
+            out.recv += 1;
+            out.rtts_ms.push(rtt_ms as f64);
+        }
+    }
+    out
+}
+
+/// Packet loss percentage over one burst round — the Rust twin of Go
+/// `probe.LossPct` (#744): nothing sent reports 0 (not measured), never NaN.
+pub(crate) fn loss_pct(sent: usize, recv: usize) -> f64 {
+    if sent == 0 {
+        return 0.0;
+    }
+    (sent - recv) as f64 / sent as f64 * 100.0
+}
+
+/// Mean absolute difference of consecutive echo RTTs over the received-only
+/// series — the Rust twin of Go `probe.JitterMs` (#744). Fewer than two
+/// received echoes = undefined, 0.
+pub(crate) fn jitter_ms(rtts_ms: &[f64]) -> f64 {
+    if rtts_ms.len() < 2 {
+        return 0.0;
+    }
+    let sum: f64 = rtts_ms
+        .windows(2)
+        .map(|w| (w[1] - w[0]).abs())
+        .sum();
+    sum / (rtts_ms.len() - 1) as f64
 }
 
 /// Resolve host:port with retries, resilient to slow local resolvers.
@@ -1597,5 +1670,65 @@ mod tests {
         q.apply_plan("f1", vec![trace_spec(5, "external")], None);
         q.note_probe_failure(5, now);
         assert!(q.trace_due_specs(now).is_empty());
+    }
+
+    /// #744 Go parity: loss/jitter math must match the center's definitions
+    /// byte for byte (probe.LossPct / probe.JitterMs in icmp_burst_test.go).
+    #[test]
+    fn loss_pct_and_jitter_ms_go_parity() {
+        assert_eq!(loss_pct(0, 0), 0.0, "nothing sent = not measured");
+        assert_eq!(loss_pct(10, 10), 0.0);
+        assert_eq!(loss_pct(10, 0), 100.0);
+        assert!((loss_pct(10, 7) - 30.0).abs() < 0.01);
+        assert!((loss_pct(3, 1) - 66.666).abs() < 0.01);
+
+        assert_eq!(jitter_ms(&[]), 0.0);
+        assert_eq!(jitter_ms(&[5.0]), 0.0, "one echo = undefined");
+        assert_eq!(jitter_ms(&[10.0, 10.0, 10.0]), 0.0, "steady line");
+        assert!((jitter_ms(&[10.0, 12.0, 10.0]) - 2.0).abs() < 0.01);
+        assert!((jitter_ms(&[10.0, 20.0, 40.0]) - 15.0).abs() < 0.01);
+    }
+
+    /// #744 wire shape: burst fields ride the probe-report row snake_case
+    /// exactly as the Go center decodes them, and skip when zero so
+    /// non-burst rows stay byte-compatible with pre-burst agents.
+    #[test]
+    fn probe_report_burst_fields_wire_shape() {
+        let mut r = ProbeResultReport {
+            target_id: 7,
+            status: "success".into(),
+            loss_pct: 30.0,
+            jitter_ms: 2.5,
+            ..Default::default()
+        };
+        let v = serde_json::to_value(&r).unwrap();
+        assert_eq!(v["loss_pct"], 30.0);
+        assert_eq!(v["jitter_ms"], 2.5);
+
+        r.loss_pct = 0.0;
+        r.jitter_ms = 0.0;
+        let v = serde_json::to_value(&r).unwrap();
+        assert!(v.get("loss_pct").is_none(), "zero loss skips on the wire");
+        assert!(v.get("jitter_ms").is_none(), "zero jitter skips on the wire");
+
+        // Round-trip: the center's omitempty JSON (absent fields) decodes
+        // back as zero, older-agent rows stay forward-compatible.
+        let back: ProbeResultReport = serde_json::from_value(v).unwrap();
+        assert_eq!(back.loss_pct, 0.0);
+        assert_eq!(back.jitter_ms, 0.0);
+    }
+
+    /// #744 option decode: burst_count/burst_interval_ms ride the plan spec
+    /// options block; absent fields default to zero (legacy single ping).
+    #[test]
+    fn probe_options_burst_decode() {
+        let o: ProbeTargetOptions =
+            serde_json::from_str(r#"{"burst_count":10,"burst_interval_ms":20}"#).unwrap();
+        assert_eq!(o.burst_count, 10);
+        assert_eq!(o.burst_interval_ms, 20);
+        let legacy: ProbeTargetOptions = serde_json::from_str(r#"{"method":"HEAD"}"#).unwrap();
+        assert_eq!(legacy.burst_count, 0, "pre-burst plans decode untouched");
+        let empty = ProbeTargetOptions::default();
+        assert_eq!(empty.burst_interval_ms, 0);
     }
 }
