@@ -1553,6 +1553,7 @@
 		{@const sa = device.scan_attributes}
 		{@const extras = (sa.extras ?? {}) as Record<string, string>}
 		{@const wifi = (sa as { wifi?: { source?: string; seen_at?: string; signal_dbm?: string | number; ssid?: string; connected_secs?: string | number } }).wifi}
+		{@const gw = (sa as { gateway?: { checked_at?: string; upnp_available?: boolean; upnp_server?: string; wan_ip?: string; port_mapping_ok?: boolean; nat_mapping?: string; public_ip?: string; stun_servers_seen?: number; hole_punch_viable?: boolean; note?: string } }).gateway}
 		{@const hasDiscoveryData = Boolean(
 			sa.vendor || sa.mac || sa.hostname || sa.os || sa.os_version ||
 			sa.kernel_version || sa.firmware_version || sa.cpu_count || sa.cpu_model ||
@@ -1562,6 +1563,7 @@
 			(sa.open_ports && sa.open_ports.length > 0) ||
 			(sa.detected_services && sa.detected_services.length > 0) ||
 			(wifi && (wifi.ssid || wifi.signal_dbm != null)) ||
+			(gw && (gw.nat_mapping || gw.upnp_available || gw.wan_ip)) ||
 			Object.keys(extras).length > 0
 		)}
 		{#if hasDiscoveryData}
@@ -1603,6 +1605,46 @@
 							{#if sa.snmp.sys_location}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Location']()}</span><span class="scan-info-value text-xs">{sa.snmp.sys_location}</span></div>{/if}
 							{#if sa.snmp.sys_contact}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Contact']()}</span><span class="scan-info-value text-xs">{sa.snmp.sys_contact}</span></div>{/if}
 							{#if sa.snmp.sys_services != null}<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.SNMP Services']()}</span><span class="scan-info-value text-xs font-mono">{sa.snmp.sys_services}</span></div>{/if}
+						</div>
+					</div>
+				{/if}
+
+				<!-- Gateway profile sub-card (#754): UPnP IGD + NAT mapping
+				     behavior from the gateway_probe command. Only rendered
+				     when the agent actually probed something. -->
+				{#if gw && (gw.nat_mapping || gw.upnp_available || gw.wan_ip)}
+					<div class="mt-3 pt-3 border-t border-border">
+						<h4 class="scan-info-label mb-2">{m['scanfields.Gateway Profile']()}</h4>
+						<div class="scan-info-grid">
+							{#if gw.nat_mapping}
+								<div class="scan-info-field">
+									<span class="scan-info-label">{m['scanfields.Gateway NAT']()}</span>
+									<span class="scan-info-value">
+										<span class="badge {gw.nat_mapping === 'eim' ? 'badge-success' : gw.nat_mapping === 'edm' ? 'badge-warning' : ''} ml-0">{gw.nat_mapping === 'eim' ? m['scanfields.Gateway NAT Eim']() : gw.nat_mapping === 'edm' ? m['scanfields.Gateway NAT Edm']() : m['scanfields.Gateway NAT Unknown']()}</span>
+									</span>
+								</div>
+							{/if}
+							{#if gw.upnp_server}
+								<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Gateway UPnP']()}</span><span class="scan-info-value font-mono text-xs" title={gw.upnp_server}>{gw.upnp_server}</span></div>
+							{/if}
+							{#if gw.wan_ip || gw.public_ip}
+								<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Gateway WAN IP']()}</span><span class="scan-info-value font-mono text-xs">{gw.wan_ip || gw.public_ip}</span></div>
+							{/if}
+							{#if gw.upnp_available}
+								<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Gateway Port Mapping']()}</span><span class="scan-info-value">{gw.port_mapping_ok ? m['scanfields.Gateway Mapping OK']() : m['scanfields.Gateway Mapping Refused']()}</span></div>
+							{/if}
+							{#if gw.stun_servers_seen}
+								<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Gateway STUN Seen']()}</span><span class="scan-info-value font-mono text-xs">{gw.stun_servers_seen}</span></div>
+							{/if}
+							{#if gw.hole_punch_viable}
+								<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Gateway Hole Punch']()}</span><span class="scan-info-value">✓</span></div>
+							{/if}
+							{#if gw.note}
+								<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Gateway Note']()}</span><span class="scan-info-value text-xs text-muted">{gw.note}</span></div>
+							{/if}
+							{#if gw.checked_at}
+								<div class="scan-info-field"><span class="scan-info-label">{m['scanfields.Gateway Sampled']()}</span><span class="scan-info-value text-xs">{gw.checked_at}</span></div>
+							{/if}
 						</div>
 					</div>
 				{/if}

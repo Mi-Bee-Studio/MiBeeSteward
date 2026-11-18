@@ -246,10 +246,12 @@ func (s *AgentCommandService) validateScanTargets(ctx context.Context, agentID s
 func (s *AgentCommandService) UpsertAgentStatus(ctx context.Context, agentID string, meta *domain.AgentMeta, clockOffset float64, sourceIP string) error {
 	var version, goVersion, hostname, fpRev, modules string
 	var uptime, scans int64
+	var sntpOffset float64
 	if meta != nil {
 		version, goVersion, hostname, fpRev = meta.Version, meta.GoVersion, meta.Hostname, meta.FingerprintRev
 		uptime, scans = meta.UptimeSec, meta.ScansTotal
 		modules = strings.Join(meta.SupportedModules, ",")
+		sntpOffset = meta.ClockOffsetMs
 	}
 	return s.queries.UpsertAgentStatus(ctx, db.UpsertAgentStatusParams{
 		AgentID:            agentID,
@@ -262,6 +264,7 @@ func (s *AgentCommandService) UpsertAgentStatus(ctx context.Context, agentID str
 		FingerprintRev:     fpRev,
 		SupportedModules:   modules,
 		LastSourceIp:       sourceIP,
+		SntpOffsetMs:       sntpOffset,
 		LastReportAt:       time.Now().UTC(),
 	})
 }

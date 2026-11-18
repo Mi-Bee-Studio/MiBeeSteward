@@ -15,8 +15,8 @@
 -- is the report's source address (the mesh matrix's peer address); empty
 -- source keeps the previous value (a proxy chain may hide it, don't clobber).
 INSERT INTO agent_status (agent_id, version, go_version, hostname, uptime_seconds,
-    clock_offset_seconds, scans_total, fingerprint_rev, supported_modules, last_source_ip, last_report_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    clock_offset_seconds, scans_total, fingerprint_rev, supported_modules, last_source_ip, sntp_offset_ms, last_report_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(agent_id) DO UPDATE SET
     version = excluded.version,
     go_version = excluded.go_version,
@@ -28,11 +28,13 @@ ON CONFLICT(agent_id) DO UPDATE SET
     supported_modules = excluded.supported_modules,
     last_source_ip = CASE WHEN excluded.last_source_ip = ''
         THEN agent_status.last_source_ip ELSE excluded.last_source_ip END,
+    sntp_offset_ms = excluded.sntp_offset_ms,
     last_report_at = excluded.last_report_at;
 
 -- name: ListAgentStatus :many
 -- All fleet snapshots oldest-report-first (the stalest agent draws the eye).
 SELECT agent_id, version, go_version, hostname, uptime_seconds,
-    clock_offset_seconds, scans_total, fingerprint_rev, supported_modules, last_source_ip, last_report_at
+    clock_offset_seconds, scans_total, fingerprint_rev, supported_modules, last_source_ip, sntp_offset_ms, last_report_at
 FROM agent_status
 ORDER BY last_report_at ASC;
+

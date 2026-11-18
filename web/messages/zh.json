@@ -770,7 +770,21 @@
 		"WiFi SSID": "WiFi SSID",
 		"WiFi Signal": "信号强度",
 		"WiFi Connected": "已连接时长",
-		"WiFi Seen": "WiFi 发现时间"
+		"WiFi Seen": "WiFi 发现时间",
+		"Gateway Profile": "网络画像（网关）",
+		"Gateway NAT": "NAT 映射行为",
+		"Gateway NAT Eim": "锥形 (EIM)",
+		"Gateway NAT Edm": "对称 (EDM)",
+		"Gateway NAT Unknown": "未知",
+		"Gateway UPnP": "UPnP IGD",
+		"Gateway WAN IP": "WAN IP",
+		"Gateway Port Mapping": "端口映射",
+		"Gateway Mapping OK": "可建（入站 OK）",
+		"Gateway Mapping Refused": "被拒",
+		"Gateway STUN Seen": "应答 STUN 服务器数",
+		"Gateway Hole Punch": "打洞可行",
+		"Gateway Note": "备注",
+		"Gateway Sampled": "采样时间"
 	},
 	"userfields": {
 		"Custom Attributes": "自定义属性",
@@ -1655,7 +1669,7 @@
 		"Autogen Sweep Now": "一键为已发现服务创建拨测",
 		"Autogen Sweep Done": "同步完成：新建 {created} · 启用 {enabled} · 停用 {disabled}",
 		"Empty Go Settings": "或到 设置 → 拨测 调整",
-		"Quality Help Thresholds": "默认值在服务器配置 probe.quality；开关可在 设置 → 拨测 调整",
+		"Quality Help Thresholds": "来自服务端 probe.quality 配置",
 		"Section Toggle": "展开/收起{name}",
 		"Select Section": "全选{name}",
 		"No Match": "无匹配",
@@ -1671,7 +1685,6 @@
 		"Quality Help Chain Label": "外网质量判定链",
 		"Quality Help Chain": "出口中断（免DNS直连+全部HTTP失败）> 本网DNS故障（直连通但域名解析全挂）> 上游解析器异常（双解析器一好一坏）> 劣化 > 正常；在所有视角都失败的目标判定为“目标侧问题”并剔除",
 		"Quality Help Thresholds Label": "阈值",
-		"Quality Help Thresholds": "来自服务端 probe.quality 配置",
 		"Overview Targets": "拨测目标",
 		"Overview All Healthy": "{total} 个目标全部正常",
 		"Overview Failing": "{total} 个中 {count} 个异常",
@@ -1908,5 +1921,22 @@
 		"name.external": "外部设备",
 		"name.temporary": "临时使用",
 		"name.pending": "待确认归属"
+	},
+	"stun": {
+		"title": "STUN 服务器（网关画像）",
+		"desc": "网关画像探测（UPnP IGD + NAT 映射行为）所用服务器列表。内置默认全部为公共节点；自建节点可自行添加。",
+		"optin_note": "默认关闭：探测会向所选第三方服务器暴露本站点公网映射（与浏览器 WebRTC 行为等同）。关闭即不做网关探测。",
+		"builtin": "内置",
+		"test": "测试",
+		"test.ok": "可达，映射地址 {ip}，往返 {rtt} ms",
+		"test.fail": "失败：{error}",
+		"duplicate": "该端点已在列表中",
+		"endpoint.placeholder": "my-stun.example.com:3478",
+		"label.placeholder": "备注",
+		"add": "添加",
+		"restore": "恢复默认列表",
+		"list_note": "已启用 {count} 个；判定算法需要至少 2 个可应答服务器。",
+		"saved": "STUN 列表已保存，网关探测已下发",
+		"saving": "保存中..."
 	}
 }

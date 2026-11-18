@@ -820,6 +820,10 @@ CREATE TABLE IF NOT EXISTS agent_status (
     -- address for the mesh-matrix autogen (agent-to-agent and
     -- center-to-agent icmp targets). '' until the first report lands.
     last_source_ip TEXT NOT NULL DEFAULT '',
+    -- Calibrated SNTP clock offset from the agent's meta (#749), local
+    -- minus server, milliseconds. 0 = unknown/skipped; the report-time
+    -- clock_offset_seconds heuristic stays the coarse signal.
+    sntp_offset_ms REAL NOT NULL DEFAULT 0,
     last_report_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -30,6 +30,7 @@ type AgentStatus struct {
 	FingerprintRev     string    `json:"fingerprint_rev"`
 	SupportedModules   string    `json:"supported_modules"`
 	LastSourceIp       string    `json:"last_source_ip"`
+	SntpOffsetMs       float64   `json:"sntp_offset_ms"`
 	LastReportAt       time.Time `json:"last_report_at"`
 }
 
