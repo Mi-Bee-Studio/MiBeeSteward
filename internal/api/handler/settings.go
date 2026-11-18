@@ -13,10 +13,13 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
+	"time"
 
 	"mibee-steward/internal/api/middleware"
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/service"
+	"mibee-steward/internal/service/probe"
 	"mibee-steward/internal/version"
 )
 
@@ -277,6 +280,199 @@ func (h *SettingsHandler) UpdateProbes(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	h.GetProbes(w, r)
+}
+
+// --- STUN server list (#750) ---
+
+// stunServerDTO is one list row on the wire (config.ProbeSTUNServer shape).
+type stunServerDTO struct {
+	Endpoint string `json:"endpoint"`
+	Label    string `json:"label"`
+	Builtin  bool   `json:"builtin"`
+	Enabled  bool   `json:"enabled"`
+}
+
+// stunServersResponse is GET /settings/probes/stun-servers.
+type stunServersResponse struct {
+	Enabled        bool            `json:"enabled"`
+	Source         string          `json:"source"` // overlay | default
+	BurstTimeoutMS int             `json:"burst_timeout_ms"`
+	Servers        []stunServerDTO `json:"servers"`
+}
+
+// updateSTUNServersRequest is PUT /settings/probes/stun-servers: the whole
+// list is replaced (PUT semantics; the UI edits the list it fetched). Builtin
+// rows MUST be present (they may be disabled, never dropped) - their builtin
+// flag is forced server-side.
+type updateSTUNServersRequest struct {
+	Enabled        *bool           `json:"enabled"`
+	BurstTimeoutMS *int            `json:"burst_timeout_ms"`
+	Servers        []stunServerDTO `json:"servers"`
+}
+
+// GetSTUNServers handles GET /api/v1/settings/probes/stun-servers. The
+// overlay row is the source of truth once written; with no overlay the
+// shipped public defaults are returned. ?defaults=1 bypasses the overlay
+// (the restore-defaults button fetches the pristine list).
+func (h *SettingsHandler) GetSTUNServers(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("defaults") == "1" {
+		cfg := config.ProbeNATConfig{}
+		config.NormalizeProbeNAT(&cfg)
+		Success(w, toSTUNResponse(false, cfg))
+		return
+	}
+	if h.settings != nil {
+		var stored config.ProbeNATConfig
+		if h.settings.Get(service.SettingProbeNat, &stored) {
+			config.NormalizeProbeNAT(&stored)
+			Success(w, toSTUNResponse(true, stored))
+			return
+		}
+	}
+	def := config.ProbeNATConfig{}
+	config.NormalizeProbeNAT(&def)
+	Success(w, toSTUNResponse(false, def))
+}
+
+func toSTUNResponse(overlay bool, cfg config.ProbeNATConfig) stunServersResponse {
+	src := "default"
+	if overlay {
+		src = "overlay"
+	}
+	rows := make([]stunServerDTO, 0, len(cfg.Servers))
+	for _, s := range cfg.Servers {
+		rows = append(rows, stunServerDTO{Endpoint: s.Endpoint, Label: s.Label, Builtin: s.Builtin, Enabled: s.Enabled})
+	}
+	return stunServersResponse{Enabled: cfg.EffectiveEnabled(), Source: src, BurstTimeoutMS: cfg.BurstTimeoutMS, Servers: rows}
+}
+
+// UpdateSTUNServers handles PUT /api/v1/settings/probes/stun-servers (#750):
+// validates format/dedupe/builtin-protection, persists the overlay, and
+// triggers the NAT re-probe subscriber.
+func (h *SettingsHandler) UpdateSTUNServers(w http.ResponseWriter, r *http.Request) {
+	if h.settings == nil {
+		Error(w, http.StatusServiceUnavailable, "settings overlay unavailable (database load failed at startup)")
+		return
+	}
+	var req updateSTUNServersRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Servers == nil {
+		Error(w, http.StatusBadRequest, "servers is required")
+		return
+	}
+	if len(req.Servers) < 1 || len(req.Servers) > 8 {
+		Error(w, http.StatusBadRequest, "servers must hold 1-8 entries")
+		return
+	}
+	// Builtin protection: every shipped endpoint must appear; its flag and
+	// label are forced server-side so a hostile payload cannot forge one.
+	builtin := map[string]bool{}
+	for _, s := range config.DefaultSTUNServers() {
+		builtin[s.Endpoint] = true
+	}
+	seen := map[string]bool{}
+	stored := make([]config.ProbeSTUNServer, 0, len(req.Servers))
+	for _, row := range req.Servers {
+		if !probe.ValidateSTUNServer(row.Endpoint) {
+			Error(w, http.StatusBadRequest, "invalid server endpoint: "+row.Endpoint)
+			return
+		}
+		if seen[row.Endpoint] {
+			Error(w, http.StatusBadRequest, "duplicate server endpoint: "+row.Endpoint)
+			return
+		}
+		seen[row.Endpoint] = true
+		label := strings.TrimSpace(row.Label)
+		if builtin[row.Endpoint] {
+			stored = append(stored, config.ProbeSTUNServer{Endpoint: row.Endpoint, Label: builtinLabel(row.Endpoint), Builtin: true, Enabled: row.Enabled})
+			continue
+		}
+		if label == "" {
+			label = row.Endpoint
+		}
+		stored = append(stored, config.ProbeSTUNServer{Endpoint: row.Endpoint, Label: label, Builtin: false, Enabled: row.Enabled})
+	}
+	missing := []string{}
+	for ep := range builtin {
+		if !seen[ep] {
+			missing = append(missing, ep)
+		}
+	}
+	if len(missing) > 0 {
+		Error(w, http.StatusBadRequest, "builtin server(s) cannot be removed: "+strings.Join(missing, ", "))
+		return
+	}
+
+	out := config.ProbeNATConfig{Servers: stored, Enabled: req.Enabled}
+	if req.BurstTimeoutMS != nil {
+		out.BurstTimeoutMS = *req.BurstTimeoutMS
+	}
+	config.NormalizeProbeNAT(&out)
+	if err := h.settings.Set(r.Context(), service.SettingProbeNat, out); err != nil {
+		slog.Error("settings: failed to persist stun server list", "error", err)
+		Error(w, http.StatusInternalServerError, "failed to save stun server list")
+		return
+	}
+	if userID, _, ok := middleware.GetUserFromContext(r); ok {
+		h.auditRepo.Log(r.Context(), service.AuditLog{
+			UserID:       &userID,
+			Action:       "admin.settings.probe_nat",
+			ResourceType: "settings",
+			IPAddress:    r.RemoteAddr,
+			UserAgent:    r.UserAgent(),
+		})
+	}
+	h.GetSTUNServers(w, r)
+}
+
+// builtinLabel maps a builtin endpoint back to its shipped label (the payload
+// may carry a mangled one; the list stays presentable).
+func builtinLabel(endpoint string) string {
+	for _, s := range config.DefaultSTUNServers() {
+		if s.Endpoint == endpoint {
+			return s.Label
+		}
+	}
+	return endpoint
+}
+
+// testSTUNRequest is POST /settings/probes/stun-servers/test.
+type testSTUNRequest struct {
+	Endpoint string `json:"endpoint"`
+}
+
+// TestSTUNServer handles POST /api/v1/settings/probes/stun-servers/test:
+// one Binding Request from the center, the mapped address + RTT back —
+// the WYSIWYG check before a user saves their own node. Never persists.
+func (h *SettingsHandler) TestSTUNServer(w http.ResponseWriter, r *http.Request) {
+	var req testSTUNRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Endpoint) == "" {
+		Error(w, http.StatusBadRequest, "endpoint is required")
+		return
+	}
+	if !probe.ValidateSTUNServer(req.Endpoint) {
+		Error(w, http.StatusBadRequest, "invalid server endpoint: "+req.Endpoint)
+		return
+	}
+	res, err := probe.STUNQuery(req.Endpoint, 3*time.Second)
+	if err != nil {
+		Success(w, map[string]any{
+			"endpoint": req.Endpoint,
+			"ok":       false,
+			"error":    res.Err,
+		})
+		return
+	}
+	Success(w, map[string]any{
+		"endpoint":    req.Endpoint,
+		"ok":          true,
+		"mapped_ip":   res.MappedIP,
+		"mapped_port": res.MappedPort,
+		"rtt_ms":      res.RTTms,
+	})
 }
 
 // GetSystem handles GET /api/v1/system, read-only instance facts.

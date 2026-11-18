@@ -260,6 +260,64 @@ func (a ProbeAutogenConfig) EffectiveMeshEnabled() bool {
 	return true
 }
 
+// ProbeSTUNServer is one row of the NAT-probe server list (#750): a public
+// or user-added STUN endpoint with its on/off switch. Builtin rows can be
+// disabled but not removed (the settings API restores them); the shipped
+// defaults are PUBLIC infrastructure only - the product carries no
+// self-hosted STUN (neutrality constraint).
+type ProbeSTUNServer struct {
+	Endpoint string `koanf:"endpoint"` // host:port (3478 implied by the probe)
+	Label    string `koanf:"label"`
+	Builtin  bool   `koanf:"builtin"`
+	Enabled  bool   `koanf:"enabled"`
+}
+
+// ProbeNATConfig is the web-editable gateway-profile policy (#750), riding
+// the settings overlay as probe.nat. Enabled defaults OFF: NAT/UPnP probing
+// exposes the site's public mapping to third-party servers, so it is an
+// explicit opt-in (same reasoning as the browser WebRTC permission).
+type ProbeNATConfig struct {
+	Enabled *bool `koanf:"enabled"`
+	// BurstTimeoutMS is the per-server query deadline for the NAT probe.
+	BurstTimeoutMS int               `koanf:"burst_timeout_ms"`
+	Servers        []ProbeSTUNServer `koanf:"servers"`
+}
+
+// EffectiveEnabled resolves the NAT-probe switch: absent key = off.
+func (n ProbeNATConfig) EffectiveEnabled() bool {
+	return n.Enabled != nil && *n.Enabled
+}
+
+// DefaultSTUNServers is the shipped public list: three international + two
+// Chinese endpoints. Individual providers are intermittent (field notes);
+// the classifier needs any two responsive servers, the mix survives one
+// dead provider in each region.
+func DefaultSTUNServers() []ProbeSTUNServer {
+	return []ProbeSTUNServer{
+		{Endpoint: "stun.cloudflare.com:3478", Label: "Cloudflare", Builtin: true, Enabled: true},
+		{Endpoint: "stun.l.google.com:19302", Label: "Google", Builtin: true, Enabled: true},
+		{Endpoint: "stun.nextcloud.com:443", Label: "Nextcloud", Builtin: true, Enabled: true},
+		{Endpoint: "stun.qq.com:3478", Label: "Tencent", Builtin: true, Enabled: true},
+		{Endpoint: "stun.miwifi.com:3478", Label: "Xiaomi", Builtin: true, Enabled: true},
+	}
+}
+
+// NormalizeProbeNAT fills the documented defaults (zero means default).
+func NormalizeProbeNAT(cfg *ProbeNATConfig) {
+	if cfg.BurstTimeoutMS == 0 {
+		cfg.BurstTimeoutMS = 1500
+	}
+	if cfg.BurstTimeoutMS < 200 {
+		cfg.BurstTimeoutMS = 200
+	}
+	if cfg.BurstTimeoutMS > 5000 {
+		cfg.BurstTimeoutMS = 5000
+	}
+	if len(cfg.Servers) == 0 {
+		cfg.Servers = DefaultSTUNServers()
+	}
+}
+
 // DefaultEgressSources is the shipped echo-source set (#718): a domestic and
 // an international mix across three transports, because no single source is
 // reliable from every network (survey 2026-11-07: per-source availability

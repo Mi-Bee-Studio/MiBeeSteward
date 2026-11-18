@@ -714,6 +714,24 @@ func (e ProbeEpisodeMetricReason) Valid() bool {
 	}
 }
 
+// Defines values for ProbeNATSettingsSource.
+const (
+	ProbeNATSettingsSourceDefault ProbeNATSettingsSource = "default"
+	ProbeNATSettingsSourceOverlay ProbeNATSettingsSource = "overlay"
+)
+
+// Valid indicates whether the value is a known member of the ProbeNATSettingsSource enum.
+func (e ProbeNATSettingsSource) Valid() bool {
+	switch e {
+	case ProbeNATSettingsSourceDefault:
+		return true
+	case ProbeNATSettingsSourceOverlay:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProbeOptionsExpectMode.
 const (
 	ProbeOptionsExpectModeContains ProbeOptionsExpectMode = "contains"
@@ -1620,6 +1638,21 @@ func (e GetScannerResultsParamsAlive) Valid() bool {
 	}
 }
 
+// Defines values for GetSettingsProbesStunServersParamsDefaults.
+const (
+	GetSettingsProbesStunServersParamsDefaultsN1 GetSettingsProbesStunServersParamsDefaults = "1"
+)
+
+// Valid indicates whether the value is a known member of the GetSettingsProbesStunServersParamsDefaults enum.
+func (e GetSettingsProbesStunServersParamsDefaults) Valid() bool {
+	switch e {
+	case GetSettingsProbesStunServersParamsDefaultsN1:
+		return true
+	default:
+		return false
+	}
+}
+
 // AgentCommand defines model for AgentCommand.
 type AgentCommand struct {
 	AcknowledgedAt *time.Time          `json:"acknowledged_at"`
@@ -2508,9 +2541,8 @@ type PipelineConfig struct {
 
 // ProbeAutogenPolicy Web-editable slice of probe.autogen
 type ProbeAutogenPolicy struct {
-	Enabled         bool `json:"enabled"`
-	IntervalSeconds *int `json:"interval_seconds,omitempty"`
-	MaxTargets      *int `json:"max_targets,omitempty"`
+	Enabled    bool `json:"enabled"`
+	MaxTargets *int `json:"max_targets,omitempty"`
 }
 
 // ProbeEgressIP defines model for ProbeEgressIP.
@@ -2592,6 +2624,29 @@ type ProbeEpisodeMetric struct {
 
 // ProbeEpisodeMetricReason defines model for ProbeEpisodeMetric.Reason.
 type ProbeEpisodeMetricReason string
+
+// ProbeNATSettings Gateway-profile policy + STUN server list (#750). Defaults are PUBLIC infrastructure only (the product carries no self-hosted STUN); enabled defaults OFF - probing exposes the site mapping to third parties, explicit opt-in.
+type ProbeNATSettings struct {
+	// BurstTimeoutMs per-server query deadline
+	BurstTimeoutMs int `json:"burst_timeout_ms"`
+
+	// Enabled absent key resolves OFF (opt-in)
+	Enabled         bool `json:"enabled"`
+	IntervalSeconds *int `json:"interval_seconds,omitempty"`
+	Servers         []struct {
+		// Builtin shipped public rows may be disabled but never dropped
+		Builtin *bool `json:"builtin,omitempty"`
+		Enabled bool  `json:"enabled"`
+
+		// Endpoint host:port (3478 implied by the probe)
+		Endpoint string  `json:"endpoint"`
+		Label    *string `json:"label,omitempty"`
+	} `json:"servers"`
+	Source ProbeNATSettingsSource `json:"source"`
+}
+
+// ProbeNATSettingsSource defines model for ProbeNATSettings.Source.
+type ProbeNATSettingsSource string
 
 // ProbeOptions Per-module execution options (#605), stored as JSON on the target and mirrored to vantage agents verbatim. Fields apply to their own module only (validated). Deliberately no credentials/auth headers: the agent command channel stays secret-free.
 type ProbeOptions struct {
@@ -3909,6 +3964,21 @@ type PutSettingsProbesJSONBody struct {
 	Quality *ProbeQualityPolicy `json:"quality,omitempty"`
 }
 
+// GetSettingsProbesStunServersParams defines parameters for GetSettingsProbesStunServers.
+type GetSettingsProbesStunServersParams struct {
+	// Defaults return the shipped defaults instead of the overlay
+	Defaults *GetSettingsProbesStunServersParamsDefaults `form:"defaults,omitempty" json:"defaults,omitempty"`
+}
+
+// GetSettingsProbesStunServersParamsDefaults defines parameters for GetSettingsProbesStunServers.
+type GetSettingsProbesStunServersParamsDefaults string
+
+// PostSettingsProbesStunServersTestJSONBody defines parameters for PostSettingsProbesStunServersTest.
+type PostSettingsProbesStunServersTestJSONBody struct {
+	// Endpoint host:port (3478 implied)
+	Endpoint string `json:"endpoint"`
+}
+
 // GetSnmpCredentialsParams defines parameters for GetSnmpCredentials.
 type GetSnmpCredentialsParams struct {
 	// Limit Page size (absent/0 → endpoint default; malformed or negative → 400; over-max clamps)
@@ -3984,6 +4054,12 @@ type PutFingerprintsMultipartRequestBody PutFingerprintsMultipartBody
 
 // PutSettingsProbesJSONRequestBody defines body for PutSettingsProbes for application/json ContentType.
 type PutSettingsProbesJSONRequestBody PutSettingsProbesJSONBody
+
+// PutSettingsProbesStunServersJSONRequestBody defines body for PutSettingsProbesStunServers for application/json ContentType.
+type PutSettingsProbesStunServersJSONRequestBody = ProbeNATSettings
+
+// PostSettingsProbesStunServersTestJSONRequestBody defines body for PostSettingsProbesStunServersTest for application/json ContentType.
+type PostSettingsProbesStunServersTestJSONRequestBody PostSettingsProbesStunServersTestJSONBody
 
 // PostTagsJSONRequestBody defines body for PostTags for application/json ContentType.
 type PostTagsJSONRequestBody = TagInput
@@ -5456,6 +5532,39 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /settings/probes (the `PutSettingsProbes` operationId).
 	PutSettingsProbes(ctx context.Context, body PutSettingsProbesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSettingsProbesStunServers STUN server list for the gateway profile (#750): overlay row when written, shipped public defaults otherwise; ?defaults=1 returns the pristine list (restore-defaults data source)
+	//
+	// Corresponds with GET /settings/probes/stun-servers (the `GetSettingsProbesStunServers` operationId).
+	GetSettingsProbesStunServers(ctx context.Context, params *GetSettingsProbesStunServersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutSettingsProbesStunServersWithBody Replace the whole list (PUT semantics): host:port validated, deduped, max 8 rows; builtin rows may be disabled but never dropped; triggers the gateway re-probe
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /settings/probes/stun-servers (the `PutSettingsProbesStunServers` operationId).
+	PutSettingsProbesStunServersWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutSettingsProbesStunServers Replace the whole list (PUT semantics): host:port validated, deduped, max 8 rows; builtin rows may be disabled but never dropped; triggers the gateway re-probe
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /settings/probes/stun-servers (the `PutSettingsProbesStunServers` operationId).
+	PutSettingsProbesStunServers(ctx context.Context, body PutSettingsProbesStunServersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostSettingsProbesStunServersTestWithBody One STUN Binding Request from the center (#750): mapped address + RTT, WYSIWYG check before saving a custom node; never persists
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /settings/probes/stun-servers/test (the `PostSettingsProbesStunServersTest` operationId).
+	PostSettingsProbesStunServersTestWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostSettingsProbesStunServersTest One STUN Binding Request from the center (#750): mapped address + RTT, WYSIWYG check before saving a custom node; never persists
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /settings/probes/stun-servers/test (the `PostSettingsProbesStunServersTest` operationId).
+	PostSettingsProbesStunServersTest(ctx context.Context, body PostSettingsProbesStunServersTestJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetSnmpCredentials SNMP credentials (masked, passphrases never echoed)
 	//
@@ -8284,6 +8393,89 @@ func (c *Client) PutSettingsProbesWithBody(ctx context.Context, contentType stri
 // Corresponds with PUT /settings/probes (the `PutSettingsProbes` operationId).
 func (c *Client) PutSettingsProbes(ctx context.Context, body PutSettingsProbesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPutSettingsProbesRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetSettingsProbesStunServers STUN server list for the gateway profile (#750): overlay row when written, shipped public defaults otherwise; ?defaults=1 returns the pristine list (restore-defaults data source)
+//
+// Corresponds with GET /settings/probes/stun-servers (the `GetSettingsProbesStunServers` operationId).
+func (c *Client) GetSettingsProbesStunServers(ctx context.Context, params *GetSettingsProbesStunServersParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSettingsProbesStunServersRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutSettingsProbesStunServersWithBody Replace the whole list (PUT semantics): host:port validated, deduped, max 8 rows; builtin rows may be disabled but never dropped; triggers the gateway re-probe
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /settings/probes/stun-servers (the `PutSettingsProbesStunServers` operationId).
+func (c *Client) PutSettingsProbesStunServersWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutSettingsProbesStunServersRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutSettingsProbesStunServers Replace the whole list (PUT semantics): host:port validated, deduped, max 8 rows; builtin rows may be disabled but never dropped; triggers the gateway re-probe
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /settings/probes/stun-servers (the `PutSettingsProbesStunServers` operationId).
+func (c *Client) PutSettingsProbesStunServers(ctx context.Context, body PutSettingsProbesStunServersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutSettingsProbesStunServersRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostSettingsProbesStunServersTestWithBody One STUN Binding Request from the center (#750): mapped address + RTT, WYSIWYG check before saving a custom node; never persists
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /settings/probes/stun-servers/test (the `PostSettingsProbesStunServersTest` operationId).
+func (c *Client) PostSettingsProbesStunServersTestWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostSettingsProbesStunServersTestRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostSettingsProbesStunServersTest One STUN Binding Request from the center (#750): mapped address + RTT, WYSIWYG check before saving a custom node; never persists
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /settings/probes/stun-servers/test (the `PostSettingsProbesStunServersTest` operationId).
+func (c *Client) PostSettingsProbesStunServersTest(ctx context.Context, body PostSettingsProbesStunServersTestJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostSettingsProbesStunServersTestRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -15485,6 +15677,140 @@ func NewPutSettingsProbesRequestWithBody(server string, contentType string, body
 	return req, nil
 }
 
+// NewGetSettingsProbesStunServersRequest constructs an http.Request for the GetSettingsProbesStunServers method
+func NewGetSettingsProbesStunServersRequest(server string, params *GetSettingsProbesStunServersParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/settings/probes/stun-servers")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Defaults != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "defaults", *params.Defaults, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutSettingsProbesStunServersRequest calls the generic PutSettingsProbesStunServers builder with application/json body
+func NewPutSettingsProbesStunServersRequest(server string, body PutSettingsProbesStunServersJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutSettingsProbesStunServersRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPutSettingsProbesStunServersRequestWithBody constructs an http.Request for the PutSettingsProbesStunServers method, with any body, and a specified content type
+func NewPutSettingsProbesStunServersRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/settings/probes/stun-servers")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostSettingsProbesStunServersTestRequest calls the generic PostSettingsProbesStunServersTest builder with application/json body
+func NewPostSettingsProbesStunServersTestRequest(server string, body PostSettingsProbesStunServersTestJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostSettingsProbesStunServersTestRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPostSettingsProbesStunServersTestRequestWithBody constructs an http.Request for the PostSettingsProbesStunServersTest method, with any body, and a specified content type
+func NewPostSettingsProbesStunServersTestRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/settings/probes/stun-servers/test")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetSnmpCredentialsRequest constructs an http.Request for the GetSnmpCredentials method
 func NewGetSnmpCredentialsRequest(server string, params *GetSnmpCredentialsParams) (*http.Request, error) {
 	var err error
@@ -17725,6 +18051,41 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PUT /settings/probes (the `PutSettingsProbes` operationId).
 	PutSettingsProbesWithResponse(ctx context.Context, body PutSettingsProbesJSONRequestBody, reqEditors ...RequestEditorFn) (*PutSettingsProbesResponse, error)
+
+	// GetSettingsProbesStunServersWithResponse STUN server list for the gateway profile (#750): overlay row when written, shipped public defaults otherwise; ?defaults=1 returns the pristine list (restore-defaults data source)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /settings/probes/stun-servers (the `GetSettingsProbesStunServers` operationId).
+	GetSettingsProbesStunServersWithResponse(ctx context.Context, params *GetSettingsProbesStunServersParams, reqEditors ...RequestEditorFn) (*GetSettingsProbesStunServersResponse, error)
+
+	// PutSettingsProbesStunServersWithBodyWithResponse Replace the whole list (PUT semantics): host:port validated, deduped, max 8 rows; builtin rows may be disabled but never dropped; triggers the gateway re-probe
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /settings/probes/stun-servers (the `PutSettingsProbesStunServers` operationId).
+	PutSettingsProbesStunServersWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutSettingsProbesStunServersResponse, error)
+
+	// PutSettingsProbesStunServersWithResponse Replace the whole list (PUT semantics): host:port validated, deduped, max 8 rows; builtin rows may be disabled but never dropped; triggers the gateway re-probe
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /settings/probes/stun-servers (the `PutSettingsProbesStunServers` operationId).
+	PutSettingsProbesStunServersWithResponse(ctx context.Context, body PutSettingsProbesStunServersJSONRequestBody, reqEditors ...RequestEditorFn) (*PutSettingsProbesStunServersResponse, error)
+
+	// PostSettingsProbesStunServersTestWithBodyWithResponse One STUN Binding Request from the center (#750): mapped address + RTT, WYSIWYG check before saving a custom node; never persists
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /settings/probes/stun-servers/test (the `PostSettingsProbesStunServersTest` operationId).
+	PostSettingsProbesStunServersTestWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostSettingsProbesStunServersTestResponse, error)
+
+	// PostSettingsProbesStunServersTestWithResponse One STUN Binding Request from the center (#750): mapped address + RTT, WYSIWYG check before saving a custom node; never persists
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /settings/probes/stun-servers/test (the `PostSettingsProbesStunServersTest` operationId).
+	PostSettingsProbesStunServersTestWithResponse(ctx context.Context, body PostSettingsProbesStunServersTestJSONRequestBody, reqEditors ...RequestEditorFn) (*PostSettingsProbesStunServersTestResponse, error)
 
 	// GetSnmpCredentialsWithResponse SNMP credentials (masked, passphrases never echoed)
 	//
@@ -24537,6 +24898,143 @@ func (r PutSettingsProbesResponse) ContentType() string {
 	return ""
 }
 
+type GetSettingsProbesStunServersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProbeNATSettings
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetSettingsProbesStunServersResponse) GetJSON200() *ProbeNATSettings {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSettingsProbesStunServersResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSettingsProbesStunServersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSettingsProbesStunServersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSettingsProbesStunServersResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PutSettingsProbesStunServersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProbeNATSettings
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutSettingsProbesStunServersResponse) GetJSON200() *ProbeNATSettings {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r PutSettingsProbesStunServersResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutSettingsProbesStunServersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutSettingsProbesStunServersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutSettingsProbesStunServersResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PostSettingsProbesStunServersTestResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *struct {
+		Endpoint   *string  `json:"endpoint,omitempty"`
+		Error      *string  `json:"error,omitempty"`
+		MappedIp   *string  `json:"mapped_ip,omitempty"`
+		MappedPort *int     `json:"mapped_port,omitempty"`
+		Ok         *bool    `json:"ok,omitempty"`
+		RttMs      *float32 `json:"rtt_ms,omitempty"`
+	}
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostSettingsProbesStunServersTestResponse) GetJSON200() *struct {
+	Endpoint   *string  `json:"endpoint,omitempty"`
+	Error      *string  `json:"error,omitempty"`
+	MappedIp   *string  `json:"mapped_ip,omitempty"`
+	MappedPort *int     `json:"mapped_port,omitempty"`
+	Ok         *bool    `json:"ok,omitempty"`
+	RttMs      *float32 `json:"rtt_ms,omitempty"`
+} {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r PostSettingsProbesStunServersTestResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostSettingsProbesStunServersTestResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostSettingsProbesStunServersTestResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostSettingsProbesStunServersTestResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetSnmpCredentialsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -27788,6 +28286,71 @@ func (c *ClientWithResponses) PutSettingsProbesWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParsePutSettingsProbesResponse(rsp)
+}
+
+// GetSettingsProbesStunServersWithResponse STUN server list for the gateway profile (#750): overlay row when written, shipped public defaults otherwise; ?defaults=1 returns the pristine list (restore-defaults data source)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /settings/probes/stun-servers (the `GetSettingsProbesStunServers` operationId).
+func (c *ClientWithResponses) GetSettingsProbesStunServersWithResponse(ctx context.Context, params *GetSettingsProbesStunServersParams, reqEditors ...RequestEditorFn) (*GetSettingsProbesStunServersResponse, error) {
+	rsp, err := c.GetSettingsProbesStunServers(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSettingsProbesStunServersResponse(rsp)
+}
+
+// PutSettingsProbesStunServersWithBodyWithResponse Replace the whole list (PUT semantics): host:port validated, deduped, max 8 rows; builtin rows may be disabled but never dropped; triggers the gateway re-probe
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /settings/probes/stun-servers (the `PutSettingsProbesStunServers` operationId).
+func (c *ClientWithResponses) PutSettingsProbesStunServersWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutSettingsProbesStunServersResponse, error) {
+	rsp, err := c.PutSettingsProbesStunServersWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutSettingsProbesStunServersResponse(rsp)
+}
+
+// PutSettingsProbesStunServersWithResponse Replace the whole list (PUT semantics): host:port validated, deduped, max 8 rows; builtin rows may be disabled but never dropped; triggers the gateway re-probe
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /settings/probes/stun-servers (the `PutSettingsProbesStunServers` operationId).
+func (c *ClientWithResponses) PutSettingsProbesStunServersWithResponse(ctx context.Context, body PutSettingsProbesStunServersJSONRequestBody, reqEditors ...RequestEditorFn) (*PutSettingsProbesStunServersResponse, error) {
+	rsp, err := c.PutSettingsProbesStunServers(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutSettingsProbesStunServersResponse(rsp)
+}
+
+// PostSettingsProbesStunServersTestWithBodyWithResponse One STUN Binding Request from the center (#750): mapped address + RTT, WYSIWYG check before saving a custom node; never persists
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /settings/probes/stun-servers/test (the `PostSettingsProbesStunServersTest` operationId).
+func (c *ClientWithResponses) PostSettingsProbesStunServersTestWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostSettingsProbesStunServersTestResponse, error) {
+	rsp, err := c.PostSettingsProbesStunServersTestWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostSettingsProbesStunServersTestResponse(rsp)
+}
+
+// PostSettingsProbesStunServersTestWithResponse One STUN Binding Request from the center (#750): mapped address + RTT, WYSIWYG check before saving a custom node; never persists
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /settings/probes/stun-servers/test (the `PostSettingsProbesStunServersTest` operationId).
+func (c *ClientWithResponses) PostSettingsProbesStunServersTestWithResponse(ctx context.Context, body PostSettingsProbesStunServersTestJSONRequestBody, reqEditors ...RequestEditorFn) (*PostSettingsProbesStunServersTestResponse, error) {
+	rsp, err := c.PostSettingsProbesStunServersTest(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostSettingsProbesStunServersTestResponse(rsp)
 }
 
 // GetSnmpCredentialsWithResponse SNMP credentials (masked, passphrases never echoed)
@@ -32101,6 +32664,97 @@ func ParsePutSettingsProbesResponse(rsp *http.Response) (*PutSettingsProbesRespo
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSettingsProbesStunServersResponse parses an HTTP response from a GetSettingsProbesStunServersWithResponse call
+func ParseGetSettingsProbesStunServersResponse(rsp *http.Response) (*GetSettingsProbesStunServersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSettingsProbesStunServersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProbeNATSettings
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutSettingsProbesStunServersResponse parses an HTTP response from a PutSettingsProbesStunServersWithResponse call
+func ParsePutSettingsProbesStunServersResponse(rsp *http.Response) (*PutSettingsProbesStunServersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutSettingsProbesStunServersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProbeNATSettings
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case rsp.StatusCode == 400:
+		break // No content-type
+
+	}
+
+	return response, nil
+}
+
+// ParsePostSettingsProbesStunServersTestResponse parses an HTTP response from a PostSettingsProbesStunServersTestWithResponse call
+func ParsePostSettingsProbesStunServersTestResponse(rsp *http.Response) (*PostSettingsProbesStunServersTestResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostSettingsProbesStunServersTestResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest struct {
+			Endpoint   *string  `json:"endpoint,omitempty"`
+			Error      *string  `json:"error,omitempty"`
+			MappedIp   *string  `json:"mapped_ip,omitempty"`
+			MappedPort *int     `json:"mapped_port,omitempty"`
+			Ok         *bool    `json:"ok,omitempty"`
+			RttMs      *float32 `json:"rtt_ms,omitempty"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case rsp.StatusCode == 400:
+		break // No content-type
 
 	}
 

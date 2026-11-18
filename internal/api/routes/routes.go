@@ -969,6 +969,17 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 				slog.Info("probe autogen: sweep after settings change", "created", created, "enabled", enabled, "disabled", disabled)
 			}
 		})
+		// #750: a server-list change re-runs the gateway profile on the next
+		// dispatch window; the subscriber logs now, the #753 task dispatch
+		// picks the list up from the overlay at plan-build time.
+		settingsSvc.SetSubscriber(service.SettingProbeNat, func(raw json.RawMessage) {
+			var cfg config.ProbeNATConfig
+			if err := json.Unmarshal(raw, &cfg); err != nil {
+				slog.Warn("probe nat: settings change decode failed", "error", err)
+				return
+			}
+			slog.Info("probe nat: server list updated", "enabled", cfg.EffectiveEnabled(), "servers", len(cfg.Servers))
+		})
 	}
 
 	// --- SNMP credential management (issue #135, SNMPv3) ---

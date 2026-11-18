@@ -6247,6 +6247,133 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/probes/stun-servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** STUN server list for the gateway profile (#750): overlay row when written, shipped public defaults otherwise; ?defaults=1 returns the pristine list (restore-defaults data source) */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description return the shipped defaults instead of the overlay */
+                    defaults?: "1";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description STUN server list + opt-in switch */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProbeNATSettings"];
+                    };
+                };
+            };
+        };
+        /** Replace the whole list (PUT semantics): host:port validated, deduped, max 8 rows; builtin rows may be disabled but never dropped; triggers the gateway re-probe */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ProbeNATSettings"];
+                };
+            };
+            responses: {
+                /** @description Post-update effective list */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProbeNATSettings"];
+                    };
+                };
+                /** @description invalid endpoint / duplicate / builtin dropped / over cap */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/probes/stun-servers/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** One STUN Binding Request from the center (#750): mapped address + RTT, WYSIWYG check before saving a custom node; never persists */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description host:port (3478 implied) */
+                        endpoint: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description ok=true with mapped_ip/mapped_port/rtt_ms, or ok=false with error */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            ok?: boolean;
+                            endpoint?: string;
+                            mapped_ip?: string;
+                            mapped_port?: number;
+                            rtt_ms?: number;
+                            error?: string;
+                        };
+                    };
+                };
+                /** @description invalid endpoint */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system": {
         parameters: {
             query?: never;
@@ -7651,6 +7778,23 @@ export interface components {
         ProbeAutogenPolicy: {
             enabled: boolean;
             max_targets?: number;
+        };
+        /** @description Gateway-profile policy + STUN server list (#750). Defaults are PUBLIC infrastructure only (the product carries no self-hosted STUN); enabled defaults OFF - probing exposes the site mapping to third parties, explicit opt-in. */
+        ProbeNATSettings: {
+            /** @description absent key resolves OFF (opt-in) */
+            enabled: boolean;
+            /** @enum {string} */
+            source: "overlay" | "default";
+            /** @description per-server query deadline */
+            burst_timeout_ms: number;
+            servers: {
+                /** @description host:port (3478 implied by the probe) */
+                endpoint: string;
+                label?: string;
+                /** @description shipped public rows may be disabled but never dropped */
+                builtin?: boolean;
+                enabled: boolean;
+            }[];
             interval_seconds?: number;
         };
         AutogenSweepResult: {

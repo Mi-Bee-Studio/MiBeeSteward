@@ -31,6 +31,11 @@ const (
 	// startup config at the point of use.
 	SettingProbeQuality = "probe.quality"
 	SettingProbeAutogen = "probe.autogen"
+	// ProbeNAT (设置 → 拨测 → STUN 服务器, #750): the gateway-profile
+	// policy + server list, config.ProbeNATConfig shape. Unlike the two
+	// switches above this overlay IS the source of truth (the shipped
+	// defaults are only a starting point; YAML carries no server list).
+	SettingProbeNat = "probe.nat"
 )
 
 // SettingsService is the runtime-editable settings overlay: system_settings

@@ -73,6 +73,11 @@ func registerSettingsRoutes(r chi.Router, settingsHandler *handler.SettingsHandl
 		// toggles, effective without a restart (overlay ?? config).
 		r.Get("/probes", settingsHandler.GetProbes)
 		r.Put("/probes", settingsHandler.UpdateProbes)
+		// STUN server list + one-shot test (#750): the gateway-profile
+		// (UPnP + NAT mapping behavior) infrastructure choice.
+		r.Get("/probes/stun-servers", settingsHandler.GetSTUNServers)
+		r.Put("/probes/stun-servers", settingsHandler.UpdateSTUNServers)
+		r.Post("/probes/stun-servers/test", settingsHandler.TestSTUNServer)
 	})
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth)
