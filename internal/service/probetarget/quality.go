@@ -332,6 +332,57 @@ type QualityReport struct {
 	Categories    []QualityCategoryReport `json:"categories"`
 }
 
+// hostnetAttribution codes (#746): stable attribution strings appended to a
+// DEGRADED vantage verdict when the agent's own network facts corroborate a
+// local fault. Attribution only — they never mint or upgrade a verdict.
+const (
+	hostnetCodeIfaceErrors = "vantage_local_degraded.iface_errors"
+	hostnetCodeRouteChange = "vantage_local_degraded.route_change"
+)
+
+// hostnetAttribution reads the vantage's newest HostNet samples (#746) and
+// reports local-fault evidence: interface error/drop counters that INCREASED
+// between the two newest samples, or a default-route fingerprint change. No
+// samples or fewer than two = no evidence, empty result.
+func (s *QualityService) hostnetAttribution(ctx context.Context, vantage string) []string {
+	rows, err := s.queries.ListVantageHostnetByVantage(ctx, db.ListVantageHostnetByVantageParams{
+		Vantage: vantage, Limit: 2,
+	})
+	if err != nil || len(rows) < 2 {
+		return nil
+	}
+	// Rows are newest-first: rows[0] is the newest sample.
+	var prevIface, curIface map[string]map[string]float64
+	_ = json.Unmarshal([]byte(rows[1].IfaceStats), &prevIface)
+	_ = json.Unmarshal([]byte(rows[0].IfaceStats), &curIface)
+	var codes []string
+	for iface, cur := range curIface {
+		if ifaceCountersIncreased(cur, prevIface[iface]) {
+			codes = append(codes, hostnetCodeIfaceErrors)
+			break
+		}
+	}
+	if rows[0].DefaultRoute != rows[1].DefaultRoute && rows[0].DefaultRoute != "" {
+		codes = append(codes, hostnetCodeRouteChange)
+	}
+	return codes
+}
+
+// hostnetCounters lists the counters whose increase counts as local-degradation
+// evidence. A counter going DOWN is an interface/agent reset, not a regression.
+var hostnetCounters = []string{"rx_errors", "tx_errors", "rx_dropped", "tx_dropped"}
+
+// ifaceCountersIncreased reports whether any tracked counter on one interface
+// went UP between the previous and current sample.
+func ifaceCountersIncreased(cur, prev map[string]float64) bool {
+	for _, counter := range hostnetCounters {
+		if cur[counter] > prev[counter] {
+			return true
+		}
+	}
+	return false
+}
+
 // Analyze aggregates the window's probe_results into per-CATEGORY verdicts
 // (#613): lan (device-bound targets), external (manual business targets) and
 // quality (the built-in matrix, verdict chain inside). Read-only and
@@ -470,7 +521,34 @@ func (s *QualityService) Analyze(ctx context.Context, windowMinutes int) (Qualit
 	}
 	cr.Targets = qualityMatrixTargets(cfg, targetByName, agg)
 	report.Categories = append(report.Categories, cr)
+
+	// HostNet attribution (#746): degraded vantages gain the agent's own
+	// local-fault evidence (interface counter increases, route change) —
+	// appended to existing reasons, never minting or upgrading a verdict.
+	s.applyHostnetAttribution(ctx, report.Categories)
 	return report, nil
+}
+
+// applyHostnetAttribution decorates every DEGRADED vantage verdict (category
+// level and group level) with hostnet evidence codes. Read-only on the
+// verdicts otherwise; a lookup failure leaves the verdict untouched.
+func (s *QualityService) applyHostnetAttribution(ctx context.Context, categories []QualityCategoryReport) {
+	decorate := func(v *QualityVantageReport) {
+		if v.Verdict != QualityVerdictDegraded {
+			return
+		}
+		v.Reasons = append(v.Reasons, s.hostnetAttribution(ctx, v.Vantage)...)
+	}
+	for ci := range categories {
+		for i := range categories[ci].Vantages {
+			decorate(&categories[ci].Vantages[i])
+		}
+		for gi := range categories[ci].Groups {
+			for i := range categories[ci].Groups[gi].Vantages {
+				decorate(&categories[ci].Groups[gi].Vantages[i])
+			}
+		}
+	}
 }
 
 // analyzeGroup computes one quality config group (verdict chain + matrix

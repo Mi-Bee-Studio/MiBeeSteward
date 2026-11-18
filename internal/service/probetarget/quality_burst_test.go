@@ -11,6 +11,7 @@ package probetarget
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"testing"
@@ -226,6 +227,116 @@ func TestQualityUDPEgressAttribution(t *testing.T) {
 		v := primaryVerdict(t, svc, "center")
 		require.Equal(t, QualityVerdictOK, v.Verdict)
 	})
+}
+
+// TestQualityHostnetAttribution pins the #746 attribution: a degraded
+// vantage whose agent reports rising interface error counters (or a default-
+// route change) gains the stable evidence codes; a healthy vantage and a
+// vantage with flat counters gain nothing.
+func TestQualityHostnetAttribution(t *testing.T) {
+	seedHostnet := func(t *testing.T, queries *db.Queries, vantage, route string, rxErrorsNewest, rxErrorsOlder float64) {
+		t.Helper()
+		ctx := context.Background()
+		iface := func(rx float64) string {
+			b, _ := json.Marshal(map[string]map[string]float64{
+				"eth0": {"rx_errors": rx, "tx_errors": 0, "rx_dropped": 0, "tx_dropped": 0},
+			})
+			return string(b)
+		}
+		newer := time.Now().UTC().Add(-1 * time.Minute).Format(time.RFC3339)
+		older := time.Now().UTC().Add(-6 * time.Minute).Format(time.RFC3339)
+		require.NoError(t, queries.InsertVantageHostnet(ctx, db.InsertVantageHostnetParams{
+			Vantage: vantage, CheckedAt: older, IfaceStats: iface(rxErrorsOlder),
+			DefaultRoute: route, DnsMs: 5,
+		}))
+		require.NoError(t, queries.InsertVantageHostnet(ctx, db.InsertVantageHostnetParams{
+			Vantage: vantage, CheckedAt: newer, IfaceStats: iface(rxErrorsNewest),
+			DefaultRoute: route, DnsMs: 5,
+		}))
+	}
+	t.Run("rising iface errors corroborate degradation", func(t *testing.T) {
+		svc, queries := setupQualityCfg(t, burstTestConfig())
+		cfg := burstTestConfig()
+		// The agent vantage's burst target degrades (loss over threshold).
+		seedProbeRows(t, queries, "q-ping", "icmp", "192.0.2.10", "agent:lan-42",
+			`{"burst_count":10}`, "ssss",
+			[]float64{0, 0, 20, 40}, []float64{2, 2, 2, 2})
+		seedQualityWorld(t, queries, cfg, "center", map[string]string{
+			"q-dns-a": "ssss", "q-dns-b": "ssss", "q-http": "ssss", "q-direct": "ssss", "q-int-http": "ssss",
+		}, 50)
+		seedHostnet(t, queries, "agent:lan-42", "eth0|192.0.2.1", 9500, 12)
+		report, err := svc.Analyze(context.Background(), 15)
+		require.NoError(t, err)
+		found := false
+		for _, cat := range report.Categories {
+			for _, g := range cat.Groups {
+				for _, v := range g.Vantages {
+					if v.Vantage != "agent:lan-42" {
+						continue
+					}
+					require.Equal(t, QualityVerdictDegraded, v.Verdict)
+					require.Contains(t, v.Reasons, "vantage_local_degraded.iface_errors")
+					found = true
+				}
+			}
+		}
+		require.True(t, found, "agent vantage verdict evaluated")
+	})
+	t.Run("route change corroborates degradation", func(t *testing.T) {
+		svc, queries := setupQualityCfg(t, burstTestConfig())
+		cfg := burstTestConfig()
+		seedProbeRows(t, queries, "q-ping", "icmp", "192.0.2.10", "agent:lan-42",
+			`{"burst_count":10}`, "ssss",
+			[]float64{0, 0, 20, 40}, []float64{2, 2, 2, 2})
+		seedQualityWorld(t, queries, cfg, "center", map[string]string{
+			"q-dns-a": "ssss", "q-dns-b": "ssss", "q-http": "ssss", "q-direct": "ssss", "q-int-http": "ssss",
+		}, 50)
+		// Same flat counters, but the default route moved between samples.
+		seedHostnet(t, queries, "agent:lan-42", "eth0|192.0.2.1", 12, 12)
+		seedHostnetRouteChange(t, queries, "agent:lan-42")
+		report, err := svc.Analyze(context.Background(), 15)
+		require.NoError(t, err)
+		for _, cat := range report.Categories {
+			for _, g := range cat.Groups {
+				for _, v := range g.Vantages {
+					if v.Vantage == "agent:lan-42" {
+						require.Contains(t, v.Reasons, "vantage_local_degraded.route_change")
+					}
+				}
+			}
+		}
+	})
+	t.Run("healthy vantage gains nothing", func(t *testing.T) {
+		svc, queries := setupQualityCfg(t, burstTestConfig())
+		cfg := burstTestConfig()
+		seedQualityWorld(t, queries, cfg, "center", map[string]string{
+			"q-dns-a": "ssss", "q-dns-b": "ssss", "q-http": "ssss", "q-direct": "ssss", "q-int-http": "ssss",
+		}, 50)
+		seedHostnet(t, queries, "center", "eth0|192.0.2.1", 12, 12)
+		report, err := svc.Analyze(context.Background(), 15)
+		require.NoError(t, err)
+		for _, cat := range report.Categories {
+			for _, v := range cat.Vantages {
+				require.NotContains(t, v.Reasons, "vantage_local_degraded.iface_errors")
+				require.NotContains(t, v.Reasons, "vantage_local_degraded.route_change")
+			}
+		}
+	})
+}
+
+// seedHostnetRouteChange overwrites the route fingerprint on the newest
+// sample only — a route event without counter movement.
+func seedHostnetRouteChange(t *testing.T, queries *db.Queries, vantage string) {
+	t.Helper()
+	ctx := context.Background()
+	iface, _ := json.Marshal(map[string]map[string]float64{
+		"eth0": {"rx_errors": 12, "tx_errors": 0, "rx_dropped": 0, "tx_dropped": 0},
+	})
+	newer := time.Now().UTC().Add(-30 * time.Second).Format(time.RFC3339)
+	require.NoError(t, queries.InsertVantageHostnet(ctx, db.InsertVantageHostnetParams{
+		Vantage: vantage, CheckedAt: newer, IfaceStats: string(iface),
+		DefaultRoute: "eth0|198.51.100.1", DnsMs: 5,
+	}))
 }
 
 // TestQualityUDPEgressAttributionSimple pins the same attribution on the

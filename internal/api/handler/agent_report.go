@@ -133,6 +133,28 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// HostNet sample (#746): the agent's local-network facts land in the
+	// vantage_hostnet series so quality attribution can answer whether THIS
+	// vantage's own network degraded. Before the empty-report early return —
+	// heartbeats carry it too. Best-effort: a failed insert never fails the
+	// report (attribution data, not inventory).
+	if rep.Meta != nil && rep.Meta.Hostnet != nil {
+		hn := rep.Meta.Hostnet
+		ifaceJSON, jerr := json.Marshal(hn.IfaceStats)
+		if jerr == nil {
+			if ierr := h.queries.InsertVantageHostnet(r.Context(), db.InsertVantageHostnetParams{
+				Vantage:      domain.ProbeVantageAgentPrefix + agentID,
+				CheckedAt:    hn.CheckedAt,
+				IfaceStats:   string(ifaceJSON),
+				DefaultRoute: hn.DefaultRoute,
+				DnsMs:        hn.DnsMs,
+				Note:         hn.Note,
+			}); ierr != nil {
+				slog.Debug("agent report: hostnet insert failed", "agent_id", agentID, "error", ierr)
+			}
+		}
+	}
+
 	// Prerequisite backfill (issue #19 前置工作): if the agent ships its
 	// configured CIDR AND the bound network's row lacks one, adopt it. Agent
 	// networks are created via the admin API without a cidr today, so without

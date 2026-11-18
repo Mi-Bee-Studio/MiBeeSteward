@@ -11,6 +11,7 @@ pub mod egress;
 pub mod ebpf_source;
 pub mod engine;
 pub mod fpsync;
+pub mod hostnet;
 pub mod prober;
 pub mod selfnet;
 pub mod tls_provider;
@@ -54,6 +55,9 @@ mod tests {
                 // #686 self-network detection; empty vec omits from JSON
                 // like an old agent that never detected anything.
                 self_interfaces: Vec::new(),
+                // #746/#749: no sample yet, unknown offset — both omit.
+                hostnet: None,
+                clock_offset_ms: 0.0,
             }),
             hosts: Some(vec![ReportedHost {
                 ip: "192.0.2.5".into(),

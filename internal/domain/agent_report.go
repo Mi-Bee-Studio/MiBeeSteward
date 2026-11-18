@@ -80,6 +80,30 @@ type AgentMeta struct {
 	// (the configured claim). Absent on older agents; the center uses the
 	// primary entry to fill a blank networks.cidr, never to overwrite one.
 	SelfInterfaces []AgentSelfInterface `json:"self_interfaces,omitempty"`
+	// Hostnet is the agent's newest local-network sample (#746): interface
+	// error counters, default-route fingerprint, DNS resolution timing —
+	// the attribution side of "is it my network or the target". Nil on
+	// sampling failure and on older agents.
+	Hostnet *AgentHostnet `json:"hostnet,omitempty"`
+	// ClockOffsetMs is the agent's SNTP offset vs the public NTP pool
+	// (#749), local minus server, in milliseconds. 0 = unknown/skipped; the
+	// report-time ScannedAt heuristic stays the coarse signal, this is the
+	// calibrated confirmation.
+	ClockOffsetMs float64 `json:"clock_offset_ms,omitempty"`
+}
+
+// AgentHostnet is one HostNet sample riding AgentMeta (#746). Counters are
+// RAW (not deltas): the center computes deltas between consecutive samples,
+// so an agent restart resetting counters reads as reset, not regression.
+type AgentHostnet struct {
+	CheckedAt string `json:"checked_at"` // RFC3339 UTC, sampler clock
+	// iface → {rx_errors, tx_errors, rx_dropped, tx_dropped}
+	IfaceStats map[string]map[string]uint64 `json:"iface_stats"`
+	// Default-route fingerprint "iface|gateway-dotted" ('' = none); a
+	// change between consecutive samples is a route event.
+	DefaultRoute string  `json:"default_route,omitempty"`
+	DnsMs        float64 `json:"dns_ms,omitempty"` // last resolution latency
+	Note         string  `json:"note,omitempty"`   // sampler remarks
 }
 
 // AgentSelfInterface is one detected on-link subnet of the agent host

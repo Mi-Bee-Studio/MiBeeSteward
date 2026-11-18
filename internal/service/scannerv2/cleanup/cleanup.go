@@ -130,6 +130,7 @@ func (s *Service) runOnce(ctx context.Context) {
 	s.pruneHostServices(ctx)
 	s.pruneHostTLSCerts(ctx)
 	s.pruneProbeResults(ctx)
+	s.pruneVantageHostnet(ctx)
 	s.pruneProbeExt(ctx)
 	s.pruneRoamedOrphans(ctx)
 	// After the roamed-orphan sweep (and any other device-row delete — the
@@ -362,6 +363,20 @@ func (s *Service) pruneProbeResults(ctx context.Context) {
 	days := s.cfg.ProbeResultsDays
 	s.sweepBatched(ctx, "probe_results", days, func(cut time.Time, limit int64) (int64, error) {
 		return s.queries.DeleteProbeResultsStaleBatched(ctx, db.DeleteProbeResultsStaleBatchedParams{
+			CheckedAt: cut.UTC().Format(time.RFC3339),
+			Limit:     limit,
+		})
+	})
+}
+
+// pruneVantageHostnet prunes the per-vantage local-network facts series
+// (#746) with the probe_results window — attribution reads the newest few
+// samples per vantage, everything older than the probe history horizon is
+// noise. Same RFC3339 TEXT column convention as pruneProbeResults.
+func (s *Service) pruneVantageHostnet(ctx context.Context) {
+	days := s.cfg.ProbeResultsDays
+	s.sweepBatched(ctx, "vantage_hostnet", days, func(cut time.Time, limit int64) (int64, error) {
+		return s.queries.DeleteVantageHostnetStaleBatched(ctx, db.DeleteVantageHostnetStaleBatchedParams{
 			CheckedAt: cut.UTC().Format(time.RFC3339),
 			Limit:     limit,
 		})
