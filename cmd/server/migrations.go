@@ -29,8 +29,10 @@ import (
 // asset register columns (#662). Version 10 makes the (ip, network) slot
 // unique among LIVE rows only — an archived device's ip_address is its last
 // recorded address (history), so a new occupant of that address must not be
-// blocked by — or morph — the archived record (#737).
-const SchemaVersion = 10
+// blocked by — or morph — the archived record (#737). Version 11 adds burst
+// sampling metrics to probe_results (loss_pct/jitter_ms, #744) and the
+// vantage_hostnet series for local-network attribution (#746).
+const SchemaVersion = 11
 
 // runMigrations creates a fresh database from the embedded schema and stamps
 // the version, or verifies an existing database is at the current version.

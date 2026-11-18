@@ -31,8 +31,8 @@ func (q *Queries) CountProbeResultsByTarget(ctx context.Context, arg CountProbeR
 const createProbeResult = `-- name: CreateProbeResult :exec
 
 
-INSERT INTO probe_results (target_id, status, latency_ms, status_code, error_message, tls_version, cert_not_after, cert_trusted, checked_at, vantage)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO probe_results (target_id, status, latency_ms, status_code, error_message, tls_version, cert_not_after, cert_trusted, checked_at, vantage, loss_pct, jitter_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateProbeResultParams struct {
@@ -46,6 +46,8 @@ type CreateProbeResultParams struct {
 	CertTrusted  int64   `json:"cert_trusted"`
 	CheckedAt    string  `json:"checked_at"`
 	Vantage      string  `json:"vantage"`
+	LossPct      float64 `json:"loss_pct"`
+	JitterMs     float64 `json:"jitter_ms"`
 }
 
 // SPDX-License-Identifier: AGPL-3.0-or-later
@@ -62,6 +64,7 @@ type CreateProbeResultParams struct {
 // Appends one outcome row per probe execution. checked_at is an RFC3339 UTC
 // string supplied by the caller (NOT CURRENT_TIMESTAMP: the engine stamps the
 // probe start, and string timestamps keep SQLite date() working).
+// loss_pct/jitter_ms (#744) are burst-sampling metrics; 0 = not measured.
 func (q *Queries) CreateProbeResult(ctx context.Context, arg CreateProbeResultParams) error {
 	_, err := q.db.ExecContext(ctx, createProbeResult,
 		arg.TargetID,
@@ -74,6 +77,8 @@ func (q *Queries) CreateProbeResult(ctx context.Context, arg CreateProbeResultPa
 		arg.CertTrusted,
 		arg.CheckedAt,
 		arg.Vantage,
+		arg.LossPct,
+		arg.JitterMs,
 	)
 	return err
 }
@@ -116,7 +121,7 @@ func (q *Queries) DeleteProbeResultsStaleBatched(ctx context.Context, arg Delete
 }
 
 const latestProbeResultsPerVantage = `-- name: LatestProbeResultsPerVantage :many
-SELECT p.id, p.target_id, p.status, p.latency_ms, p.status_code, p.error_message, p.tls_version, p.cert_not_after, p.cert_trusted, p.checked_at, p.vantage
+SELECT p.id, p.target_id, p.status, p.latency_ms, p.status_code, p.error_message, p.tls_version, p.cert_not_after, p.cert_trusted, p.checked_at, p.vantage, p.loss_pct, p.jitter_ms
 FROM probe_results p
 JOIN (
     SELECT i.vantage, MAX(i.id) AS max_id
@@ -151,6 +156,8 @@ func (q *Queries) LatestProbeResultsPerVantage(ctx context.Context, targetID int
 			&i.CertTrusted,
 			&i.CheckedAt,
 			&i.Vantage,
+			&i.LossPct,
+			&i.JitterMs,
 		); err != nil {
 			return nil, err
 		}
@@ -233,7 +240,7 @@ func (q *Queries) ListProbeQualityBuckets(ctx context.Context, arg ListProbeQual
 }
 
 const listProbeResultsByTarget = `-- name: ListProbeResultsByTarget :many
-SELECT id, target_id, status, latency_ms, status_code, error_message, tls_version, cert_not_after, cert_trusted, checked_at, vantage
+SELECT id, target_id, status, latency_ms, status_code, error_message, tls_version, cert_not_after, cert_trusted, checked_at, vantage, loss_pct, jitter_ms
 FROM probe_results
 WHERE target_id = ? AND (? = '' OR vantage = ?)
 ORDER BY checked_at DESC, id DESC
@@ -280,6 +287,8 @@ func (q *Queries) ListProbeResultsByTarget(ctx context.Context, arg ListProbeRes
 			&i.CertTrusted,
 			&i.CheckedAt,
 			&i.Vantage,
+			&i.LossPct,
+			&i.JitterMs,
 		); err != nil {
 			return nil, err
 		}
@@ -295,7 +304,7 @@ func (q *Queries) ListProbeResultsByTarget(ctx context.Context, arg ListProbeRes
 }
 
 const listProbeResultsSince = `-- name: ListProbeResultsSince :many
-SELECT id, target_id, status, latency_ms, checked_at, vantage
+SELECT id, target_id, status, latency_ms, checked_at, vantage, loss_pct, jitter_ms
 FROM probe_results
 WHERE checked_at >= ?
 ORDER BY checked_at ASC, id ASC
@@ -308,12 +317,15 @@ type ListProbeResultsSinceRow struct {
 	LatencyMs float64 `json:"latency_ms"`
 	CheckedAt string  `json:"checked_at"`
 	Vantage   string  `json:"vantage"`
+	LossPct   float64 `json:"loss_pct"`
+	JitterMs  float64 `json:"jitter_ms"`
 }
 
 // Raw in-window rows for the egress-quality analyzer (#608): aggregation
 // (ok-rate, exact p50) happens in Go over this bounded set - the default
 // 15-minute window holds at most a few thousand rows even on a busy probe
-// table. Oldest-first so percentiles read naturally.
+// table. Oldest-first so percentiles read naturally. loss_pct/jitter_ms ride
+// along for the burst-metric verdicts (#744).
 func (q *Queries) ListProbeResultsSince(ctx context.Context, checkedAt string) ([]ListProbeResultsSinceRow, error) {
 	rows, err := q.db.QueryContext(ctx, listProbeResultsSince, checkedAt)
 	if err != nil {
@@ -330,6 +342,8 @@ func (q *Queries) ListProbeResultsSince(ctx context.Context, checkedAt string) (
 			&i.LatencyMs,
 			&i.CheckedAt,
 			&i.Vantage,
+			&i.LossPct,
+			&i.JitterMs,
 		); err != nil {
 			return nil, err
 		}

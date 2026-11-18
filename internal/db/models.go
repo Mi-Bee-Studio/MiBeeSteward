@@ -389,6 +389,8 @@ type ProbeResult struct {
 	CertTrusted  int64   `json:"cert_trusted"`
 	CheckedAt    string  `json:"checked_at"`
 	Vantage      string  `json:"vantage"`
+	LossPct      float64 `json:"loss_pct"`
+	JitterMs     float64 `json:"jitter_ms"`
 }
 
 type ProbeTarget struct {
@@ -622,6 +624,16 @@ type UserTotp struct {
 	Enabled     int64     `json:"enabled"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type VantageHostnet struct {
+	ID           int64   `json:"id"`
+	Vantage      string  `json:"vantage"`
+	CheckedAt    string  `json:"checked_at"`
+	IfaceStats   string  `json:"iface_stats"`
+	DefaultRoute string  `json:"default_route"`
+	DnsMs        float64 `json:"dns_ms"`
+	Note         string  `json:"note"`
 }
 
 type Vlan struct {

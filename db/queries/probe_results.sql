@@ -15,8 +15,9 @@
 -- Appends one outcome row per probe execution. checked_at is an RFC3339 UTC
 -- string supplied by the caller (NOT CURRENT_TIMESTAMP: the engine stamps the
 -- probe start, and string timestamps keep SQLite date() working).
-INSERT INTO probe_results (target_id, status, latency_ms, status_code, error_message, tls_version, cert_not_after, cert_trusted, checked_at, vantage)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+-- loss_pct/jitter_ms (#744) are burst-sampling metrics; 0 = not measured.
+INSERT INTO probe_results (target_id, status, latency_ms, status_code, error_message, tls_version, cert_not_after, cert_trusted, checked_at, vantage, loss_pct, jitter_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: ListProbeResultsByTarget :many
 -- Newest-first series for the history view; id DESC breaks RFC3339 ties for
@@ -24,7 +25,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 -- short-circuit idiom: pass an empty string to get all vantages interleaved,
 -- or one vantage value for that executor's track only.
 -- CountProbeResultsByTarget MUST mirror this WHERE.
-SELECT id, target_id, status, latency_ms, status_code, error_message, tls_version, cert_not_after, cert_trusted, checked_at, vantage
+SELECT id, target_id, status, latency_ms, status_code, error_message, tls_version, cert_not_after, cert_trusted, checked_at, vantage, loss_pct, jitter_ms
 FROM probe_results
 WHERE target_id = ? AND (? = '' OR vantage = ?)
 ORDER BY checked_at DESC, id DESC
@@ -39,7 +40,7 @@ WHERE target_id = ? AND (? = '' OR vantage = ?);
 -- Newest row of each vantage track for one target. Within one vantage rows
 -- are inserted strictly in probe order (single writer per track), so MAX(id)
 -- is that track's newest regardless of checked_at string ties.
-SELECT p.id, p.target_id, p.status, p.latency_ms, p.status_code, p.error_message, p.tls_version, p.cert_not_after, p.cert_trusted, p.checked_at, p.vantage
+SELECT p.id, p.target_id, p.status, p.latency_ms, p.status_code, p.error_message, p.tls_version, p.cert_not_after, p.cert_trusted, p.checked_at, p.vantage, p.loss_pct, p.jitter_ms
 FROM probe_results p
 JOIN (
     SELECT i.vantage, MAX(i.id) AS max_id
@@ -67,8 +68,9 @@ WHERE id IN (
 -- Raw in-window rows for the egress-quality analyzer (#608): aggregation
 -- (ok-rate, exact p50) happens in Go over this bounded set - the default
 -- 15-minute window holds at most a few thousand rows even on a busy probe
--- table. Oldest-first so percentiles read naturally.
-SELECT id, target_id, status, latency_ms, checked_at, vantage
+-- table. Oldest-first so percentiles read naturally. loss_pct/jitter_ms ride
+-- along for the burst-metric verdicts (#744).
+SELECT id, target_id, status, latency_ms, checked_at, vantage, loss_pct, jitter_ms
 FROM probe_results
 WHERE checked_at >= ?
 ORDER BY checked_at ASC, id ASC;

@@ -403,6 +403,10 @@ type AgentResultReport struct {
 	// Phases is the agent-measured per-stage breakdown (#717); absent on
 	// agents that don't measure it (forward-compatible decode).
 	Phases *probe.Phases `json:"phases,omitempty"`
+	// Burst sampling metrics (#744, icmp module); 0 = not measured. Same
+	// forward-compatible decode: older agents omit, the zero stays.
+	LossPct  float64 `json:"loss_pct"`
+	JitterMs float64 `json:"jitter_ms"`
 }
 
 // IngestAgentResults persists a batch of agent-side probe results (#277).
@@ -431,6 +435,8 @@ func (s *Service) IngestAgentResults(ctx context.Context, agentID string, result
 			CertTrusted:  certTrustedDB(r.CertTrusted),
 			CheckedAt:    r.CheckedAt,
 			Vantage:      own,
+			LossPct:      r.LossPct,
+			JitterMs:     r.JitterMs,
 		}); err != nil {
 			return accepted, err
 		}

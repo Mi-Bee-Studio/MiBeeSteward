@@ -22,6 +22,11 @@ type Result struct {
 	// StatusCode is the final HTTP status code (http module only; 0 otherwise,
 	// including error cases where no response was received).
 	StatusCode int
+	// Burst sampling metrics (#744, icmp module only): packet loss percentage
+	// and jitter over one burst round. Zero = not measured (single-ping rounds
+	// and non-icmp modules keep the legacy row shape).
+	LossPct  float64
+	JitterMs float64
 	// Phases carries the per-stage timing breakdown (#717): nil when the
 	// module does not measure stages (dns) or the run failed before any
 	// stage completed. Zero fields inside mean "not measured this run".

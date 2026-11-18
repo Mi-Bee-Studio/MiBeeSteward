@@ -302,6 +302,8 @@ func (e *Engine) probeTarget(ctx context.Context, t db.ProbeTarget) (domain.Prob
 		CertTrusted:  certTrustedDB(out.CertTrusted),
 		CheckedAt:    checkedAt,
 		Vantage:      domain.ProbeVantageCenter, // the engine IS the center executor
+		LossPct:      out.LossPct,
+		JitterMs:     out.JitterMs,
 	}); err != nil {
 		e.logger.Error("probe engine: persist result failed", "target_id", t.ID, "error", err)
 	}

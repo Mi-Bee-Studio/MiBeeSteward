@@ -48,6 +48,9 @@ type Outcome struct {
 	// Phases is the per-stage timing breakdown (#717); nil when the module
 	// run produced none (dns/tls modules, any failed run).
 	Phases *probe.Phases
+	// Burst sampling metrics (#744, icmp module only); 0 = not measured.
+	LossPct  float64
+	JitterMs float64
 }
 
 // outcome kept as a spelling alias so the engine-side call sites read
@@ -112,6 +115,17 @@ func (x *targetExecutor) execute(ctx context.Context, t db.ProbeTarget) outcome 
 		}
 		return x.executeSimple(ctx, t, "tcp", timeout)
 	case "icmp":
+		if opts != nil && (opts.BurstCount > 0 || opts.BurstIntervalMs > 0) {
+			// Burst round (#744): a one-off prober carrying the target's
+			// burst shape; the shared single-ping prober stays untouched so
+			// option-less rows keep the legacy behavior bit for bit.
+			p := &probe.ICMPProber{BurstCount: opts.BurstCount, BurstIntervalMS: opts.BurstIntervalMs}
+			res, perr := p.Probe(ctx, t.Target, timeout)
+			if perr != nil {
+				return outcome{Status: classifyError(perr.Error()), ErrMsg: perr.Error()}
+			}
+			return outcomeFromResult(res)
+		}
 		return x.executeSimple(ctx, t, "icmp", timeout)
 	case "dns":
 		return x.executeDNS(ctx, t, timeout)
@@ -221,6 +235,8 @@ func outcomeFromResult(res *probe.Result) outcome {
 		Latency:    res.Latency,
 		StatusCode: res.StatusCode,
 		Phases:     res.Phases,
+		LossPct:    res.LossPct,
+		JitterMs:   res.JitterMs,
 	}
 	if res.Success {
 		out.Status = "success"

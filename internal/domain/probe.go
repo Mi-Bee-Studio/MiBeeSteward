@@ -102,6 +102,12 @@ type ProbeOptions struct {
 	Send       string `json:"send,omitempty"`        // optional payload written right after connect (ASCII; no binary in v1)
 	Expect     string `json:"expect,omitempty"`      // banner match against the first bytes read
 	ExpectMode string `json:"expect_mode,omitempty"` // contains (default) | regex
+
+	// icmp module (#744): burst sampling turns one round into N echoes so
+	// microburst loss and jitter become first-class metrics instead of a
+	// binary ok/fail. Absent fields keep the legacy single-ping behavior.
+	BurstCount      int `json:"burst_count,omitempty"`       // echoes per round; 0/1 = single ping (legacy); max 20
+	BurstIntervalMs int `json:"burst_interval_ms,omitempty"` // gap between echoes; 0 = prober default (20ms); 10-1000
 }
 
 // Probe option enums.
@@ -145,6 +151,7 @@ func ValidateProbeOptions(module string, opts *ProbeOptions) error {
 		opts.KeywordMode != "", opts.IgnoreTLSErrors)
 	dnsSet := setFor(opts.Record != "", opts.Resolver != "", len(opts.ExpectedIPs) > 0)
 	tcpSet := setFor(opts.Send != "", opts.Expect != "", opts.ExpectMode != "")
+	icmpSet := setFor(opts.BurstCount != 0, opts.BurstIntervalMs != 0)
 
 	switch module {
 	case "http":
@@ -159,8 +166,22 @@ func ValidateProbeOptions(module string, opts *ProbeOptions) error {
 		if httpSet || dnsSet {
 			return fmt.Errorf("options contain http/dns fields that do not apply to the tcp module")
 		}
-	case "icmp", "tls":
+	case "icmp":
 		if httpSet || dnsSet || tcpSet {
+			return fmt.Errorf("options contain http/dns/tcp fields that do not apply to the icmp module")
+		}
+		if opts.BurstCount < 0 || opts.BurstCount > 20 {
+			return fmt.Errorf("burst_count must be 0 (single ping) or 1-20")
+		}
+		if opts.BurstIntervalMs != 0 && (opts.BurstIntervalMs < 10 || opts.BurstIntervalMs > 1000) {
+			return fmt.Errorf("burst_interval_ms must be 0 (prober default) or 10-1000")
+		}
+		if opts.BurstCount == 0 && opts.BurstIntervalMs != 0 {
+			return fmt.Errorf("burst_interval_ms requires burst_count")
+		}
+		return nil
+	case "tls":
+		if httpSet || dnsSet || tcpSet || icmpSet {
 			return fmt.Errorf("the %s module takes no options", module)
 		}
 		return nil
@@ -319,6 +340,8 @@ type ProbeVantageLatest struct {
 	LatencyMs    float64 `json:"latency_ms"`
 	ErrorMessage string  `json:"error_message,omitempty"`
 	CheckedAt    string  `json:"checked_at"`
+	LossPct      float64 `json:"loss_pct,omitempty"`  // burst sampling (#744)
+	JitterMs     float64 `json:"jitter_ms,omitempty"` // burst sampling (#744)
 }
 
 type ProbeTargetListResponse struct {
@@ -339,6 +362,10 @@ type ProbeResultResponse struct {
 	CertTrusted  *bool   `json:"cert_trusted,omitempty"` // nil = no cert collected this run
 	CheckedAt    string  `json:"checked_at"`
 	Vantage      string  `json:"vantage"` // which executor produced this row (#277)
+	// Burst sampling metrics (#744); 0 = not measured (pre-burst rows and
+	// non-icmp modules).
+	LossPct  float64 `json:"loss_pct,omitempty"`
+	JitterMs float64 `json:"jitter_ms,omitempty"`
 }
 
 type ProbeResultListResponse struct {
