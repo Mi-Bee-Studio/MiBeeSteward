@@ -816,6 +816,10 @@ CREATE TABLE IF NOT EXISTS agent_status (
     -- ('icmp,http,tls,tcp,dns'); '' = legacy agent that never reported
     -- capabilities (dispatcher treats it as the historical set icmp/http/tls).
     supported_modules TEXT NOT NULL DEFAULT '',
+    -- Last report's source address as the center saw it (#747): the peer
+    -- address for the mesh-matrix autogen (agent-to-agent and
+    -- center-to-agent icmp targets). '' until the first report lands.
+    last_source_ip TEXT NOT NULL DEFAULT '',
     last_report_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

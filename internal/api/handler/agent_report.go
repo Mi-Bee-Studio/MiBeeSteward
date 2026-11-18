@@ -128,7 +128,12 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 		if offset > saneRange || offset < -saneRange {
 			offset = 0
 		}
-		if err := h.fleetSvc.UpsertAgentStatus(r.Context(), agentID, rep.Meta, offset); err != nil {
+		// #747: the report's source address as the center saw it — the peer
+		// address the mesh-matrix autogen dials. X-Forwarded-For is NOT
+		// trusted here (trusted_proxies defaults to empty = trust no proxy);
+		// the direct peer is the truth this deployment sees.
+		sourceIP := strings.TrimSpace(strings.SplitN(r.RemoteAddr, ":", 2)[0])
+		if err := h.fleetSvc.UpsertAgentStatus(r.Context(), agentID, rep.Meta, offset, sourceIP); err != nil {
 			slog.Debug("agent report: fleet status upsert failed", "agent_id", agentID, "error", err)
 		}
 	}

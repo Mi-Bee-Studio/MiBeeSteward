@@ -29,6 +29,7 @@ type AgentStatus struct {
 	ScansTotal         int64     `json:"scans_total"`
 	FingerprintRev     string    `json:"fingerprint_rev"`
 	SupportedModules   string    `json:"supported_modules"`
+	LastSourceIp       string    `json:"last_source_ip"`
 	LastReportAt       time.Time `json:"last_report_at"`
 }
 

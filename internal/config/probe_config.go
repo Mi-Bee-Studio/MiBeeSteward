@@ -243,6 +243,21 @@ type ProbeAutogenConfig struct {
 	MaxTargets int `koanf:"max_targets"`
 	// SweepIntervalMinutes is the reconcile cadence.
 	SweepIntervalMinutes int `koanf:"sweep_interval_minutes"`
+	// Mesh (#747): auto-generate the vantage matrix targets (center -> each
+	// agent, each agent -> every other agent) from the agents' report source
+	// addresses, so the N-by-N site-to-site RTT/loss/jitter matrix exists
+	// without manual wiring. Nil = default ON (same contract as quality's
+	// Enabled pointer); read through EffectiveMeshEnabled.
+	MeshEnabled *bool `koanf:"mesh_enabled"`
+}
+
+// EffectiveMeshEnabled resolves the mesh-matrix switch with the shipped
+// default (on): absent key = on, explicit false = off.
+func (a ProbeAutogenConfig) EffectiveMeshEnabled() bool {
+	if a.MeshEnabled != nil {
+		return *a.MeshEnabled
+	}
+	return true
 }
 
 // DefaultEgressSources is the shipped echo-source set (#718): a domestic and
