@@ -609,6 +609,30 @@ async fn execute_command(
             let status = if result.contains("\"error\"") { "failed" } else { "done" };
             let _ = client.complete_command(cmd.id, status, &result).await;
         }
+        "gateway_probe" => {
+            // Gateway profile (#752/#753): the payload carries the center's
+            // effective STUN list (public + user nodes) and a timeout; the
+            // agent runs UPnP IGD + NAT mapping classification and reports
+            // the evidence bundle back. A dead section stays at its default
+            // (the report notes why) — the command never fails the loop.
+            #[derive(serde::Deserialize)]
+            struct GatewayProbePayload {
+                #[serde(default)]
+                servers: Vec<String>,
+                #[serde(default)]
+                timeout_ms: u64,
+            }
+            let result = match serde_json::from_str::<GatewayProbePayload>(&cmd.payload) {
+                Ok(p) => {
+                    let timeout = std::time::Duration::from_millis(if p.timeout_ms > 0 { p.timeout_ms } else { 1500 });
+                    let report = mibee_agent::gateway::run_gateway_probe(&p.servers, timeout).await;
+                    serde_json::to_string(&report).unwrap_or_else(|_| r#"{"error":"serialize"}"#.to_string())
+                }
+                Err(e) => format!(r#"{{"error":"bad payload: {e}"}}"#),
+            };
+            let status = if result.contains("\"error\"") { "failed" } else { "done" };
+            let _ = client.complete_command(cmd.id, status, &result).await;
+        }
         "restart" | "config-reload" => {
             let _ = client
                 .complete_command(

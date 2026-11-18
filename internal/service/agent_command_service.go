@@ -65,12 +65,13 @@ var OpsCommands = map[string]bool{
 }
 
 // ValidCommands is the full enqueue whitelist (scan + probe plans + the
-// egress echo plan lane #718 + gated ops family).
+// egress echo plan lane #718 + the gateway-profile probe #753 + gated ops).
 func ValidCommands() map[string]bool {
 	return map[string]bool{
 		"scan":          true,
 		"probe":         true,
 		"egress":        true,
+		"gateway_probe": true,
 		"restart":       true,
 		"config-reload": true,
 		"logs-tail":     true,

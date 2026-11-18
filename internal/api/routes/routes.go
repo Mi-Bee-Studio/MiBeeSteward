@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -969,16 +970,43 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 				slog.Info("probe autogen: sweep after settings change", "created", created, "enabled", enabled, "disabled", disabled)
 			}
 		})
-		// #750: a server-list change re-runs the gateway profile on the next
-		// dispatch window; the subscriber logs now, the #753 task dispatch
-		// picks the list up from the overlay at plan-build time.
+		// #750/#753: a server-list change (or the opt-in flip) re-dispatches
+		// the gateway profile: one gateway_probe command per registered
+		// agent carrying the EFFECTIVE enabled list (public + user nodes).
+		// The completion ingest lands evidence in scan_attributes.gateway.
 		settingsSvc.SetSubscriber(service.SettingProbeNat, func(raw json.RawMessage) {
 			var cfg config.ProbeNATConfig
 			if err := json.Unmarshal(raw, &cfg); err != nil {
 				slog.Warn("probe nat: settings change decode failed", "error", err)
 				return
 			}
-			slog.Info("probe nat: server list updated", "enabled", cfg.EffectiveEnabled(), "servers", len(cfg.Servers))
+			if !cfg.EffectiveEnabled() {
+				slog.Info("probe nat: disabled, no dispatch", "servers", len(cfg.Servers))
+				return
+			}
+			servers := make([]string, 0, len(cfg.Servers))
+			for _, srv := range cfg.Servers {
+				if srv.Enabled {
+					servers = append(servers, srv.Endpoint)
+				}
+			}
+			nets, err := scanQueries.ListNetworks(context.Background())
+			if err != nil {
+				slog.Warn("probe nat: network list failed", "error", err)
+				return
+			}
+			agents := make([]string, 0, len(nets))
+			for _, n := range nets {
+				if n.AgentID != nil && strings.TrimSpace(*n.AgentID) != "" {
+					agents = append(agents, strings.TrimSpace(*n.AgentID))
+				}
+			}
+			sent, derr := agentCmdSvc.DispatchGatewayProbe(context.Background(), agents, servers, cfg.BurstTimeoutMS)
+			if derr != nil {
+				slog.Warn("probe nat: dispatch failed", "error", derr)
+				return
+			}
+			slog.Info("probe nat: gateway probe dispatched", "agents", sent, "servers", len(servers))
 		})
 	}
 

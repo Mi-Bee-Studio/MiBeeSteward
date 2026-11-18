@@ -11,6 +11,7 @@ pub mod egress;
 pub mod ebpf_source;
 pub mod engine;
 pub mod fpsync;
+pub mod gateway;
 pub mod hostnet;
 pub mod prober;
 pub mod selfnet;

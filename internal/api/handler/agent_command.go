@@ -162,6 +162,12 @@ func (h *AgentCommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusInternalServerError, "failed to complete command")
 		return
 	}
+	// Gateway-profile ingest (#753): a completed gateway_probe lands its
+	// evidence into the network's router device scan_attributes. Best-effort
+	// and non-blocking; a failure never fails the completion itself.
+	if gerr := h.svc.IngestGatewayProbe(r.Context(), id, req.Status, req.Result); gerr != nil {
+		slog.Debug("agent command complete: gateway ingest skipped", "command_id", id, "error", gerr)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

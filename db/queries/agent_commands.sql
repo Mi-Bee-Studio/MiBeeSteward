@@ -30,6 +30,11 @@ WHERE id = ? AND status = 'pending';
 UPDATE agent_commands SET status = ?, result = ?
 WHERE id = ?;
 
+-- name: GetAgentCommand :one
+-- Row fetch for completion-side consumers (the gateway-profile ingest
+-- resolves the reporting agent from the command row, #753).
+SELECT * FROM agent_commands WHERE id = ?;
+
 -- name: ListAllAgentCommands :many
 -- Admin view: all commands across all agents (for the management UI).
 SELECT * FROM agent_commands

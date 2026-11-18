@@ -83,6 +83,13 @@ type ScanAttributes struct {
 	// Discovery surfaces (kept struct-shaped where stable, free-form otherwise)
 	SNMP             *SNMPDiscovery  `json:"snmp,omitempty"`
 	STP              *STPDiscovery   `json:"stp,omitempty"`
+
+	// GatewayProfile is the router's capability half (#752/#753): UPnP IGD
+	// facts + the NAT mapping-behavior verdict, written by the gateway_probe
+	// command ingest (the agent-rs gateway.rs report lands here verbatim).
+	// The server list is PUBLIC-only by design (product neutrality); a user
+	// adds their own nodes through the settings center.
+	Gateway *GatewayProfile `json:"gateway,omitempty"`
 	OpenPorts        []OpenPortEntry `json:"open_ports,omitempty"`
 	DetectedServices []ServiceEntry  `json:"detected_services,omitempty"`
 	Prometheus       *PrometheusInfo `json:"prometheus,omitempty"`
@@ -114,6 +121,23 @@ type STPDiscovery struct {
 	RootBridgeMAC string `json:"root_bridge_mac,omitempty"` // MAC half of dot1dStpDesignatedRoot
 	IsRoot        bool   `json:"is_root,omitempty"`         // own bridge == designated root
 	Ports         string `json:"ports,omitempty"`           // "ifName=role,..." (role: root/designated/alternate/backup/disabled)
+}
+
+// GatewayProfile is one gateway_probe round's evidence (#752/#753). Every
+// section is best-effort: a dead probe stays at its default and the note
+// explains why. nat_mapping is a STABLE VALUE: eim (cone) | edm (symmetric)
+// | unknown (fewer than two responsive STUN servers — never guessed).
+type GatewayProfile struct {
+	CheckedAt       string `json:"checked_at,omitempty"`
+	UpnpAvailable   bool   `json:"upnp_available,omitempty"`
+	UpnpServer      string `json:"upnp_server,omitempty"`
+	WanIP           string `json:"wan_ip,omitempty"`
+	PortMappingOK   bool   `json:"port_mapping_ok,omitempty"`
+	NATMapping      string `json:"nat_mapping,omitempty"`
+	PublicIP        string `json:"public_ip,omitempty"`
+	StunServersSeen int    `json:"stun_servers_seen,omitempty"`
+	HolePunchViable bool   `json:"hole_punch_viable,omitempty"`
+	Note            string `json:"note,omitempty"`
 }
 
 // OpenPortEntry is one element of ScanAttributes.OpenPorts. Shape must match
