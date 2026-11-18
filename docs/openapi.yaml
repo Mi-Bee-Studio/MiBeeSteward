@@ -2909,6 +2909,8 @@ components:
         send: {type: string, description: "tcp only; ASCII payload written right after connect"}
         expect: {type: string, description: "tcp only; banner match against the first bytes read"}
         expect_mode: {type: string, enum: [contains, regex], description: "tcp only; default contains"}
+        burst_count: {type: integer, description: "icmp only (#744); echoes per round, 0/1 = single ping (legacy, no burst metrics); max 20"}
+        burst_interval_ms: {type: integer, description: "icmp only (#744); gap between echoes, 0 = prober default (20ms); 10-1000; requires burst_count"}
     ProbeVantageLatest:
       type: object
       description: Newest probe outcome of one executor's track.
@@ -2919,6 +2921,8 @@ components:
         latency_ms: {type: number}
         error_message: {type: string}
         checked_at: {type: string}
+        loss_pct: {type: number, description: "burst sampling (#744); omitted when not measured"}
+        jitter_ms: {type: number, description: "burst sampling (#744); omitted when not measured"}
     ProbeTargetList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
@@ -2940,6 +2944,8 @@ components:
         cert_trusted: {type: boolean, nullable: true, description: null = no cert collected that run}
         checked_at: {type: string}
         vantage: {type: string, description: "'center' or 'agent:{id}'"}
+        loss_pct: {type: number, description: "burst sampling (#744); omitted when not measured (single-ping rounds, non-icmp modules)"}
+        jitter_ms: {type: number, description: "burst sampling (#744); omitted when not measured"}
     ProbeResultList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
@@ -3210,6 +3216,8 @@ components:
         p50_ms: {type: number}
         samples: {type: integer}
         last_status: {type: string}
+        loss_pct: {type: number, description: "burst sampling (#744); window mean over a burst target's rows; omitted when the target is not a burst target"}
+        jitter_ms: {type: number, description: "burst sampling (#744); window mean over a burst target's rows; omitted otherwise"}
     ProbeSettingsResponse:
       type: object
       description: Effective probe policy switches plus where each came from ("overlay" = edited in web UI, "config" = the YAML file)

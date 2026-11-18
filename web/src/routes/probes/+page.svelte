@@ -976,6 +976,10 @@ ProbeQualityTarget,
 	let optSend = $state('');
 	let optExpect = $state('');
 	let optExpectMode = $state<'contains' | 'regex'>('contains');
+	// #744: icmp burst sampling — echoes per round (empty = legacy single
+	// ping) and the gap between them in ms.
+	let optBurstCount = $state('');
+	let optBurstIntervalMs = $state('');
 
 	function resetOptionFields() {
 		optMethod = 'GET';
@@ -989,6 +993,8 @@ ProbeQualityTarget,
 		optSend = '';
 		optExpect = '';
 		optExpectMode = 'contains';
+		optBurstCount = '';
+		optBurstIntervalMs = '';
 	}
 
 	// Build the module's options object from the form fields, omitting empty
@@ -1023,6 +1029,17 @@ ProbeQualityTarget,
 				o.expect = optExpect;
 				if (optExpectMode !== 'contains') o.expect_mode = optExpectMode;
 			}
+		} else if (formModule === 'icmp') {
+			// #744: burst sampling. Empty count = legacy single ping (no key);
+			// interval only rides when a count is set (server-side rule too).
+			const n = Number(optBurstCount);
+			if (optBurstCount.trim() !== '' && Number.isFinite(n) && n > 0) {
+				o.burst_count = Math.floor(n);
+				const iv = Number(optBurstIntervalMs);
+				if (optBurstIntervalMs.trim() !== '' && Number.isFinite(iv) && iv > 0) {
+					o.burst_interval_ms = Math.floor(iv);
+				}
+			}
 		}
 		return Object.keys(o).length ? o : undefined;
 	}
@@ -1055,7 +1072,9 @@ ProbeQualityTarget,
 	// (http/tcp/icmp). The phases toggle only appears when some row carried a
 	// stage; a fetch failure is non-fatal (the total chart still works).
 	let phaseRows = $state<ProbePhaseRow[]>([]);
-	let chartMode = $state<'total' | 'phases'>('total');
+	// #744: burst mode appears when the target samples bursts (rows carry
+	// loss_pct / jitter_ms); it shows loss % + jitter instead of latency.
+	let chartMode = $state<'total' | 'phases' | 'burst'>('total');
 
 	// --- Certificate modal (reuses the shared component: same DTO shape) ---
 	let certModalOpen = $state(false);
@@ -1249,6 +1268,8 @@ ProbeQualityTarget,
 			if (o.send) optSend = o.send;
 			if (o.expect) optExpect = o.expect;
 			if (o.expect_mode === 'regex') optExpectMode = 'regex';
+			if (o.burst_count && o.burst_count > 0) optBurstCount = String(o.burst_count);
+			if (o.burst_interval_ms && o.burst_interval_ms > 0) optBurstIntervalMs = String(o.burst_interval_ms);
 		}
 		fieldErrors = {};
 		editModalOpen = true;
@@ -1683,6 +1704,60 @@ ProbeQualityTarget,
 	const statusStripCls = (s: string) =>
 		s === 'success' ? 'bg-success' : s === 'timeout' ? 'bg-warning' : 'bg-error';
 
+	// #744: burst sampling visibility — the toggle and columns appear only
+	// for burst targets (options.burst_count > 1). Row-field presence is NOT
+	// a reliable signal: the Go response uses omitempty, so a clean 0%-loss
+	// round omits the fields entirely.
+	const burstAvailable = $derived((resultsTarget?.options?.burst_count ?? 0) > 1);
+
+	// Burst view (#744): loss % per vantage (left axis, area) over the burst
+	// rounds, jitter (mean consecutive-RTT delta, ms) as a line on the right
+	// axis. Same vantage color/dash conventions as the latency chart.
+	const burstChartOption = $derived.by<import('echarts').EChartsCoreOption>(() => {
+		const lossSeries = vantageTracks.map((track) => {
+			const isCenter = track.vantage === 'center';
+			const color = trackColors.get(track.vantage);
+			return {
+				name: `${track.vantage} · ${m['probes.Burst Loss']()}`,
+				type: 'line' as const,
+				symbolSize: 5,
+				symbol: isCenter ? 'circle' : 'triangle',
+				emphasis: { focus: 'series' },
+				areaStyle: { opacity: 0.15 },
+				data: track.rows.map((r) => [r.checked_at, Math.round((r.loss_pct ?? 0) * 10) / 10]),
+				lineStyle: { width: 2, color, type: isCenter ? 'solid' : 'dashed' },
+				itemStyle: { color }
+			};
+		});
+		const jitterSeries = vantageTracks.map((track) => {
+			const isCenter = track.vantage === 'center';
+			const color = trackColors.get(track.vantage);
+			return {
+				name: `${track.vantage} · ${m['probes.Burst Jitter']()}`,
+				type: 'line' as const,
+				yAxisIndex: 1,
+				symbolSize: 4,
+				symbol: isCenter ? 'circle' : 'triangle',
+				emphasis: { focus: 'series' },
+				data: track.rows.map((r) => [r.checked_at, Math.round((r.jitter_ms ?? 0) * 10) / 10]),
+				lineStyle: { width: 1.5, color, type: 'dotted' as const },
+				itemStyle: { color }
+			};
+		});
+		return {
+			animation: false,
+			grid: { left: 44, right: 44, top: 12, bottom: 44 },
+			tooltip: { trigger: 'axis' },
+			legend: { bottom: 0, type: 'scroll', textStyle: { fontSize: 10 } },
+			xAxis: { type: 'time', axisLabel: { hideOverlap: true } },
+			yAxis: [
+				{ type: 'value', scale: true, max: 100, axisLabel: { formatter: '{value} %' } },
+				{ type: 'value', scale: true, axisLabel: { formatter: '{value} ms' }, splitLine: { show: false } }
+			],
+			series: [...lossSeries, ...jitterSeries]
+		};
+	});
+
 	// #717: per-stage stacked view. Fixed stage colors across vantages (the
 	// color answers "which stage", the x-cluster answers "which vantage");
 	// stacks are per-vantage so same-timestamp tracks sit side by side. The
@@ -1795,6 +1870,30 @@ ProbeQualityTarget,
 				return html`<span class="text-xs font-mono">${fmtLatency(v)}</span>`;
 			}
 		},
+		// #744: burst metrics only for burst-sampling targets (omitempty
+		// hides them on clean rounds, so the columns are target-gated).
+		...(burstAvailable
+			? [
+					{
+						key: 'loss_pct',
+						label: m['probes.Col Loss'](),
+						render: (row: Record<string, unknown>) => {
+							const v = row.loss_pct as number | undefined;
+							const shown = v ?? 0;
+							const cls = shown > 5 ? 'text-error' : shown > 0 ? 'text-warning' : 'text-text-muted';
+							return html`<span class="text-xs font-mono ${cls}">${Math.round(shown * 10) / 10}%</span>`;
+						}
+					},
+					{
+						key: 'jitter_ms',
+						label: m['probes.Col Jitter'](),
+						render: (row: Record<string, unknown>) => {
+							const v = row.jitter_ms as number | undefined;
+							return html`<span class="text-xs font-mono">${v === undefined ? '-' : `${Math.round((v ?? 0) * 10) / 10}ms`}</span>`;
+						}
+					}
+				]
+			: []),
 		{
 			key: 'status_code',
 			label: m['probes.Status Code'](),
@@ -3006,6 +3105,30 @@ ProbeQualityTarget,
 					</select>
 				</div>
 			</div>
+		{:else if formModule === 'icmp'}
+			<!-- #744: burst sampling — loss % / jitter become measurable only
+			     when a round carries several echoes. Empty count = legacy
+			     single ping. -->
+			<div class="rounded-md border border-border p-3 space-y-3">
+				<p class="text-xs font-semibold text-text-muted">{m['probes.Options Title']()}</p>
+				<div class="grid grid-cols-2 gap-3">
+					<div>
+						<label class="block text-xs text-text-muted mb-1" for="probe-opt-burst-count">{m['probes.Opt Burst Count']()}</label>
+						<input id="probe-opt-burst-count" class="input font-mono text-xs" bind:value={optBurstCount} placeholder="10" inputmode="numeric" />
+						{#if fieldErrors['options.burst_count']}
+							<p class="text-xs text-error mt-1">{fieldErrors['options.burst_count']}</p>
+						{/if}
+					</div>
+					<div>
+						<label class="block text-xs text-text-muted mb-1" for="probe-opt-burst-interval">{m['probes.Opt Burst Interval']()}</label>
+						<input id="probe-opt-burst-interval" class="input font-mono text-xs" bind:value={optBurstIntervalMs} placeholder="20" inputmode="numeric" />
+						{#if fieldErrors['options.burst_interval_ms']}
+							<p class="text-xs text-error mt-1">{fieldErrors['options.burst_interval_ms']}</p>
+						{/if}
+					</div>
+				</div>
+				<p class="text-[0.625rem] leading-tight text-text-muted">{m['probes.Burst Note']()}</p>
+			</div>
 		{/if}
 
 		<div>
@@ -3154,27 +3277,46 @@ ProbeQualityTarget,
 		{#if resultsTab === 'chart'}
 			<div class="flex items-center justify-between gap-2 mb-1">
 				<div class="text-xs font-semibold text-text">
-					{chartMode === 'total' ? m['probes.Latency Chart']() : m['probes.Phases Chart']()}
+					{chartMode === 'total'
+						? m['probes.Latency Chart']()
+						: chartMode === 'burst'
+							? m['probes.Burst Chart']()
+							: m['probes.Phases Chart']()}
 				</div>
-				{#if hasPhaseData(phaseRows)}
-					<!-- #717: total vs per-stage switch. Only offered when the
-					     target's module actually produced phase rows. -->
-					<div class="flex rounded-md border border-border text-xs overflow-hidden" data-phase-toggle>
-						<button
-							type="button"
-							onclick={() => (chartMode = 'total')}
-							class="px-2.5 py-1 transition-colors {chartMode === 'total' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'}"
-						>{m['probes.Chart Total']()}</button>
-						<button
-							type="button"
-							onclick={() => (chartMode = 'phases')}
-							class="px-2.5 py-1 transition-colors {chartMode === 'phases' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'}"
-						>{m['probes.Chart Stages']()}</button>
-					</div>
-				{/if}
+				<div class="flex gap-2">
+					{#if burstAvailable}
+						<!-- #744: loss/jitter view, only for burst-sampling targets. -->
+						<div class="flex rounded-md border border-border text-xs overflow-hidden" data-burst-toggle>
+							<button
+								type="button"
+								onclick={() => (chartMode = 'burst')}
+								class="px-2.5 py-1 transition-colors {chartMode === 'burst' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'}"
+							>{m['probes.Chart Burst']()}</button>
+						</div>
+					{/if}
+					{#if hasPhaseData(phaseRows)}
+						<!-- #717: total vs per-stage switch. Only offered when the
+						     target's module actually produced phase rows. -->
+						<div class="flex rounded-md border border-border text-xs overflow-hidden" data-phase-toggle>
+							<button
+								type="button"
+								onclick={() => (chartMode = 'total')}
+								class="px-2.5 py-1 transition-colors {chartMode === 'total' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'}"
+							>{m['probes.Chart Total']()}</button>
+							<button
+								type="button"
+								onclick={() => (chartMode = 'phases')}
+								class="px-2.5 py-1 transition-colors {chartMode === 'phases' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'}"
+							>{m['probes.Chart Stages']()}</button>
+						</div>
+					{/if}
+				</div>
 			</div>
 			{#if chartMode === 'total'}
 				<Chart option={latencyChartOption} height="240px" />
+			{:else if chartMode === 'burst'}
+				<Chart option={burstChartOption} height="240px" />
+				<p class="mt-1 text-[0.625rem] leading-tight text-text-muted">{m['probes.Burst Note']()}</p>
 			{:else}
 				<Chart option={phasesChartOption} height="240px" />
 				<p class="mt-1 text-[0.625rem] leading-tight text-text-muted">{m['probes.Phases Note']()}</p>

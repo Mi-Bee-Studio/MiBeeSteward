@@ -2595,6 +2595,12 @@ type ProbeEpisodeMetricReason string
 
 // ProbeOptions Per-module execution options (#605), stored as JSON on the target and mirrored to vantage agents verbatim. Fields apply to their own module only (validated). Deliberately no credentials/auth headers: the agent command channel stays secret-free.
 type ProbeOptions struct {
+	// BurstCount icmp only (#744); echoes per round, 0/1 = single ping (legacy, no burst metrics); max 20
+	BurstCount *int `json:"burst_count,omitempty"`
+
+	// BurstIntervalMs icmp only (#744); gap between echoes, 0 = prober default (20ms); 10-1000; requires burst_count
+	BurstIntervalMs *int `json:"burst_interval_ms,omitempty"`
+
 	// Expect tcp only; banner match against the first bytes read
 	Expect *string `json:"expect,omitempty"`
 
@@ -2872,10 +2878,15 @@ type ProbeQualityTargetCrossVantage string
 
 // ProbeQualityTrack defines model for ProbeQualityTrack.
 type ProbeQualityTrack struct {
-	LastStatus *string `json:"last_status,omitempty"`
-	OkRate     float32 `json:"ok_rate"`
-	P50Ms      float32 `json:"p50_ms"`
-	Samples    int     `json:"samples"`
+	// JitterMs burst sampling (#744); window mean over a burst target's rows; omitted otherwise
+	JitterMs   *float32 `json:"jitter_ms,omitempty"`
+	LastStatus *string  `json:"last_status,omitempty"`
+
+	// LossPct burst sampling (#744); window mean over a burst target's rows; omitted when the target is not a burst target
+	LossPct *float32 `json:"loss_pct,omitempty"`
+	OkRate  float32  `json:"ok_rate"`
+	P50Ms   float32  `json:"p50_ms"`
+	Samples int      `json:"samples"`
 }
 
 // ProbeQualityVantage defines model for ProbeQualityVantage.
@@ -2902,12 +2913,18 @@ type ProbeResult struct {
 	CertNotAfter *string `json:"cert_not_after,omitempty"`
 
 	// CertTrusted null = no cert collected that run
-	CertTrusted  *bool             `json:"cert_trusted,omitempty"`
-	CheckedAt    string            `json:"checked_at"`
-	ErrorMessage *string           `json:"error_message,omitempty"`
-	Id           int64             `json:"id"`
-	LatencyMs    float32           `json:"latency_ms"`
-	Status       ProbeResultStatus `json:"status"`
+	CertTrusted  *bool   `json:"cert_trusted,omitempty"`
+	CheckedAt    string  `json:"checked_at"`
+	ErrorMessage *string `json:"error_message,omitempty"`
+	Id           int64   `json:"id"`
+
+	// JitterMs burst sampling (#744); omitted when not measured
+	JitterMs  *float32 `json:"jitter_ms,omitempty"`
+	LatencyMs float32  `json:"latency_ms"`
+
+	// LossPct burst sampling (#744); omitted when not measured (single-ping rounds, non-icmp modules)
+	LossPct *float32          `json:"loss_pct,omitempty"`
+	Status  ProbeResultStatus `json:"status"`
 
 	// StatusCode HTTP status (http module); 0 otherwise
 	StatusCode int     `json:"status_code"`
@@ -3007,10 +3024,16 @@ type ProbeTargetList struct {
 
 // ProbeVantageLatest Newest probe outcome of one executor's track.
 type ProbeVantageLatest struct {
-	CheckedAt    string                   `json:"checked_at"`
-	ErrorMessage *string                  `json:"error_message,omitempty"`
-	LatencyMs    float32                  `json:"latency_ms"`
-	Status       ProbeVantageLatestStatus `json:"status"`
+	CheckedAt    string  `json:"checked_at"`
+	ErrorMessage *string `json:"error_message,omitempty"`
+
+	// JitterMs burst sampling (#744); omitted when not measured
+	JitterMs  *float32 `json:"jitter_ms,omitempty"`
+	LatencyMs float32  `json:"latency_ms"`
+
+	// LossPct burst sampling (#744); omitted when not measured
+	LossPct *float32                 `json:"loss_pct,omitempty"`
+	Status  ProbeVantageLatestStatus `json:"status"`
 
 	// Vantage 'center' or 'agent:{id}'
 	Vantage string `json:"vantage"`

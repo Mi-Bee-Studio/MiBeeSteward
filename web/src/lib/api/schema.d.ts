@@ -7250,6 +7250,10 @@ export interface components {
              * @enum {string}
              */
             expect_mode?: "contains" | "regex";
+            /** @description icmp only (#744); echoes per round, 0/1 = single ping (legacy, no burst metrics); max 20 */
+            burst_count?: number;
+            /** @description icmp only (#744); gap between echoes, 0 = prober default (20ms); 10-1000; requires burst_count */
+            burst_interval_ms?: number;
         };
         /** @description Newest probe outcome of one executor's track. */
         ProbeVantageLatest: {
@@ -7260,6 +7264,10 @@ export interface components {
             latency_ms: number;
             error_message?: string;
             checked_at: string;
+            /** @description burst sampling (#744); omitted when not measured */
+            loss_pct?: number;
+            /** @description burst sampling (#744); omitted when not measured */
+            jitter_ms?: number;
         };
         ProbeTargetList: components["schemas"]["PageMeta"] & {
             targets?: components["schemas"]["ProbeTarget"][];
@@ -7283,6 +7291,10 @@ export interface components {
             checked_at: string;
             /** @description 'center' or 'agent:{id}' */
             vantage: string;
+            /** @description burst sampling (#744); omitted when not measured (single-ping rounds, non-icmp modules) */
+            loss_pct?: number;
+            /** @description burst sampling (#744); omitted when not measured */
+            jitter_ms?: number;
         };
         ProbeResultList: components["schemas"]["PageMeta"] & {
             results?: components["schemas"]["ProbeResult"][];
@@ -7611,6 +7623,10 @@ export interface components {
             p50_ms: number;
             samples: number;
             last_status?: string;
+            /** @description burst sampling (#744); window mean over a burst target's rows; omitted when the target is not a burst target */
+            loss_pct?: number;
+            /** @description burst sampling (#744); window mean over a burst target's rows; omitted otherwise */
+            jitter_ms?: number;
         };
         /** @description Effective probe policy switches plus where each came from ("overlay" = edited in web UI, "config" = the YAML file) */
         ProbeSettingsResponse: {
