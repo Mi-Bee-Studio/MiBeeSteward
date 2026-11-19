@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"mibee-steward/internal/domain"
+
 	_ "modernc.org/sqlite"
 )
 
