@@ -43,6 +43,7 @@ func qualityHandler(t *testing.T) *httptest.Server {
 	r := chi.NewMux()
 	r.Get("/api/v1/probe-quality", h.GetQuality)
 	r.Get("/api/v1/probe-quality/history", h.GetQualityHistory)
+	r.Get("/api/v1/probe-matrix", h.GetMatrix)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 	return srv
@@ -63,6 +64,7 @@ func TestQualityEndpoints_Success(t *testing.T) {
 		{"quality default window", "/api/v1/probe-quality", "window_minutes"},
 		{"history", "/api/v1/probe-quality/history?days=30", "days"},
 		{"history default days", "/api/v1/probe-quality/history", "days"},
+		{"matrix", "/api/v1/probe-matrix?window=60", "cells"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -87,6 +89,10 @@ func TestQualityEndpoints_RejectsBadQuery(t *testing.T) {
 		"/api/v1/probe-quality?window=4",
 		"/api/v1/probe-quality?window=1441",
 		"/api/v1/probe-quality?window=abc",
+		// matrix shares the quality window clamp.
+		"/api/v1/probe-matrix?window=4",
+		"/api/v1/probe-matrix?window=1441",
+		"/api/v1/probe-matrix?window=abc",
 		// history accepts exactly 7 or 30 days.
 		"/api/v1/probe-quality/history?days=8",
 		"/api/v1/probe-quality/history?days=0",
@@ -118,12 +124,14 @@ func TestQualityEndpoints_ClosedDB(t *testing.T) {
 	r := chi.NewMux()
 	r.Get("/api/v1/probe-quality", h.GetQuality)
 	r.Get("/api/v1/probe-quality/history", h.GetQualityHistory)
+	r.Get("/api/v1/probe-matrix", h.GetMatrix)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
 	for _, url := range []string{
 		"/api/v1/probe-quality",
 		"/api/v1/probe-quality/history",
+		"/api/v1/probe-matrix",
 	} {
 		t.Run(url, func(t *testing.T) {
 			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL+url, nil)

@@ -2625,6 +2625,51 @@ type ProbeEpisodeMetric struct {
 // ProbeEpisodeMetricReason defines model for ProbeEpisodeMetric.Reason.
 type ProbeEpisodeMetricReason string
 
+// ProbeMatrixCell defines model for ProbeMatrixCell.
+type ProbeMatrixCell struct {
+	// Destination vantage whose last reported source address is the leg's target
+	Destination string `json:"destination"`
+
+	// Enabled false = parked leg (agent deregistered or address lost)
+	Enabled    bool    `json:"enabled"`
+	JitterMs   float64 `json:"jitter_ms"`
+	LastStatus *string `json:"last_status,omitempty"`
+	LossPct    float64 `json:"loss_pct"`
+	OkRate     float64 `json:"ok_rate"`
+	P50Ms      float64 `json:"p50_ms"`
+	Samples    int     `json:"samples"`
+
+	// Source vantage that executes the probe
+	Source string `json:"source"`
+
+	// Target probed IP
+	Target   string `json:"target"`
+	TargetId int64  `json:"target_id"`
+}
+
+// ProbeMatrixNode defines model for ProbeMatrixNode.
+type ProbeMatrixNode struct {
+	// Id center | agent:{agent_id}
+	Id string `json:"id"`
+
+	// Label agent hostname, or 'center'
+	Label       string  `json:"label"`
+	NetworkName *string `json:"network_name,omitempty"`
+}
+
+// ProbeMatrixReport Site-to-site N×N matrix (#748). Cells are (source, destination) legs over the same 15-minute-style window the quality analyzer uses; Samples == 0 means the leg has not reported (parked target or stale agent) and must render as no-data, never as a zero-latency success.
+type ProbeMatrixReport struct {
+	Cells []ProbeMatrixCell `json:"cells"`
+
+	// Destinations column axes, same ordering
+	Destinations []ProbeMatrixNode `json:"destinations"`
+	GeneratedAt  time.Time         `json:"generated_at"`
+
+	// Sources row axes, center first then agents alphabetically
+	Sources       []ProbeMatrixNode `json:"sources"`
+	WindowMinutes int               `json:"window_minutes"`
+}
+
 // ProbeNATSettings Gateway-profile policy + STUN server list (#750). Defaults are PUBLIC infrastructure only (the product carries no self-hosted STUN); enabled defaults OFF - probing exposes the site mapping to third parties, explicit opt-in.
 type ProbeNATSettings struct {
 	// BurstTimeoutMs per-server query deadline
@@ -3838,6 +3883,12 @@ type GetNotificationLogsParams struct {
 
 	// Offset Pagination offset (negative → 400)
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// GetProbeMatrixParams defines parameters for GetProbeMatrix.
+type GetProbeMatrixParams struct {
+	// Window lookback minutes (5-1440, default from probe.quality.window_minutes)
+	Window *int `form:"window,omitempty" json:"window,omitempty"`
 }
 
 // GetProbeQualityParams defines parameters for GetProbeQuality.
@@ -5329,6 +5380,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /probe-egress (the `GetProbeEgress` operationId).
 	GetProbeEgress(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetProbeMatrix Site-to-site N×N matrix (#748) - per-leg RTT/loss/jitter over the mesh-* autogen targets
+	//
+	// Rows are source vantages, columns destinations. Only legs whose destination agent is currently registered appear: the mesh autogen keys a leg by the destination's last reported source address, so a deregistered agent parks its legs and drops out of the axes.
+	//
+	// Corresponds with GET /probe-matrix (the `GetProbeMatrix` operationId).
+	GetProbeMatrix(ctx context.Context, params *GetProbeMatrixParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetProbePaths Latest traced path per target and vantage (#719) - hop list, reached TTL, reply TTL
 	//
@@ -7800,6 +7858,23 @@ func (c *Client) PutNotificationRulesId(ctx context.Context, id Id, reqEditors .
 // Corresponds with GET /probe-egress (the `GetProbeEgress` operationId).
 func (c *Client) GetProbeEgress(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetProbeEgressRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetProbeMatrix Site-to-site N×N matrix (#748) - per-leg RTT/loss/jitter over the mesh-* autogen targets
+//
+// Rows are source vantages, columns destinations. Only legs whose destination agent is currently registered appear: the mesh autogen keys a leg by the destination's last reported source address, so a deregistered agent parks its legs and drops out of the axes.
+//
+// Corresponds with GET /probe-matrix (the `GetProbeMatrix` operationId).
+func (c *Client) GetProbeMatrix(ctx context.Context, params *GetProbeMatrixParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProbeMatrixRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -13972,6 +14047,60 @@ func NewGetProbeEgressRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewGetProbeMatrixRequest constructs an http.Request for the GetProbeMatrix method
+func NewGetProbeMatrixRequest(server string, params *GetProbeMatrixParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/probe-matrix")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Window != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "window", *params.Window, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetProbePathsRequest constructs an http.Request for the GetProbePaths method
 func NewGetProbePathsRequest(server string) (*http.Request, error) {
 	var err error
@@ -17774,6 +17903,15 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /probe-egress (the `GetProbeEgress` operationId).
 	GetProbeEgressWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetProbeEgressResponse, error)
+
+	// GetProbeMatrixWithResponse Site-to-site N×N matrix (#748) - per-leg RTT/loss/jitter over the mesh-* autogen targets
+	//
+	// Rows are source vantages, columns destinations. Only legs whose destination agent is currently registered appear: the mesh autogen keys a leg by the destination's last reported source address, so a deregistered agent parks its legs and drops out of the axes.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /probe-matrix (the `GetProbeMatrix` operationId).
+	GetProbeMatrixWithResponse(ctx context.Context, params *GetProbeMatrixParams, reqEditors ...RequestEditorFn) (*GetProbeMatrixResponse, error)
 
 	// GetProbePathsWithResponse Latest traced path per target and vantage (#719) - hop list, reached TTL, reply TTL
 	//
@@ -23375,6 +23513,47 @@ func (r GetProbeEgressResponse) ContentType() string {
 	return ""
 }
 
+type GetProbeMatrixResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProbeMatrixReport
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetProbeMatrixResponse) GetJSON200() *ProbeMatrixReport {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetProbeMatrixResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProbeMatrixResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProbeMatrixResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetProbeMatrixResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetProbePathsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -27777,6 +27956,21 @@ func (c *ClientWithResponses) GetProbeEgressWithResponse(ctx context.Context, re
 	return ParseGetProbeEgressResponse(rsp)
 }
 
+// GetProbeMatrixWithResponse Site-to-site N×N matrix (#748) - per-leg RTT/loss/jitter over the mesh-* autogen targets
+//
+// Rows are source vantages, columns destinations. Only legs whose destination agent is currently registered appear: the mesh autogen keys a leg by the destination's last reported source address, so a deregistered agent parks its legs and drops out of the axes.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /probe-matrix (the `GetProbeMatrix` operationId).
+func (c *ClientWithResponses) GetProbeMatrixWithResponse(ctx context.Context, params *GetProbeMatrixParams, reqEditors ...RequestEditorFn) (*GetProbeMatrixResponse, error) {
+	rsp, err := c.GetProbeMatrix(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProbeMatrixResponse(rsp)
+}
+
 // GetProbePathsWithResponse Latest traced path per target and vantage (#719) - hop list, reached TTL, reply TTL
 //
 // Returns a wrapper object for the known response body format(s).
@@ -31725,6 +31919,32 @@ func ParseGetProbeEgressResponse(rsp *http.Response) (*GetProbeEgressResponse, e
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ProbeEgressReport
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetProbeMatrixResponse parses an HTTP response from a GetProbeMatrixWithResponse call
+func ParseGetProbeMatrixResponse(rsp *http.Response) (*GetProbeMatrixResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProbeMatrixResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProbeMatrixReport
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

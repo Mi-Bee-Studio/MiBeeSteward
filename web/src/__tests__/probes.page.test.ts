@@ -290,7 +290,10 @@ const mockState = vi.hoisted(() => {
 		allOkQuality,
 		history: seededHistory,
 		certs: {} as Record<number, string>,
-		episodes: [] as Array<Record<string, unknown>>
+		episodes: [] as Array<Record<string, unknown>>,
+		// #748 site-to-site matrix: default is the "not fetched yet" state so
+		// mount stays light; tests that open the grid set this explicitly.
+		matrix: null as null | Record<string, unknown>
 	};
 });
 
@@ -361,6 +364,9 @@ vi.mock('$lib/api/client', () => ({
 						}
 					]
 				});
+			}
+			if (url.startsWith('/probe-matrix')) {
+				return Promise.resolve(mockState.matrix);
 			}
 			if (url.startsWith('/probe-quality/history')) {
 				return Promise.resolve(mockState.history);
@@ -1381,6 +1387,80 @@ describe('Probes page', () => {
 			});
 			expect(chip.getAttribute('aria-pressed')).toBe('true');
 		} finally {
+			localStorage.removeItem('mibee.probes.qualityOpen');
+			localStorage.removeItem('mibee.probes.certOpen');
+		}
+	});
+
+	it('the site matrix opens lazily, renders the N×N heat cells and drills into a leg', async () => {
+		// #748: the grid is a drill-down, so nothing is fetched until the
+		// operator opens it. The payload below is the shape BuildMatrix emits:
+		// center + one agent on both axes, one measured leg and one that has
+		// not reported in the window.
+		mockState.matrix = {
+			window_minutes: 15,
+			generated_at: '2026-11-19T00:00:00Z',
+			sources: [
+				{ id: 'center', label: 'center' },
+				{ id: 'agent:edge-1', label: 'edge-1', network_name: 'Branch' }
+			],
+			destinations: [
+				{ id: 'center', label: 'center' },
+				{ id: 'agent:edge-1', label: 'edge-1', network_name: 'Branch' }
+			],
+			cells: [
+				{
+					source: 'center', destination: 'agent:edge-1', target_id: 5,
+					target: '192.0.2.20', enabled: true, samples: 6, ok_rate: 1,
+					p50_ms: 18, loss_pct: 0, jitter_ms: 2, last_status: 'success'
+				},
+				{
+					source: 'agent:edge-1', destination: 'center', target_id: 13,
+					target: '198.51.100.5', enabled: true, samples: 0, ok_rate: 0,
+					p50_ms: 0, loss_pct: 0, jitter_ms: 0
+				}
+			]
+		};
+		try {
+			const { container } = render(Probes);
+			await waitFor(() => {
+				expect(container.textContent).toContain('Main LAN');
+			});
+
+			// Collapsed: the panel exists but the endpoint was never called.
+			expect(container.querySelector('[data-matrix-panel]')).toBeTruthy();
+			expect(container.querySelector('[data-matrix-grid]')).toBeNull();
+			expect(vi.mocked(api.get)).not.toHaveBeenCalledWith(expect.stringContaining('/probe-matrix'));
+
+			// Open it: the fetch fires and the grid paints both axes.
+			const toggle = container.querySelector('[data-matrix-panel] button[aria-expanded]') as HTMLElement;
+			expect(toggle.getAttribute('aria-expanded')).toBe('false');
+			await fireEvent.click(toggle);
+			await waitFor(() => {
+				expect(vi.mocked(api.get)).toHaveBeenCalledWith('/probe-matrix?window=15');
+				expect(container.querySelector('[data-matrix-grid]')).toBeTruthy();
+			});
+
+			const grid = container.querySelector('[data-matrix-grid]') as HTMLElement;
+			// Headers: the helper column + two destination nodes.
+			expect(grid.querySelectorAll('thead th').length).toBe(3);
+			expect(grid.textContent).toContain('edge-1');
+			// The measured leg shows p50; the silent leg shows the pending
+			// marker, never a 0 ms reading.
+			expect(grid.textContent).toContain('18ms');
+			expect(grid.textContent).toContain('…');
+
+			// Drill-down: clicking the measured cell opens the history modal for
+			// that target (the row comes from the target list, not the cell).
+			const cells = Array.from(grid.querySelectorAll('tbody button')) as HTMLElement[];
+			const measured = cells.find((b) => (b.textContent ?? '').includes('18ms')) as HTMLElement;
+			expect(measured).toBeTruthy();
+			await fireEvent.click(measured);
+			await waitFor(() => {
+				expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('/probe-targets/5/results'));
+			});
+		} finally {
+			mockState.matrix = null;
 			localStorage.removeItem('mibee.probes.qualityOpen');
 			localStorage.removeItem('mibee.probes.certOpen');
 		}

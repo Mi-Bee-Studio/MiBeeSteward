@@ -67,3 +67,24 @@ func (h *ProbeQualityHandler) GetQualityHistory(w http.ResponseWriter, r *http.R
 	}
 	Success(w, report)
 }
+
+// GetMatrix handles GET /api/v1/probe-matrix?window=15 (minutes, optional,
+// same 5..1440 clamp as the quality endpoint): the N×N site-to-site grid
+// over the mesh-* autogen legs (#748).
+func (h *ProbeQualityHandler) GetMatrix(w http.ResponseWriter, r *http.Request) {
+	window := 0
+	if raw := r.URL.Query().Get("window"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 5 || v > 1440 {
+			Error(w, http.StatusBadRequest, "window must be minutes between 5 and 1440")
+			return
+		}
+		window = v
+	}
+	matrix, err := h.service.BuildMatrix(r.Context(), window)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to build the site matrix")
+		return
+	}
+	Success(w, matrix)
+}

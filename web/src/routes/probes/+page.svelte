@@ -47,9 +47,11 @@
 		ProbeQualityReport,
 		ProbeQualityCategory,
 		ProbeQualityGroup,
-ProbeQualityTarget,
+	ProbeQualityTarget,
 		ProbeQualityVantage,
 		ProbeQualityTrack,
+		ProbeMatrixReport,
+		ProbeMatrixCell,
 		ProbeQualityHistoryReport,
 		ProbeQualityHistoryGroup,
 		ProbeQualityHistorySeries,
@@ -446,6 +448,72 @@ ProbeQualityTarget,
 		if (qualityWindow === minutes) return;
 		qualityWindow = minutes;
 		fetchQuality();
+	}
+
+	// --- Site-to-site N×N matrix (#748): GET /probe-matrix. Same window as
+	// the quality panel (the legs are icmp burst targets in the quality
+	// category) but rendered as a heat grid: rows = source vantage, columns =
+	// destination vantage. Fetched lazily — the grid is a drill-down, so the
+	// mount path stays light until the operator opens it.
+	let matrix = $state<ProbeMatrixReport | null>(null);
+	let matrixLoading = $state(false);
+	let matrixError = $state('');
+	let matrixOpen = $state(false);
+	// Cell drill-down reuses openResults() with the row from `targets` (the
+	// matrix cell only carries the target id).
+
+	async function fetchMatrix() {
+		matrixLoading = true;
+		matrixError = '';
+		try {
+			matrix = await api.get<ProbeMatrixReport>(`/probe-matrix?window=${qualityWindow}`);
+		} catch (err: unknown) {
+			matrixError = getErrorMessage(err);
+		} finally {
+			matrixLoading = false;
+		}
+	}
+
+	function toggleMatrixOpen() {
+		matrixOpen = !matrixOpen;
+		// First open (or a window change while open) does the fetch; the
+		// quality window chips are shared, so stale data must not linger.
+		if (matrixOpen && matrix === null) fetchMatrix();
+	}
+
+	// The grid is sparse: not every (source, destination) pair exists (a
+	// single-agent fleet has no agent→agent legs at all). Index by "src|dst"
+	// so the markup stays a double loop instead of a search per cell.
+	const matrixCellIndex = $derived.by(() => {
+		const idx = new Map<string, ProbeMatrixCell>();
+		for (const c of matrix?.cells ?? []) idx.set(`${c.source}|${c.destination}`, c);
+		return idx;
+	});
+
+	// Heat scale: latency buckets against the cell's own ok rate. A leg with
+	// no samples or a failing leg is never "fast" — the colour carries both
+	// signals so a 5 ms timeout burn cannot look healthy.
+	function matrixCellClass(c: ProbeMatrixCell | undefined): string {
+		if (!c || c.samples === 0) return 'bg-surface-2/40 text-text-muted';
+		if (!c.enabled) return 'bg-surface-2/40 text-text-muted';
+		if (c.ok_rate < 0.5) return 'bg-error/15 text-error';
+		if (c.loss_pct >= 5 || c.jitter_ms >= 30) return 'bg-warning/15 text-warning';
+		if (c.p50_ms <= 20) return 'bg-success/10 text-success';
+		if (c.p50_ms <= 80) return 'bg-success/5 text-text';
+		return 'bg-warning/10 text-warning';
+	}
+
+	function matrixCellText(c: ProbeMatrixCell | undefined): string {
+		if (!c) return '—';
+		if (c.samples === 0) return c.enabled ? '…' : '—';
+		const parts = [`${Math.round(c.p50_ms)}ms`];
+		if (c.loss_pct > 0) parts.push(`${c.loss_pct.toFixed(1)}%`);
+		return parts.join(' · ');
+	}
+
+	function matrixNodeLabel(id: string): string {
+		const node = [...(matrix?.sources ?? []), ...(matrix?.destinations ?? [])].find((n) => n.id === id);
+		return node?.label && node.label !== id ? node.label : id.replace(/^agent:/, '');
 	}
 
 	// --- Category view of the report (#613): the payload carries lan,
@@ -2186,6 +2254,121 @@ ProbeQualityTarget,
 				{/if}
 			</button>
 		{/if}
+
+		<!-- Site-to-site matrix (#748): the N×N grid over the mesh-* autogen
+		     legs (#747). Collapsed by default and fetched lazily: it is a
+		     fleet-level drill-down, and a single-agent install has no
+		     agent→agent legs at all. Rows = source, columns = destination;
+		     a missing pair renders as an em dash, an unreported one as an
+		     ellipsis, so "no leg" never reads as "0 ms". -->
+		<div class="bg-surface border border-border rounded-lg p-4 mb-6" data-matrix-panel>
+			<div class="flex items-center justify-between gap-4">
+				<div class="min-w-0">
+					<div class="flex items-center gap-1.5">
+						<button
+							type="button"
+							onclick={toggleMatrixOpen}
+							aria-expanded={matrixOpen}
+							aria-label={m['probes.Matrix Aria']()}
+							class="flex h-6 w-6 items-center justify-center rounded hover:bg-surface-2"
+						>
+							<ChevronDown class="h-4 w-4 shrink-0 text-text-muted transition-transform {matrixOpen ? '' : '-rotate-90'}" />
+						</button>
+						<h3 class="text-sm font-semibold text-text">{m['probes.Matrix Title']()}</h3>
+						{#if matrix && matrix.cells.length > 0}
+							<span class="badge">{matrix.cells.length}</span>
+						{/if}
+					</div>
+					<p class="text-xs text-muted">{m['probes.Matrix Desc']({ window: matrix?.window_minutes ?? qualityWindow })}</p>
+				</div>
+				{#if matrixOpen}
+					<div class="flex items-center gap-2 shrink-0">
+						<div class="flex items-center rounded-full border border-border overflow-hidden" role="group" aria-label={m['probes.Matrix Window']()} data-matrix-window>
+							{#each QUALITY_WINDOWS as w (w.label)}
+								<button
+									type="button"
+									onclick={() => {
+										if (qualityWindow === w.minutes) return;
+										qualityWindow = w.minutes;
+										fetchQuality();
+										if (matrix) fetchMatrix();
+									}}
+									aria-pressed={qualityWindow === w.minutes}
+									class="px-2.5 py-1 text-xs transition-colors {qualityWindow === w.minutes ? 'bg-primary/10 text-primary font-medium' : 'text-text-muted hover:text-text'}"
+								>{w.label}</button>
+							{/each}
+						</div>
+						<button onclick={fetchMatrix} disabled={matrixLoading} class="btn btn-secondary !py-1 !px-3 text-xs shrink-0">
+							{matrixLoading ? '…' : m['probes.Refresh']()}
+						</button>
+					</div>
+				{/if}
+			</div>
+			{#if matrixError}
+				<p class="mt-2 text-xs text-error">{m['probes.Matrix Error']()}: {matrixError}</p>
+			{/if}
+			{#if matrixOpen}
+				{#if matrixLoading && matrix === null}
+					<p class="mt-3 text-xs text-muted py-2">…</p>
+				{:else if matrix && matrix.sources.length <= 1 && matrix.destinations.length <= 1}
+					<div class="mt-3 rounded-md border border-dashed border-border px-3 py-4 text-center">
+						<p class="text-xs text-text-muted">{m['probes.Matrix Empty']()}</p>
+						<p class="mt-1 text-xs text-text-muted">{m['probes.Matrix Empty Hint']()}</p>
+					</div>
+				{:else if matrix}
+					<div class="mt-3 overflow-x-auto">
+						<table class="w-full border-collapse text-xs" data-matrix-grid>
+							<thead>
+								<tr>
+									<th class="sticky left-0 z-10 bg-surface px-2 py-1.5 text-left font-medium text-text-muted">
+										{m['probes.Matrix Source Header']()}
+									</th>
+									{#each matrix.destinations as d (d.id)}
+										<th class="px-2 py-1.5 text-center font-medium text-text-muted" title={d.network_name ?? d.id}>
+											{d.label}
+										</th>
+									{/each}
+								</tr>
+							</thead>
+							<tbody>
+								{#each matrix.sources as s (s.id)}
+									<tr>
+										<th class="sticky left-0 z-10 bg-surface px-2 py-1.5 text-left font-medium text-text" title={s.network_name ?? s.id}>
+											{s.label}
+										</th>
+										{#each matrix.destinations as d (d.id)}
+											{@const cell = s.id === d.id ? undefined : matrixCellIndex.get(`${s.id}|${d.id}`)}
+											<td class="p-0.5">
+												{#if s.id === d.id}
+													<div class="rounded bg-surface-2/30 px-2 py-1.5 text-center text-text-muted">·</div>
+												{:else}
+													<button
+														type="button"
+														class="w-full rounded px-2 py-1.5 text-center font-mono tabular-nums transition-colors hover:ring-1 hover:ring-primary/40 {matrixCellClass(cell)}"
+														disabled={!cell || cell.samples === 0}
+														title={cell
+															? `${matrixNodeLabel(cell.source)} → ${matrixNodeLabel(cell.destination)} · ${cell.target}\n${m['probes.Matrix Cell Tooltip']({ samples: cell.samples, ok: Math.round(cell.ok_rate * 100), p50: Math.round(cell.p50_ms), loss: cell.loss_pct.toFixed(1), jitter: cell.jitter_ms.toFixed(1) })}`
+															: m['probes.Matrix No Leg']()}
+														onclick={() => {
+															if (!cell) return;
+															const t = targets.find((x) => x.id === cell.target_id);
+															if (t) openResults(t);
+														}}
+													>
+														{matrixCellText(cell)}
+													</button>
+												{/if}
+											</td>
+										{/each}
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+					<p class="mt-2 text-xs text-text-muted">{m['probes.Matrix Legend']()}</p>
+				{/if}
+			{/if}
+		</div>
 
 			<!-- Egress quality (#608/#613): per-category vantage × target
 			     matrices with verdicts — quality first (verdict-chain config

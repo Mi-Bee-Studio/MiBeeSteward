@@ -1116,6 +1116,23 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ProbeQualityReport"}
+  /probe-matrix:
+    get:
+      tags: [ProbeTargets]
+      summary: Site-to-site N×N matrix (#748) - per-leg RTT/loss/jitter over the mesh-* autogen targets
+      description: >
+        Rows are source vantages, columns destinations. Only legs whose
+        destination agent is currently registered appear: the mesh autogen
+        keys a leg by the destination's last reported source address, so a
+        deregistered agent parks its legs and drops out of the axes.
+      parameters:
+        - {name: window, in: query, schema: {type: integer}, description: "lookback minutes (5-1440, default from probe.quality.window_minutes)"}
+      responses:
+        "200":
+          description: Site matrix
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbeMatrixReport"}
   /probe-quality/history:
     get:
       tags: [ProbeTargets]
@@ -3016,6 +3033,38 @@ components:
         categories:
           type: array
           items: {$ref: "#/components/schemas/ProbeQualityCategory"}
+    ProbeMatrixReport:
+      type: object
+      description: "Site-to-site N×N matrix (#748). Cells are (source, destination) legs over the same 15-minute-style window the quality analyzer uses; Samples == 0 means the leg has not reported (parked target or stale agent) and must render as no-data, never as a zero-latency success."
+      required: [window_minutes, sources, destinations, cells, generated_at]
+      properties:
+        window_minutes: {type: integer}
+        sources: {type: array, items: {$ref: "#/components/schemas/ProbeMatrixNode"}, description: "row axes, center first then agents alphabetically"}
+        destinations: {type: array, items: {$ref: "#/components/schemas/ProbeMatrixNode"}, description: "column axes, same ordering"}
+        cells: {type: array, items: {$ref: "#/components/schemas/ProbeMatrixCell"}}
+        generated_at: {type: string, format: date-time}
+    ProbeMatrixNode:
+      type: object
+      required: [id, label]
+      properties:
+        id: {type: string, description: "center | agent:{agent_id}"}
+        label: {type: string, description: "agent hostname, or 'center'"}
+        network_name: {type: string}
+    ProbeMatrixCell:
+      type: object
+      required: [source, destination, target_id, target, enabled, samples, ok_rate, p50_ms, loss_pct, jitter_ms]
+      properties:
+        source: {type: string, description: "vantage that executes the probe"}
+        destination: {type: string, description: "vantage whose last reported source address is the leg's target"}
+        target_id: {type: integer, format: int64}
+        target: {type: string, description: "probed IP"}
+        enabled: {type: boolean, description: "false = parked leg (agent deregistered or address lost)"}
+        samples: {type: integer}
+        ok_rate: {type: number, format: double}
+        p50_ms: {type: number, format: double}
+        loss_pct: {type: number, format: double}
+        jitter_ms: {type: number, format: double}
+        last_status: {type: string}
     ProbeQualityCategory:
       type: object
       required: [category, vantages, targets]
