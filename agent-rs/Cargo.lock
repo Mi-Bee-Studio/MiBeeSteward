@@ -1185,7 +1185,7 @@ dependencies = [
 
 [[package]]
 name = "mibee-ebpf"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "aya",
  "aya-obj",
@@ -1193,7 +1193,7 @@ dependencies = [
 
 [[package]]
 name = "mibee-fingerprints"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "regex",
  "regex-syntax",
