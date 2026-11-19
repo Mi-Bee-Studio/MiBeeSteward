@@ -49,6 +49,16 @@ func setupProbeExt(t *testing.T) (*httptest.Server, *sql.DB, *probeext.Store) {
 		Trace:  config.ProbeTraceConfig{Categories: []string{"external"}, IntervalMinutes: 30, MaxTTL: 8, PerHopMs: 200, Concurrency: 1},
 	}
 	svc := probeext.NewService(cfg, store, queries, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	// These tests assert the HTTP/envelope contract, not TTL-socket
+	// behaviour: a real loopback trace reaches the destination in one hop on
+	// a dev box but walks to max_ttl under CI's -coverpkg instrumentation.
+	// Pin the trace result so the endpoints are deterministic everywhere.
+	svc.SetTraceHost(func(_ context.Context, host string, _ int, _ string) probeext.TraceResult {
+		return probeext.TraceResult{
+			Method: "tcp", DstIP: host, EndState: "reached", ReachedTTL: 1, ReplyTTL: 64,
+			Hops: []probeext.PathHop{{TTL: 1, IP: host, MS: 0.2}},
+		}
+	})
 	episodes := probeext.NewEpisodeService(store, queries, conn, config.QualityEpisodeConfig{}, nil, nil)
 	h := NewProbeExtHandler(svc, episodes)
 
