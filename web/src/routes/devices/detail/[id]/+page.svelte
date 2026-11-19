@@ -1736,7 +1736,7 @@
 				<!-- Services & ports (prefer typed scan_attributes) -->
 				{#if (sa.detected_services && sa.detected_services.length > 0) || (sa.open_ports && sa.open_ports.length > 0)}
 					<div class="mt-3 pt-3 border-t border-border">
-						<h4 class="scan-info-label mb-2">{m['scaninfo.Detected Services']}</h4>
+						<h4 class="scan-info-label mb-2">{m['scaninfo.Detected Services']()}</h4>
 						<div class="flex flex-wrap gap-1">
 							{#each sa.detected_services ?? [] as svc (svc.port)}
 								<span class="service-badge inline-flex items-center gap-1">
