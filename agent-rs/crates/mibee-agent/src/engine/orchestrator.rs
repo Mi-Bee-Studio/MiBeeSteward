@@ -451,21 +451,46 @@ mod tests {
     /// (MiBeeSteward/agent-rs/crates/mibee-agent → ../../../configs) and the
     /// original standalone checkout next to it (→ ../../../MiBeeSteward/
     /// configs). MIBEE_FP_CORPUS overrides both.
+    ///
+    /// Paths are anchored to CARGO_MANIFEST_DIR, never the process CWD: cargo
+    /// runs test binaries with the package dir as CWD, but anything that
+    /// starts the binary elsewhere (nextest, a coverage harness, a copied
+    /// off-box binary) makes a CWD-relative corpus path resolve to nothing.
+    /// `load_from_dir` treats a missing dir as "load zero rules" (documented
+    /// Go parity), so that failure mode silently strips every service
+    /// identity instead of erroring — the #756 `services: []` symptom.
     fn test_corpus_dir() -> String {
         if let Ok(c) = std::env::var("MIBEE_FP_CORPUS") {
             if !c.is_empty() {
                 return c;
             }
         }
-        for p in [
+        let pkg = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        for rel in [
             "../../../configs/fingerprints",
             "../../../MiBeeSteward/configs/fingerprints",
         ] {
-            if std::path::Path::new(p).join("snmp-data.yaml").exists() {
-                return p.to_string();
+            let p = pkg.join(rel);
+            if p.join("snmp-data.yaml").exists() {
+                return p.to_string_lossy().into_owned();
             }
         }
-        "../../../configs/fingerprints".to_string()
+        pkg.join("../../../configs/fingerprints")
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    /// Load the corpus and FAIL LOUDLY when nothing loaded. `load_from_dir`
+    /// is silent on a missing dir (Go parity); without this guard a bad
+    /// corpus path surfaces only as a bare `services: []` assertion with no
+    /// hint about the cause (#756).
+    fn load_corpus(classifier: &mut RuleClassifier, corpus: &str) {
+        classifier.load_from_dir(corpus).expect("corpus");
+        assert!(
+            classifier.rule_count() > 0,
+            "fingerprint corpus loaded ZERO rules from {corpus:?}; every \
+             service identity would silently vanish"
+        );
     }
 
     #[tokio::test]
@@ -495,7 +520,7 @@ mod tests {
 
         let mut classifier = RuleClassifier::new();
         let corpus = test_corpus_dir();
-        classifier.load_from_dir(&corpus).expect("corpus");
+        load_corpus(&mut classifier, &corpus);
         let snmp_text = std::fs::read_to_string(
             std::path::Path::new(&corpus).join("snmp-data.yaml"),
         )
@@ -543,7 +568,7 @@ mod tests {
 
         let mut classifier = RuleClassifier::new();
         let corpus = test_corpus_dir();
-        classifier.load_from_dir(&corpus).expect("corpus");
+        load_corpus(&mut classifier, &corpus);
         let snmp_text =
             std::fs::read_to_string(std::path::Path::new(&corpus).join("snmp-data.yaml"))
                 .unwrap_or_default();
@@ -599,7 +624,7 @@ mod tests {
 
         let mut classifier = RuleClassifier::new();
         let corpus = test_corpus_dir();
-        classifier.load_from_dir(&corpus).expect("corpus");
+        load_corpus(&mut classifier, &corpus);
         let engine = ScanEngine {
             probes: default_probes(),
             classifier: Arc::new(classifier),
@@ -628,18 +653,36 @@ mod tests {
     async fn scan_host_against_local_services() {
         // A local SSH-greeting listener + a closed everything else; run the
         // engine with a tiny port spec against it.
+        //
+        // Fully self-contained (#756): the listener is ours, the SNMP target
+        // is a port we bound-then-released (nothing listens, so the v2c->v1
+        // ladder cannot reach a real daemon and burns its 1s windows instead
+        // of querying an ambient agent), and the corpus path is
+        // CARGO_MANIFEST_DIR-anchored. Only the SSH identity is asserted, so
+        // ambient services on fixed probe ports (e.g. an RTSP listener on
+        // 8554) cannot change the outcome.
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = l.local_addr().unwrap().port();
         tokio::spawn(async move {
             while let Ok((mut s, _)) = l.accept().await {
                 use tokio::io::AsyncWriteExt;
-                let _ = s.write_all(b"SSH-2.0-dropbear_2020.81\r\n").await;
+                if s.write_all(b"SSH-2.0-dropbear_2020.81\r\n").await.is_err() {
+                    continue; // scanner hung up early: next connection
+                }
+                // Keep the stream open briefly so the greeting is not racing a
+                // FIN through the banner read.
+                tokio::time::sleep(Duration::from_millis(50)).await;
             }
         });
+        // Closed UDP port: nothing listens there, so the SNMP ladder cannot
+        // query an ambient daemon and fails on its (short) timeouts only.
+        let closed_udp = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let snmp_port = closed_udp.local_addr().unwrap().port();
+        drop(closed_udp);
 
         let mut classifier = RuleClassifier::new();
         let corpus = test_corpus_dir();
-        classifier.load_from_dir(&corpus).expect("corpus");
+        load_corpus(&mut classifier, &corpus);
         let snmp_text = std::fs::read_to_string(
             std::path::Path::new(&corpus).join("snmp-data.yaml"),
         )
@@ -653,11 +696,20 @@ mod tests {
                 crate::engine::oui::EMBEDDED_OUI,
             )),
             port_spec: vec![port],
-            per_host_timeout: Duration::from_secs(10),
-            per_probe_timeout: Duration::from_secs(2),
+            // Host budget is deliberately generous: a gather that overruns
+            // it is discarded WHOLESALE by the timeout below, which would
+            // turn a slow box into "not alive" instead of a useful failure.
+            per_host_timeout: Duration::from_secs(20),
+            // Per-probe is small on purpose. The SNMP ladder is 4 sequential
+            // wait timeouts (v2c, v2c-retry, v1, v1-retry) plus ~1.2s of
+            // backoff, so at 2s it alone is ~9s of every run; an unconnected
+            // UDP socket is not told about the ICMP port-unreachable, so it
+            // always burns the full window. The banner read has its own
+            // fixed 3s window (BANNER_READ_TIMEOUT), independent of this.
+            per_probe_timeout: Duration::from_secs(1),
             max_concurrent_hosts: 50,
             community: "public".into(),
-            snmp_port: 161,
+            snmp_port,
             rdns_servers: vec![],
             routers: vec![],
             allow_reserved: true,
@@ -668,12 +720,18 @@ mod tests {
             .await
             .expect("host alive via banner");
         assert_eq!(host.ip, "127.0.0.1");
+        // Distinguish "the TCP probe never reached our listener" from "the
+        // classifier produced no identity" — both used to collapse into the
+        // same bare `services: []` failure (#756).
+        let ports: Vec<i64> = serde_json::from_str(&host.open_ports).unwrap();
+        assert!(
+            ports.contains(&(port as i64)),
+            "TCP probe did not report our listener open: open_ports={ports:?}"
+        );
         let services: Vec<&str> = host.services.iter().map(|s| s.service.as_str()).collect();
         assert!(services.contains(&"ssh"), "{services:?}");
         let ssh = host.services.iter().find(|s| s.service == "ssh").unwrap();
         assert_eq!(ssh.port, port as i64);
-        let ports: Vec<i64> = serde_json::from_str(&host.open_ports).unwrap();
-        assert!(ports.contains(&(port as i64)));
     }
 
     #[test]
