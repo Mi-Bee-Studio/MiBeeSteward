@@ -119,6 +119,28 @@ func (q *Queries) DeletePendingAgentCommandsByCommand(ctx context.Context, arg D
 	return result.RowsAffected()
 }
 
+const getAgentCommand = `-- name: GetAgentCommand :one
+SELECT id, agent_id, command, payload, status, created_at, acknowledged_at, result FROM agent_commands WHERE id = ?
+`
+
+// Row fetch for completion-side consumers (the gateway-profile ingest
+// resolves the reporting agent from the command row, #753).
+func (q *Queries) GetAgentCommand(ctx context.Context, id int64) (AgentCommand, error) {
+	row := q.db.QueryRowContext(ctx, getAgentCommand, id)
+	var i AgentCommand
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.Command,
+		&i.Payload,
+		&i.Status,
+		&i.CreatedAt,
+		&i.AcknowledgedAt,
+		&i.Result,
+	)
+	return i, err
+}
+
 const getPendingAgentCommandByPayload = `-- name: GetPendingAgentCommandByPayload :one
 SELECT id, agent_id, command, payload, status, created_at, acknowledged_at, result FROM agent_commands
 WHERE agent_id = ? AND command = ? AND payload = ? AND status = 'pending'

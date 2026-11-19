@@ -91,6 +91,12 @@ blackbox 风格的外部资源周期探测--公网站点、托管 TLS 端口等�
 - **引擎**：10s tick 重读目标（增删改即时生效，无需重启）、并发经 `probe.max_concurrency` 可配（默认 8）、断点续跑、手动触发。
 - **证书库存**：复用扫描器的证书链采集，SNI 自动推导；瞬时失败保留最后已知良好链。
 - **多视角（#277）**：目标的探测可由中心、所有已注册 agent 或指定 agent 发起--结果按 `(target, vantage)` 分别记录，历史弹窗并排展示并在不一致时高亮，指标带 `mibee_probe_*{vantage=…}` 标签。调度器按 agent 上报的 `supported_modules` 能力声明过滤计划（#604）；tcp/dns 计划要求 agent 0.2.0+。
+- **突发采样（#744）**：icmp 目标可在 options 中携带 `burst_count`（每轮 1–20 个回显包，`burst_interval_ms` 10–1000 间隔）。突发轮次把 `loss_pct`（丢包率）与 `jitter_ms`（相邻回显 RTT 差分均值）升级为一等指标——落库 `probe_results`、历史弹窗图表（丢包/抖动模式）呈现，并由质量判定消费为稳定码 `loss_burst` / `jitter_high`（阈值 `probe.quality.loss_pct_threshold` 默认 5%、`jitter_degraded_ms` 默认 30）。60s 节奏的探测看不见微突发丢包，突发轮可以。
+- **UDP 出口归因（#745）**：当某视角的全部 icmp 链路死亡而 TCP 可达链路仍然通过时，degraded 判定附加 `udp_egress_blocked.tcp_alive_udp_dead`——是 UDP 通道问题，不是网络离线。仅作归因：绝不自行生成或升级判定（影响优先的告警原则）。
+- **HostNet 归因（#746）**：agent 每 5 分钟采样自身网络事实（网口错误/丢包计数、默认路由指纹、一次对中心的 DNS 解析计时）随报告 meta 上报；中心落序列（`vantage_hostnet`），并在 degraded 判定上附加 `vantage_local_degraded.iface_errors`（跟踪计数在两次采样间上升；下降视为重置而非劣化）或 `vantage_local_degraded.route_change`——用计数器回答"是我的网络坏了还是目标坏了"。
+- **站点间矩阵（#747）**：开启 `probe.autogen.mesh_enabled`（默认开）后，autogen sweep 依据 agent 上报源地址自动对账视角矩阵：中心→agent 与有序 agent→agent 的 icmp 链路（`mesh-*`，source `system`，10 包突发），N×N 的 RTT/丢包/抖动矩阵无需手工接线。链路跟随地址漂移，agent 注销即停用，回归即复活。
+- **网关画像（#750–#754）**：面向站点路由器设备的可选网络能力画像。`probe.nat`（设置中心，默认关——探测会向第三方暴露站点公网映射）承载 STUN 服务器列表，内置默认全部为公共节点（Cloudflare / Google / Nextcloud / 腾讯 / 小米；产品零自建 STUN——中立性约束）。用户可加自己的节点（host:port，≤8 行，内置行可停用不可删），支持所见即所得的一次性测试（映射地址 + 往返延迟）。设置变更即向全部 agent 下发 `gateway_probe`：agent 执行 UPnP IGD 发现（WAN IP、端口映射能力）与 NAT 映射行为判定（单 socket、≥2 个不同服务器：映射全部一致 = 锥形/EIM，任何差异 = 对称/EDM，应答不足两个 = 未知，绝不猜测）。证据落入路由器设备的 `scan_attributes.gateway`，设备页渲染为"网络画像"区块。
+- **agent 时钟偏移（#749）**：agent 每 5 分钟对公共 NTP 池做一次 SNTP 采样；校准偏移随报告 meta 上报，在 agents 页与上报时刻启发式偏移并排展示。
 - **指标与告警**：`mibee_probe_up` / `mibee_probe_duration_seconds` / `mibee_probe_cert_expiry_timestamp_seconds`（加上述质量 gauge），附带示例告警规则（目标宕机、证书临期）。
 
 ![拨测](images/pb-probes.webp)

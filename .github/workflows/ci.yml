@@ -43,7 +43,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Toolchain comes from agent-rs/rust-toolchain.toml (pinned 1.99.1):
+      # the coverage ratchet is sensitive to LLVM instrumentation changes
+      # between rustc releases, so the version must not float with `stable`.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.1"
       - uses: actions/cache@v4
         with:
           path: |
@@ -73,8 +78,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned to match agent-rs/rust-toolchain.toml: rustc 1.100.0 changed
+      # LLVM's instrumented-profile accounting and dropped the measured
+      # coverage from 78.5% to 66.2% on an identical tree. Bump the pin and
+      # re-baseline agent-rs/coverage-floor.txt in the same PR.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.99.1"
           components: llvm-tools-preview
       - uses: actions/cache@v4
         with:

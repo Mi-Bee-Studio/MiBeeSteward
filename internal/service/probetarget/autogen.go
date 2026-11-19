@@ -253,8 +253,123 @@ func (s *AutogenService) Sweep(ctx context.Context) (created, enabled, disabled 
 		}
 		disabled++
 	}
+
+	if cfg.EffectiveMeshEnabled() {
+		mc, me, md, merr := s.sweepMesh(ctx)
+		if merr != nil {
+			return created, enabled, disabled, merr
+		}
+		created += mc
+		enabled += me
+		disabled += md
+	}
+
 	if created+enabled+disabled > 0 {
 		s.logger.Info("probe autogen: sweep", "created", created, "enabled", enabled, "disabled", disabled, "auto_total", autoCount)
+	}
+	return created, enabled, disabled, nil
+}
+
+// meshTargetPrefix marks every mesh-matrix row (#747). Mesh targets are
+// source='system' (they land in the quality category and never appear as
+// user-created rows), icmp with the burst shape so loss/jitter ride the
+// matrix from day one.
+const meshTargetPrefix = "mesh-"
+
+// meshOptionsJSON is every mesh target's option block: a 10-echo burst at
+// the 20ms default gap. A shared literal (not a marshaled struct) keeps the
+// desired-state comparison trivial.
+const meshOptionsJSON = `{"burst_count":10}`
+
+// sweepMesh reconciles the site-to-site matrix (#747): center -> every agent
+// with a known source address, and every ordered agent pair a -> b. Rows are
+// keyed by name (mesh-center-to-{agent} / mesh-{src}-to-{dst}), source
+// 'system'; an agent that stops reporting parks its rows (kept for history,
+// a reappearance re-enables). Returns the sweep counters (created, enabled,
+// disabled).
+func (s *AutogenService) sweepMesh(ctx context.Context) (created, enabled, disabled int, err error) {
+	fleet, ferr := s.queries.ListAgentStatus(ctx)
+	if ferr != nil {
+		return 0, 0, 0, fmt.Errorf("autogen: mesh list agents: %w", ferr)
+	}
+	type peer struct{ agentID, ip string }
+	var agents []peer
+	for _, a := range fleet {
+		if ip := strings.TrimSpace(a.LastSourceIp); ip != "" {
+			agents = append(agents, peer{strings.TrimSpace(a.AgentID), ip})
+		}
+	}
+
+	existing, lerr := s.queries.ListProbeTargets(ctx)
+	if lerr != nil {
+		return 0, 0, 0, fmt.Errorf("autogen: mesh list targets: %w", lerr)
+	}
+	meshByName := make(map[string]db.ProbeTarget)
+	for _, t := range existing {
+		if strings.HasPrefix(t.Name, meshTargetPrefix) {
+			meshByName[t.Name] = t
+		}
+	}
+
+	desired := make(map[string]bool)
+	want := func(name, vantage, target string) {
+		desired[name] = true
+		if prev, ok := meshByName[name]; ok {
+			if prev.Target != target || prev.Vantage != vantage {
+				if _, uerr := s.queries.UpdateProbeTarget(ctx, db.UpdateProbeTargetParams{
+					Name: prev.Name, Module: "icmp", Target: target,
+					IntervalSeconds: prev.IntervalSeconds, TimeoutSeconds: prev.TimeoutSeconds,
+					Enabled: prev.Enabled, Notes: prev.Notes, Vantage: vantage,
+					Options: meshOptionsJSON, ID: prev.ID,
+				}); uerr != nil {
+					s.logger.Warn("probe autogen: mesh update failed", "name", name, "error", uerr)
+				}
+			}
+			if prev.Enabled == 0 {
+				if eerr := s.queries.ToggleProbeTargetEnabled(ctx, db.ToggleProbeTargetEnabledParams{Enabled: 1, ID: prev.ID}); eerr == nil {
+					enabled++
+				}
+			}
+			return
+		}
+		if _, cerr := s.queries.CreateProbeTarget(ctx, db.CreateProbeTargetParams{
+			Name: name, Module: "icmp", Target: target,
+			IntervalSeconds: 60, TimeoutSeconds: 5, Enabled: 1,
+			Notes:   "auto-generated site-to-site matrix leg (#747)",
+			Vantage: vantage, Options: meshOptionsJSON,
+			Source: domain.ProbeSourceSystem,
+		}); cerr != nil {
+			s.logger.Warn("probe autogen: mesh create failed", "name", name, "error", cerr)
+			return
+		}
+		created++
+	}
+
+	// Center -> each agent.
+	for _, a := range agents {
+		want(meshTargetPrefix+"center-to-"+a.agentID, domain.ProbeVantageCenter, a.ip)
+	}
+	// Each ordered agent pair a -> b (a executes the probe).
+	for _, src := range agents {
+		for _, dst := range agents {
+			if src.agentID == dst.agentID {
+				continue
+			}
+			want(meshTargetPrefix+src.agentID+"-to-"+dst.agentID,
+				domain.ProbeVantageAgentPrefix+src.agentID, dst.ip)
+		}
+	}
+
+	// Agents gone (or addresses lost) park their rows.
+	for name, t := range meshByName {
+		if desired[name] || t.Enabled == 0 {
+			continue
+		}
+		if derr := s.queries.ToggleProbeTargetEnabled(ctx, db.ToggleProbeTargetEnabledParams{Enabled: 0, ID: t.ID}); derr != nil {
+			s.logger.Warn("probe autogen: mesh park failed", "name", name, "error", derr)
+			continue
+		}
+		disabled++
 	}
 	return created, enabled, disabled, nil
 }

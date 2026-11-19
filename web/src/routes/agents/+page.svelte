@@ -43,6 +43,7 @@
 		hostname: string;
 		uptime_seconds: number;
 		clock_offset_seconds: number;
+		sntp_offset_ms?: number;
 		scans_total: number;
 		last_report_at: string;
 	}
@@ -402,7 +403,11 @@
 				// >60s behind or ahead of the center clock → warn color.
 				const cls = Math.abs(off) > 60 ? 'text-warning' : 'text-text-muted';
 				const sign = off >= 0 ? '+' : '';
-				return html`<span class="text-xs font-mono ${cls}">${sign}${off.toFixed(0)}s</span>`;
+				// Calibrated SNTP offset (#749) refines the heuristic when the
+				// agent's pool query landed (nonzero).
+				const sntp = (st as { sntp_offset_ms?: number }).sntp_offset_ms ?? 0;
+				const sntpPart = sntp !== 0 ? html`<span class="text-text-muted"> · SNTP ${sntp >= 0 ? '+' : ''}${(Math.round(sntp * 10) / 10).toFixed(1)}ms</span>` : '';
+				return html`<span class="text-xs font-mono ${cls}">${sign}${off.toFixed(0)}s</span>${sntpPart}`;
 			}
 		},
 		{

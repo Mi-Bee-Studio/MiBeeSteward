@@ -204,6 +204,20 @@ async fn run_agent(cfg: Config, config_path: &str) -> Result<(), String> {
         });
     }
 
+    // HostNet sampler + SNTP clock offset (#746/#749): attribution facts
+    // riding the report meta — interface counters, default-route fingerprint,
+    // one DNS-resolution timing against the CENTER host (the same resolution
+    // the report path itself depends on). 5-minute cadence, best-effort.
+    {
+        let reporter_hn = Arc::clone(&reporter);
+        let dns_hint = center_host(&cfg.center.url);
+        let mut stop = stop_rx.clone();
+        tasks.spawn(async move {
+            mibee_agent::hostnet::run_sampler(reporter_hn, dns_hint, Duration::from_secs(300), stop)
+                .await;
+        });
+    }
+
     // fingerprint sync
     if cfg.center.fingerprint_sync.enabled {
         let sync_dir = PathBuf::from(config_path)
@@ -486,6 +500,35 @@ async fn run_agent(cfg: Config, config_path: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Hostname part of the center URL — the HostNet sampler's DNS hint (#746):
+/// timing the same resolution the report path itself depends on keeps the
+/// attribution data relevant. Schemes and ports stripped; bare hosts pass.
+fn center_host(url: &str) -> String {
+    let rest = url.split("://").nth(1).unwrap_or(url);
+    let hostport = rest.split(['/', '?']).next().unwrap_or(rest);
+    // Bracketed IPv6 literals keep their colons: only split the port off a
+    // non-bracketed host.
+    if let Some(close) = hostport.find(']') {
+        if hostport.starts_with('[') {
+            return hostport[1..close].to_string();
+        }
+    }
+    hostport.split(':').next().unwrap_or(hostport).to_string()
+}
+
+#[cfg(test)]
+mod hostnet_tests {
+    #[test]
+    fn center_host_extracts_hostname() {
+        use super::center_host;
+        assert_eq!(center_host("https://center.example.com:8443"), "center.example.com");
+        assert_eq!(center_host("http://192.0.2.10:8080"), "192.0.2.10");
+        assert_eq!(center_host("http://192.0.2.10"), "192.0.2.10");
+        assert_eq!(center_host("192.0.2.10"), "192.0.2.10");
+        assert_eq!(center_host("http://[2001:db8::5]:8443/path"), "2001:db8::5");
+    }
+}
+
 async fn execute_command(
     cmd: AgentCommand,
     engine: Arc<ScanEngine>,
@@ -561,6 +604,30 @@ async fn execute_command(
             // Egress echo plan (#718): fingerprint-guarded like probe plans.
             let result = match serde_json::from_str::<mibee_agent::wire::EgressPlanCommand>(&cmd.payload) {
                 Ok(plan) => mibee_agent::egress::apply_pushed_plan(&egress_runner, plan).await,
+                Err(e) => format!(r#"{{"error":"bad payload: {e}"}}"#),
+            };
+            let status = if result.contains("\"error\"") { "failed" } else { "done" };
+            let _ = client.complete_command(cmd.id, status, &result).await;
+        }
+        "gateway_probe" => {
+            // Gateway profile (#752/#753): the payload carries the center's
+            // effective STUN list (public + user nodes) and a timeout; the
+            // agent runs UPnP IGD + NAT mapping classification and reports
+            // the evidence bundle back. A dead section stays at its default
+            // (the report notes why) — the command never fails the loop.
+            #[derive(serde::Deserialize)]
+            struct GatewayProbePayload {
+                #[serde(default)]
+                servers: Vec<String>,
+                #[serde(default)]
+                timeout_ms: u64,
+            }
+            let result = match serde_json::from_str::<GatewayProbePayload>(&cmd.payload) {
+                Ok(p) => {
+                    let timeout = std::time::Duration::from_millis(if p.timeout_ms > 0 { p.timeout_ms } else { 1500 });
+                    let report = mibee_agent::gateway::run_gateway_probe(&p.servers, timeout).await;
+                    serde_json::to_string(&report).unwrap_or_else(|_| r#"{"error":"serialize"}"#.to_string())
+                }
                 Err(e) => format!(r#"{{"error":"bad payload: {e}"}}"#),
             };
             let status = if result.contains("\"error\"") { "failed" } else { "done" };

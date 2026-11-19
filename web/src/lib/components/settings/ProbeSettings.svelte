@@ -17,6 +17,7 @@
 	import { addToast } from '$lib/stores/toast';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import LoadingButton from '$lib/components/LoadingButton.svelte';
+	import StunServers from './StunServers.svelte';
 	import { Radar, Sparkles, KeyRound } from '@lucide/svelte';
 
 	interface ProbeSettings {
@@ -153,5 +154,10 @@
 			</p>
 			<LoadingButton onclick={handleSave} loading={saving} variant="primary" label={m['probeSettings.save']()} />
 		</div>
+
+		<!-- Gateway profile STUN list (#750/#751): opt-in, public defaults,
+		     user nodes, per-row WYSIWYG test. Saves + tests through its own
+		     endpoints; independent of the policy switches above. -->
+		<StunServers />
 	{/if}
 </div>

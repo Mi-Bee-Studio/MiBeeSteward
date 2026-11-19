@@ -109,6 +109,11 @@ type ProbeQualityConfig struct {
 	DNSDegradedMs  int `koanf:"dns_degraded_ms"`
 	// OkRateThreshold (0..1) is the minimum success rate within the window.
 	OkRateThreshold float64 `koanf:"ok_rate_threshold"`
+	// LossPctThreshold (#744) is the burst-sampled packet loss percentage
+	// that marks a vantage degraded, on top of the ok-rate threshold.
+	LossPctThreshold float64 `koanf:"loss_pct_threshold"`
+	// JitterDegradedMs (#744) is the burst jitter budget in milliseconds.
+	JitterDegradedMs float64 `koanf:"jitter_degraded_ms"`
 	// Groups maps a group name to its probe points. The reserved names
 	// "domestic" (primary verdict) and "international" (reference, excluded
 	// from the primary verdict) drive the analyzer's grouping; other names
@@ -238,6 +243,79 @@ type ProbeAutogenConfig struct {
 	MaxTargets int `koanf:"max_targets"`
 	// SweepIntervalMinutes is the reconcile cadence.
 	SweepIntervalMinutes int `koanf:"sweep_interval_minutes"`
+	// Mesh (#747): auto-generate the vantage matrix targets (center -> each
+	// agent, each agent -> every other agent) from the agents' report source
+	// addresses, so the N-by-N site-to-site RTT/loss/jitter matrix exists
+	// without manual wiring. Nil = default ON (same contract as quality's
+	// Enabled pointer); read through EffectiveMeshEnabled.
+	MeshEnabled *bool `koanf:"mesh_enabled"`
+}
+
+// EffectiveMeshEnabled resolves the mesh-matrix switch with the shipped
+// default (on): absent key = on, explicit false = off.
+func (a ProbeAutogenConfig) EffectiveMeshEnabled() bool {
+	if a.MeshEnabled != nil {
+		return *a.MeshEnabled
+	}
+	return true
+}
+
+// ProbeSTUNServer is one row of the NAT-probe server list (#750): a public
+// or user-added STUN endpoint with its on/off switch. Builtin rows can be
+// disabled but not removed (the settings API restores them); the shipped
+// defaults are PUBLIC infrastructure only - the product carries no
+// self-hosted STUN (neutrality constraint).
+type ProbeSTUNServer struct {
+	Endpoint string `koanf:"endpoint"` // host:port (3478 implied by the probe)
+	Label    string `koanf:"label"`
+	Builtin  bool   `koanf:"builtin"`
+	Enabled  bool   `koanf:"enabled"`
+}
+
+// ProbeNATConfig is the web-editable gateway-profile policy (#750), riding
+// the settings overlay as probe.nat. Enabled defaults OFF: NAT/UPnP probing
+// exposes the site's public mapping to third-party servers, so it is an
+// explicit opt-in (same reasoning as the browser WebRTC permission).
+type ProbeNATConfig struct {
+	Enabled *bool `koanf:"enabled"`
+	// BurstTimeoutMS is the per-server query deadline for the NAT probe.
+	BurstTimeoutMS int               `koanf:"burst_timeout_ms"`
+	Servers        []ProbeSTUNServer `koanf:"servers"`
+}
+
+// EffectiveEnabled resolves the NAT-probe switch: absent key = off.
+func (n ProbeNATConfig) EffectiveEnabled() bool {
+	return n.Enabled != nil && *n.Enabled
+}
+
+// DefaultSTUNServers is the shipped public list: three international + two
+// Chinese endpoints. Individual providers are intermittent (field notes);
+// the classifier needs any two responsive servers, the mix survives one
+// dead provider in each region.
+func DefaultSTUNServers() []ProbeSTUNServer {
+	return []ProbeSTUNServer{
+		{Endpoint: "stun.cloudflare.com:3478", Label: "Cloudflare", Builtin: true, Enabled: true},
+		{Endpoint: "stun.l.google.com:19302", Label: "Google", Builtin: true, Enabled: true},
+		{Endpoint: "stun.nextcloud.com:443", Label: "Nextcloud", Builtin: true, Enabled: true},
+		{Endpoint: "stun.qq.com:3478", Label: "Tencent", Builtin: true, Enabled: true},
+		{Endpoint: "stun.miwifi.com:3478", Label: "Xiaomi", Builtin: true, Enabled: true},
+	}
+}
+
+// NormalizeProbeNAT fills the documented defaults (zero means default).
+func NormalizeProbeNAT(cfg *ProbeNATConfig) {
+	if cfg.BurstTimeoutMS == 0 {
+		cfg.BurstTimeoutMS = 1500
+	}
+	if cfg.BurstTimeoutMS < 200 {
+		cfg.BurstTimeoutMS = 200
+	}
+	if cfg.BurstTimeoutMS > 5000 {
+		cfg.BurstTimeoutMS = 5000
+	}
+	if len(cfg.Servers) == 0 {
+		cfg.Servers = DefaultSTUNServers()
+	}
 }
 
 // DefaultEgressSources is the shipped echo-source set (#718): a domestic and
@@ -379,6 +457,12 @@ func normalizeProbe(cfg *Config) {
 	}
 	if q.OkRateThreshold == 0 {
 		q.OkRateThreshold = 0.9
+	}
+	if q.LossPctThreshold == 0 {
+		q.LossPctThreshold = 5
+	}
+	if q.JitterDegradedMs == 0 {
+		q.JitterDegradedMs = 30
 	}
 	if q.Enabled == nil {
 		// Absent key = the shipped default: matrix on (matches the example

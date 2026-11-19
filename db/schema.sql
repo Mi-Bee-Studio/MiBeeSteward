@@ -816,6 +816,14 @@ CREATE TABLE IF NOT EXISTS agent_status (
     -- ('icmp,http,tls,tcp,dns'); '' = legacy agent that never reported
     -- capabilities (dispatcher treats it as the historical set icmp/http/tls).
     supported_modules TEXT NOT NULL DEFAULT '',
+    -- Last report's source address as the center saw it (#747): the peer
+    -- address for the mesh-matrix autogen (agent-to-agent and
+    -- center-to-agent icmp targets). '' until the first report lands.
+    last_source_ip TEXT NOT NULL DEFAULT '',
+    -- Calibrated SNTP clock offset from the agent's meta (#749), local
+    -- minus server, milliseconds. 0 = unknown/skipped; the report-time
+    -- clock_offset_seconds heuristic stays the coarse signal.
+    sntp_offset_ms REAL NOT NULL DEFAULT 0,
     last_report_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -951,11 +959,40 @@ CREATE TABLE IF NOT EXISTS probe_results (
     -- Which executor produced this row (#277): 'center' or 'agent:{agent_id}'.
     -- Mirrors probe_targets.vantage (the plan); results are the per-vantage
     -- tracks. Tail placement keeps fresh/migrated column orders identical.
-    vantage TEXT NOT NULL DEFAULT 'center'
+    vantage TEXT NOT NULL DEFAULT 'center',
+    -- Burst sampling metrics (#744): packet loss percentage and jitter (mean
+    -- absolute difference of consecutive echo RTTs) from one burst round of
+    -- the icmp module. 0 defaults keep pre-burst rows meaning "not measured";
+    -- a burst_count=1 run folds loss into status alone (single echo), so the
+    -- columns are only meaningful when the run carried a burst.
+    loss_pct REAL NOT NULL DEFAULT 0,
+    jitter_ms REAL NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_probe_results_target_time ON probe_results(target_id, checked_at DESC);
 CREATE INDEX IF NOT EXISTS idx_probe_results_checked_at ON probe_results(checked_at);
 CREATE INDEX IF NOT EXISTS idx_probe_results_target_vantage_time ON probe_results(target_id, vantage, checked_at DESC);
+
+-- vantage_hostnet: per-vantage local network facts from the agent-rs HostNet
+-- sampler (#746) — the attribution question "did THIS vantage's own network
+-- degrade, or the target" answered with counters instead of guesses.
+-- Append-only series like probe_results; quality attribution reads the last
+-- few samples per vantage, retention sweeps the rest. Raw counters are stored
+-- (deltas computed center-side between consecutive rows; a counter going
+-- backwards = interface reset, treated as reset not regression).
+CREATE TABLE IF NOT EXISTS vantage_hostnet (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vantage TEXT NOT NULL,                       -- 'agent:{agent_id}'
+    checked_at TEXT NOT NULL DEFAULT '',         -- RFC3339 UTC, sampler clock
+    -- Per-interface raw counters:
+    -- {"eth0": {"rx_errors": n, "tx_errors": n, "rx_dropped": n, "tx_dropped": n}}
+    iface_stats TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(iface_stats)),
+    -- Default-route fingerprint "iface|gateway" ('' = none found): a change
+    -- between consecutive samples is a route event.
+    default_route TEXT NOT NULL DEFAULT '',
+    dns_ms REAL NOT NULL DEFAULT 0,              -- last DNS resolution latency sample
+    note TEXT NOT NULL DEFAULT ''                -- sampler remarks (skipped reason, resolver used)
+);
+CREATE INDEX IF NOT EXISTS idx_vantage_hostnet_vantage_time ON vantage_hostnet(vantage, checked_at DESC);
 
 -- probe_tls_certs: certificate chains collected from probe targets - the
 -- external sibling of host_tls_certs (same column set, keyed by target_id

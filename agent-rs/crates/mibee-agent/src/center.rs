@@ -286,6 +286,10 @@ pub struct Reporter {
     process_start_sec: AtomicU32,
     pub scans_total: AtomicU32,
     pub meta: std::sync::Mutex<crate::wire::AgentMeta>,
+    /// Cached HostNet sample (#746) + SNTP clock offset (#749), refreshed by
+    /// the hostnet sampler loop; build_meta attaches whatever is current.
+    hostnet_sample: std::sync::Mutex<Option<crate::wire::HostnetReport>>,
+    clock_offset_ms: std::sync::Mutex<f64>,
 }
 
 struct ReporterState {
@@ -324,7 +328,22 @@ impl Reporter {
             process_start_sec: AtomicU32::new((now / 1000) as u32),
             scans_total: AtomicU32::new(0),
             meta: std::sync::Mutex::new(crate::wire::AgentMeta::default()),
+            hostnet_sample: std::sync::Mutex::new(None),
+            clock_offset_ms: std::sync::Mutex::new(0.0),
         }
+    }
+
+    /// HostNet sampler hook (#746): cache the newest sample + clock offset;
+    /// build_meta picks it up on the next report. Best-effort — a skipped
+    /// sample keeps the previous one until it ages out of relevance (the
+    /// checked_at timestamp tells the center how fresh it is).
+    pub fn set_hostnet_sample(
+        &self,
+        sample: Option<crate::wire::HostnetReport>,
+        offset_ms: f64,
+    ) {
+        *self.hostnet_sample.lock().unwrap() = sample;
+        *self.clock_offset_ms.lock().unwrap() = offset_ms;
     }
 
     /// Buffer alive hosts from a scan; early flush at max_buf.
@@ -505,6 +524,14 @@ impl Reporter {
         let start = i64::from(self.process_start_sec.load(Ordering::Relaxed)) * 1000;
         meta.uptime_sec = ((now - start) / 1000).max(0);
         meta.scans_total = i64::from(self.scans_total.load(Ordering::Relaxed));
+        // HostNet + clock offset (#746/#749): attach the sampler's newest
+        // cached sample; absent until the first sampling round lands.
+        if let Ok(h) = self.hostnet_sample.lock() {
+            if let Some(sample) = h.clone() {
+                meta.hostnet = Some(sample);
+            }
+        }
+        meta.clock_offset_ms = *self.clock_offset_ms.lock().unwrap();
         meta
     }
 }

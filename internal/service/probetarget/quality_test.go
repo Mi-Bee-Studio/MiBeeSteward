@@ -30,6 +30,7 @@ func testQualityConfig() config.ProbeQualityConfig {
 	return config.ProbeQualityConfig{
 		Enabled: &on, WindowMinutes: 15, IntervalSeconds: 120,
 		HTTPDegradedMs: 800, DNSDegradedMs: 300, OkRateThreshold: 0.9,
+		LossPctThreshold: 5, JitterDegradedMs: 30,
 		Groups: map[string][]config.ProbeQualityTarget{
 			"domestic": {
 				{Name: "q-dns-a", Module: "dns", Target: "www.example.com", Options: map[string]any{"resolver": "203.0.113.53"}},

@@ -59,7 +59,7 @@ func TestAgentCommandService_FleetStatusRoundtrip(t *testing.T) {
 		Version: "v0.5.1", GoVersion: "go1.24.1",
 		Hostname: "brume2", UptimeSec: 3600, ScansTotal: 42,
 	}
-	require.NoError(t, svc.UpsertAgentStatus(ctx, "agent-62", meta, 12.5))
+	require.NoError(t, svc.UpsertAgentStatus(ctx, "agent-62", meta, 12.5, "192.168.1.63"))
 	// nil meta (old-agent report) must not clobber... it overwrites with zeros
 	// by design (last report wins); assert the first write landed correctly.
 	rows, err := svc.ListAgentStatus(ctx)
@@ -71,11 +71,19 @@ func TestAgentCommandService_FleetStatusRoundtrip(t *testing.T) {
 	require.EqualValues(t, 3600, rows[0].UptimeSeconds)
 	require.InDelta(t, 12.5, rows[0].ClockOffsetSeconds, 0.001)
 	require.EqualValues(t, 42, rows[0].ScansTotal)
+	require.Equal(t, "192.168.1.63", rows[0].LastSourceIp)
 
 	// Upsert again (repeat upserts converge).
-	require.NoError(t, svc.UpsertAgentStatus(ctx, "agent-62", meta, 13.0))
+	require.NoError(t, svc.UpsertAgentStatus(ctx, "agent-62", meta, 13.0, "192.168.1.63"))
 	rows, err = svc.ListAgentStatus(ctx)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	require.InDelta(t, 13.0, rows[0].ClockOffsetSeconds, 0.001)
+	// #747: an empty source address (proxy chain hid it) keeps the previous
+	// value instead of clobbering the mesh peer address.
+	require.NoError(t, svc.UpsertAgentStatus(ctx, "agent-62", meta, 13.0, ""))
+	rows, err = svc.ListAgentStatus(ctx)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "192.168.1.63", rows[0].LastSourceIp)
 }

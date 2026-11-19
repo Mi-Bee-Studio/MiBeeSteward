@@ -37,8 +37,13 @@ type Service struct {
 	queries *db.Queries
 	egress  *egressCollector
 	tracer  *Tracer
-	cfg     config.ProbeConfig
-	logger  *slog.Logger
+	// traceHost is the trace seam: production points at tracer.TraceHost,
+	// tests swap a deterministic fake. Handler tests otherwise depend on
+	// the runner kernel's loopback TTL behaviour, which is not a stable
+	// contract (CI runners under -coverpkg instrumentation walk to max_ttl).
+	traceHost func(ctx context.Context, host string, port int, method string) TraceResult
+	cfg       config.ProbeConfig
+	logger    *slog.Logger
 
 	mu         sync.Mutex
 	nextEgress time.Time
@@ -51,14 +56,27 @@ func NewService(cfg config.ProbeConfig, store *Store, queries *db.Queries, logge
 	if logger == nil {
 		logger = slog.Default()
 	}
+	tracer := NewTracer(cfg.Trace.MaxTTL, cfg.Trace.PerHopMs, 1)
 	return &Service{
 		store:     store,
 		queries:   queries,
 		egress:    newEgressCollector(cfg.Egress, logger),
-		tracer:    NewTracer(cfg.Trace.MaxTTL, cfg.Trace.PerHopMs, 1),
+		tracer:    tracer,
+		traceHost: tracer.TraceHost,
 		cfg:       cfg,
 		logger:    logger,
 		nextTrace: make(map[int64]time.Time),
+	}
+}
+
+// SetTraceHost replaces the trace runner. Test seam only: handler tests in
+// other packages assert the HTTP/envelope contract and must not depend on the
+// runner kernel's loopback TTL behaviour (CI runners under -coverpkg
+// instrumentation walk to max_ttl where a dev box reaches in one hop).
+// Production wiring never calls this.
+func (s *Service) SetTraceHost(fn func(ctx context.Context, host string, port int, method string) TraceResult) {
+	if fn != nil {
+		s.traceHost = fn
 	}
 }
 
@@ -181,7 +199,11 @@ func (s *Service) traceTarget(ctx context.Context, t db.ProbeTarget, trigger str
 		sample.ID = id
 		return sample, nil
 	}
-	res := s.tracer.TraceHost(ctx, host, port, "auto")
+	runTrace := s.traceHost
+	if runTrace == nil {
+		runTrace = s.tracer.TraceHost
+	}
+	res := runTrace(ctx, host, port, "auto")
 	sample.Method = res.Method
 	sample.ResolvedIP = res.DstIP
 	sample.EndState = res.EndState

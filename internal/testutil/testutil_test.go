@@ -94,6 +94,7 @@ func TestSetupTestDBFromSchema(t *testing.T) {
 		"user_network_grants",
 		"user_totp",
 		"users",
+		"vantage_hostnet",
 		"vlans",
 	}
 	require.Equal(t, expected, tables)

@@ -128,8 +128,35 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 		if offset > saneRange || offset < -saneRange {
 			offset = 0
 		}
-		if err := h.fleetSvc.UpsertAgentStatus(r.Context(), agentID, rep.Meta, offset); err != nil {
+		// #747: the report's source address as the center saw it — the peer
+		// address the mesh-matrix autogen dials. X-Forwarded-For is NOT
+		// trusted here (trusted_proxies defaults to empty = trust no proxy);
+		// the direct peer is the truth this deployment sees.
+		sourceIP := strings.TrimSpace(strings.SplitN(r.RemoteAddr, ":", 2)[0])
+		if err := h.fleetSvc.UpsertAgentStatus(r.Context(), agentID, rep.Meta, offset, sourceIP); err != nil {
 			slog.Debug("agent report: fleet status upsert failed", "agent_id", agentID, "error", err)
+		}
+	}
+
+	// HostNet sample (#746): the agent's local-network facts land in the
+	// vantage_hostnet series so quality attribution can answer whether THIS
+	// vantage's own network degraded. Before the empty-report early return —
+	// heartbeats carry it too. Best-effort: a failed insert never fails the
+	// report (attribution data, not inventory).
+	if rep.Meta != nil && rep.Meta.Hostnet != nil {
+		hn := rep.Meta.Hostnet
+		ifaceJSON, jerr := json.Marshal(hn.IfaceStats)
+		if jerr == nil {
+			if ierr := h.queries.InsertVantageHostnet(r.Context(), db.InsertVantageHostnetParams{
+				Vantage:      domain.ProbeVantageAgentPrefix + agentID,
+				CheckedAt:    hn.CheckedAt,
+				IfaceStats:   string(ifaceJSON),
+				DefaultRoute: hn.DefaultRoute,
+				DnsMs:        hn.DNSMs,
+				Note:         hn.Note,
+			}); ierr != nil {
+				slog.Debug("agent report: hostnet insert failed", "agent_id", agentID, "error", ierr)
+			}
 		}
 	}
 

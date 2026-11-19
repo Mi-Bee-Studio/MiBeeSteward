@@ -65,12 +65,13 @@ var OpsCommands = map[string]bool{
 }
 
 // ValidCommands is the full enqueue whitelist (scan + probe plans + the
-// egress echo plan lane #718 + gated ops family).
+// egress echo plan lane #718 + the gateway-profile probe #753 + gated ops).
 func ValidCommands() map[string]bool {
 	return map[string]bool{
 		"scan":          true,
 		"probe":         true,
 		"egress":        true,
+		"gateway_probe": true,
 		"restart":       true,
 		"config-reload": true,
 		"logs-tail":     true,
@@ -239,14 +240,18 @@ func (s *AgentCommandService) validateScanTargets(ctx context.Context, agentID s
 
 // UpsertAgentStatus refreshes the fleet snapshot from one report. clockOffset
 // is precomputed by the caller (receive_time - scanned_at); meta may be nil
-// for agents on older builds (keep zero values).
-func (s *AgentCommandService) UpsertAgentStatus(ctx context.Context, agentID string, meta *domain.AgentMeta, clockOffset float64) error {
+// for agents on older builds (keep zero values). sourceIP is the report's
+// remote address (#747, the mesh matrix's peer address); empty keeps the
+// previous value (a proxy chain may hide it, don't clobber).
+func (s *AgentCommandService) UpsertAgentStatus(ctx context.Context, agentID string, meta *domain.AgentMeta, clockOffset float64, sourceIP string) error {
 	var version, goVersion, hostname, fpRev, modules string
 	var uptime, scans int64
+	var sntpOffset float64
 	if meta != nil {
 		version, goVersion, hostname, fpRev = meta.Version, meta.GoVersion, meta.Hostname, meta.FingerprintRev
 		uptime, scans = meta.UptimeSec, meta.ScansTotal
 		modules = strings.Join(meta.SupportedModules, ",")
+		sntpOffset = meta.ClockOffsetMs
 	}
 	return s.queries.UpsertAgentStatus(ctx, db.UpsertAgentStatusParams{
 		AgentID:            agentID,
@@ -258,6 +263,8 @@ func (s *AgentCommandService) UpsertAgentStatus(ctx context.Context, agentID str
 		ScansTotal:         scans,
 		FingerprintRev:     fpRev,
 		SupportedModules:   modules,
+		LastSourceIp:       sourceIP,
+		SntpOffsetMs:       sntpOffset,
 		LastReportAt:       time.Now().UTC(),
 	})
 }

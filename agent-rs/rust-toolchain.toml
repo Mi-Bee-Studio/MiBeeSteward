@@ -1,0 +1,12 @@
+# Pinned toolchain for the agent workspace (agent-rs).
+#
+# Why pin: the coverage gate (scripts/check-coverage-agent-rs.sh) compares
+# cargo-llvm-cov line coverage against a ratchet floor. LLVM's instrumented
+# profile changes between rustc releases, and rustc 1.100.0 dropped the
+# measured workspace coverage from 78.5% to 66.2% with an identical source
+# tree (same lcov LF totals, different hit accounting) - a tooling
+# discontinuity, not a test regression. Pinning keeps the ratchet meaningful;
+# bump deliberately (and re-baseline the floor in the same PR) when moving.
+[toolchain]
+channel = "1.99.1"
+components = ["llvm-tools-preview"]

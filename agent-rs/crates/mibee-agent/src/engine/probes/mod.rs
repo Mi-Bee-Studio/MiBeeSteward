@@ -154,6 +154,17 @@ pub async fn datagram_ping(ip: std::net::IpAddr, timeout: std::time::Duration) -
     }
 }
 
+/// Unprivileged ICMP datagram ping returning the echo RTT in milliseconds
+/// (#744 burst sampling; linux; None elsewhere).
+#[cfg(target_os = "linux")]
+pub async fn datagram_ping_ms(ip: std::net::IpAddr, timeout: std::time::Duration) -> Option<u64> {
+    icmp::datagram_ping_once(ip, timeout).await
+}
+#[cfg(not(target_os = "linux"))]
+pub async fn datagram_ping_ms(_ip: std::net::IpAddr, _timeout: std::time::Duration) -> Option<u64> {
+    None
+}
+
 /// TLS handshake returning cert fields (+ negotiated version as _version).
 pub async fn tls_cert_probe(
     host: &str,

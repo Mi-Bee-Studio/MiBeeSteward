@@ -32,8 +32,11 @@ func TestValidateProbeOptions_ModuleGating(t *testing.T) {
 		{"dns rejects http fields", "dns", ProbeOptions{Method: "GET"}, "do not apply"},
 		{"tcp accepts its own fields", "tcp", ProbeOptions{Send: "PING", Expect: "PONG"}, ""},
 		{"tcp rejects dns fields", "tcp", ProbeOptions{Record: "A"}, "do not apply"},
-		{"icmp takes none", "icmp", ProbeOptions{Keyword: "x"}, "takes no options"},
+		{"icmp accepts its own fields", "icmp", ProbeOptions{BurstCount: 10, BurstIntervalMs: 20}, ""},
+		{"icmp rejects http fields", "icmp", ProbeOptions{Keyword: "x"}, "do not apply"},
+		{"icmp rejects dns fields", "icmp", ProbeOptions{Resolver: "223.5.5.5"}, "do not apply"},
 		{"tls takes none", "tls", ProbeOptions{Expect: "x"}, "takes no options"},
+		{"tls rejects icmp fields", "tls", ProbeOptions{BurstCount: 5}, "takes no options"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -78,6 +81,15 @@ func TestValidateProbeOptions_FieldRules(t *testing.T) {
 		require.NoError(t, ValidateProbeOptions("tcp", &ProbeOptions{Expect: "SSH-2.0", ExpectMode: "contains"}))
 		require.Error(t, ValidateProbeOptions("tcp", &ProbeOptions{ExpectMode: "regex"}), "mode without expect")
 		require.Error(t, ValidateProbeOptions("tcp", &ProbeOptions{Expect: "x", ExpectMode: "glob"}))
+	})
+	t.Run("icmp burst bounds (#744)", func(t *testing.T) {
+		require.NoError(t, ValidateProbeOptions("icmp", &ProbeOptions{BurstCount: 1}))
+		require.NoError(t, ValidateProbeOptions("icmp", &ProbeOptions{BurstCount: 20, BurstIntervalMs: 1000}))
+		require.Error(t, ValidateProbeOptions("icmp", &ProbeOptions{BurstCount: 21}), "count over cap")
+		require.Error(t, ValidateProbeOptions("icmp", &ProbeOptions{BurstCount: -1}), "negative count")
+		require.Error(t, ValidateProbeOptions("icmp", &ProbeOptions{BurstCount: 5, BurstIntervalMs: 1001}), "interval over cap")
+		require.Error(t, ValidateProbeOptions("icmp", &ProbeOptions{BurstCount: 5, BurstIntervalMs: 9}), "interval under floor")
+		require.Error(t, ValidateProbeOptions("icmp", &ProbeOptions{BurstIntervalMs: 20}), "interval without count")
 	})
 	t.Run("nil and empty pass", func(t *testing.T) {
 		require.NoError(t, ValidateProbeOptions("http", nil))

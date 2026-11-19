@@ -26,6 +26,10 @@ import (
 
 // Quality verdicts (#608). The per-vantage reason strings are STABLE CODES:
 // the UI maps them to localized text, unknown codes fall back to raw.
+// Burst-sampling additions (#744/#745): loss_burst / jitter_high (burst
+// means over threshold) and udp_egress_blocked.tcp_alive_udp_dead (every
+// icmp leg dead while TCP-reachable legs pass — attribution only, it never
+// mints a verdict on its own).
 const (
 	QualityVerdictOK               = "ok"
 	QualityVerdictDegraded         = "degraded"
@@ -277,6 +281,10 @@ type QualityTrackStats struct {
 	P50Ms      float64 `json:"p50_ms"`
 	Samples    int     `json:"samples"`
 	LastStatus string  `json:"last_status,omitempty"`
+	// Burst sampling means (#744) over the window's rows of a burst target
+	// (options burst_count > 1); 0 = not a burst target / no rows.
+	LossPct  float64 `json:"loss_pct,omitempty"`
+	JitterMs float64 `json:"jitter_ms,omitempty"`
 }
 
 // QualityTargetMatrix is one matrix column: the per-vantage stats of one
@@ -324,6 +332,57 @@ type QualityReport struct {
 	Categories    []QualityCategoryReport `json:"categories"`
 }
 
+// hostnetAttribution codes (#746): stable attribution strings appended to a
+// DEGRADED vantage verdict when the agent's own network facts corroborate a
+// local fault. Attribution only — they never mint or upgrade a verdict.
+const (
+	hostnetCodeIfaceErrors = "vantage_local_degraded.iface_errors"
+	hostnetCodeRouteChange = "vantage_local_degraded.route_change"
+)
+
+// hostnetAttribution reads the vantage's newest HostNet samples (#746) and
+// reports local-fault evidence: interface error/drop counters that INCREASED
+// between the two newest samples, or a default-route fingerprint change. No
+// samples or fewer than two = no evidence, empty result.
+func (s *QualityService) hostnetAttribution(ctx context.Context, vantage string) []string {
+	rows, err := s.queries.ListVantageHostnetByVantage(ctx, db.ListVantageHostnetByVantageParams{
+		Vantage: vantage, Limit: 2,
+	})
+	if err != nil || len(rows) < 2 {
+		return nil
+	}
+	// Rows are newest-first: rows[0] is the newest sample.
+	var prevIface, curIface map[string]map[string]float64
+	_ = json.Unmarshal([]byte(rows[1].IfaceStats), &prevIface)
+	_ = json.Unmarshal([]byte(rows[0].IfaceStats), &curIface)
+	var codes []string
+	for iface, cur := range curIface {
+		if ifaceCountersIncreased(cur, prevIface[iface]) {
+			codes = append(codes, hostnetCodeIfaceErrors)
+			break
+		}
+	}
+	if rows[0].DefaultRoute != rows[1].DefaultRoute && rows[0].DefaultRoute != "" {
+		codes = append(codes, hostnetCodeRouteChange)
+	}
+	return codes
+}
+
+// hostnetCounters lists the counters whose increase counts as local-degradation
+// evidence. A counter going DOWN is an interface/agent reset, not a regression.
+var hostnetCounters = []string{"rx_errors", "tx_errors", "rx_dropped", "tx_dropped"}
+
+// ifaceCountersIncreased reports whether any tracked counter on one interface
+// went UP between the previous and current sample.
+func ifaceCountersIncreased(cur, prev map[string]float64) bool {
+	for _, counter := range hostnetCounters {
+		if cur[counter] > prev[counter] {
+			return true
+		}
+	}
+	return false
+}
+
 // Analyze aggregates the window's probe_results into per-CATEGORY verdicts
 // (#613): lan (device-bound targets), external (manual business targets) and
 // quality (the built-in matrix, verdict chain inside). Read-only and
@@ -335,13 +394,13 @@ func (s *QualityService) Analyze(ctx context.Context, windowMinutes int) (Qualit
 		windowMinutes = cfg.WindowMinutes
 	}
 	cutoff := time.Now().UTC().Add(-time.Duration(windowMinutes) * time.Minute).Format(time.RFC3339)
-	rows, err := s.queries.ListProbeResultsSince(ctx, cutoff)
-	if err != nil {
-		return QualityReport{}, fmt.Errorf("quality analyze: results since: %w", err)
-	}
 	targets, err := s.queries.ListProbeTargets(ctx)
 	if err != nil {
 		return QualityReport{}, fmt.Errorf("quality analyze: list targets: %w", err)
+	}
+	rows, err := s.queries.ListProbeResultsSince(ctx, cutoff)
+	if err != nil {
+		return QualityReport{}, fmt.Errorf("quality analyze: results since: %w", err)
 	}
 	nets, err := s.queries.ListNetworks(ctx)
 	if err != nil {
@@ -351,6 +410,16 @@ func (s *QualityService) Analyze(ctx context.Context, windowMinutes int) (Qualit
 	for _, n := range nets {
 		if n.AgentID != nil && strings.TrimSpace(*n.AgentID) != "" {
 			networkByAgent[strings.TrimSpace(*n.AgentID)] = n.Name
+		}
+	}
+
+	// Burst targets (#744): rows of a target with burst_count > 1 carry
+	// window-mean-able loss/jitter; everything else keeps the columns at
+	// zero regardless of stray row values.
+	burstTargets := make(map[int64]bool, len(targets))
+	for _, t := range targets {
+		if opts := parseProbeOptions(t.Options); opts != nil && opts.BurstCount > 1 {
+			burstTargets[t.ID] = true
 		}
 	}
 
@@ -365,6 +434,12 @@ func (s *QualityService) Analyze(ctx context.Context, windowMinutes int) (Qualit
 		}
 		a.samples++
 		a.last = r.Status
+		if burstTargets[r.TargetID] {
+			a.lossSum += r.LossPct
+			a.lossN++
+			a.jitterSum += r.JitterMs
+			a.jitterN++
+		}
 		if r.Status == "success" {
 			a.ok++
 			a.latencies = append(a.latencies, r.LatencyMs)
@@ -446,7 +521,34 @@ func (s *QualityService) Analyze(ctx context.Context, windowMinutes int) (Qualit
 	}
 	cr.Targets = qualityMatrixTargets(cfg, targetByName, agg)
 	report.Categories = append(report.Categories, cr)
+
+	// HostNet attribution (#746): degraded vantages gain the agent's own
+	// local-fault evidence (interface counter increases, route change) —
+	// appended to existing reasons, never minting or upgrading a verdict.
+	s.applyHostnetAttribution(ctx, report.Categories)
 	return report, nil
+}
+
+// applyHostnetAttribution decorates every DEGRADED vantage verdict (category
+// level and group level) with hostnet evidence codes. Read-only on the
+// verdicts otherwise; a lookup failure leaves the verdict untouched.
+func (s *QualityService) applyHostnetAttribution(ctx context.Context, categories []QualityCategoryReport) {
+	decorate := func(v *QualityVantageReport) {
+		if v.Verdict != QualityVerdictDegraded {
+			return
+		}
+		v.Reasons = append(v.Reasons, s.hostnetAttribution(ctx, v.Vantage)...)
+	}
+	for ci := range categories {
+		for i := range categories[ci].Vantages {
+			decorate(&categories[ci].Vantages[i])
+		}
+		for gi := range categories[ci].Groups {
+			for i := range categories[ci].Groups[gi].Vantages {
+				decorate(&categories[ci].Groups[gi].Vantages[i])
+			}
+		}
+	}
 }
 
 // analyzeGroup computes one quality config group (verdict chain + matrix
@@ -559,8 +661,17 @@ func judgeSimpleCategory(
 	vr.Reasons = vr.Reasons[:0]
 
 	okSum := 0.0
+	icmpAll, icmpFail, nonIcmpPass := 0, 0, false
 	for _, l := range legs {
 		okSum += l.st.OkRate
+		if l.module == "icmp" {
+			icmpAll++
+			if l.st.OkRate < 0.5 {
+				icmpFail++
+			}
+		} else if l.st.OkRate >= cfg.OkRateThreshold {
+			nonIcmpPass = true
+		}
 	}
 	if okSum/float64(len(legs)) < cfg.OkRateThreshold {
 		vr.Reasons = append(vr.Reasons, "ok_rate_low")
@@ -575,6 +686,25 @@ func judgeSimpleCategory(
 			break
 		}
 	}
+	// Burst metrics (#744): stable codes on the burst-sampled means.
+	for _, l := range legs {
+		if l.st.LossPct > cfg.LossPctThreshold {
+			vr.Reasons = append(vr.Reasons, "loss_burst")
+			break
+		}
+	}
+	for _, l := range legs {
+		if l.st.JitterMs > cfg.JitterDegradedMs {
+			vr.Reasons = append(vr.Reasons, "jitter_high")
+			break
+		}
+	}
+	// #745 attribution: every icmp leg dead while a non-icmp leg still
+	// passes reads as a UDP-path problem, not an outage. Attribution only —
+	// it appends to an already-degraded verdict, never mints one.
+	if icmpAll > 0 && icmpFail == icmpAll && nonIcmpPass && len(vr.Reasons) > 0 {
+		vr.Reasons = append(vr.Reasons, "udp_egress_blocked.tcp_alive_udp_dead")
+	}
 	vr.Score = okRateScore(legs)
 	if len(vr.Reasons) > 0 {
 		vr.Verdict = QualityVerdictDegraded
@@ -587,11 +717,17 @@ func judgeSimpleCategory(
 
 // trackAgg accumulates one (target, vantage) window; latencies count only
 // successes (a failure's latency is the timeout burn, not network RTT).
+// Burst metrics (#744) average over EVERY row of a burst target — a clean
+// 0%-loss round is real data, excluding it would bias the mean upward.
 type trackAgg struct {
 	samples   int
 	ok        int
 	last      string
 	latencies []float64
+	lossSum   float64
+	lossN     int
+	jitterSum float64
+	jitterN   int
 }
 
 func (a *trackAgg) stats() QualityTrackStats {
@@ -603,6 +739,12 @@ func (a *trackAgg) stats() QualityTrackStats {
 	sort.Float64s(sorted)
 	if n := len(sorted); n > 0 {
 		st.P50Ms = sorted[(n-1)/2]
+	}
+	if a.lossN > 0 {
+		st.LossPct = a.lossSum / float64(a.lossN)
+	}
+	if a.jitterN > 0 {
+		st.JitterMs = a.jitterSum / float64(a.jitterN)
 	}
 	return st
 }
@@ -672,7 +814,7 @@ func judgeVantage(
 		return a.stats(), true
 	}
 
-	var directs, dnses, others []qualityLeg
+	var directs, dnses, others, pings []qualityLeg
 	for _, qt := range cfgTargets {
 		st, ok := stat(qt.Name)
 		if !ok || st.Samples == 0 {
@@ -698,13 +840,15 @@ func judgeVantage(
 		switch {
 		case qt.Module == "dns":
 			dnses = append(dnses, leg)
+		case qt.Module == "icmp":
+			pings = append(pings, leg) // the UDP-path legs (#745)
 		case qt.Module == "tcp" && ipLiteralHost(qt.Target):
 			directs = append(directs, leg)
 		default:
 			others = append(others, leg) // http legs and host-named tcp legs
 		}
 	}
-	all := append(append(directs, dnses...), others...)
+	all := append(append(append(directs, pings...), dnses...), others...)
 	if len(all) == 0 {
 		return vr
 	}
@@ -769,7 +913,8 @@ func judgeVantage(
 			return vr
 		}
 	}
-	// 4. degraded / ok: overall ok-rate and per-module p50 budgets.
+	// 4. degraded / ok: overall ok-rate, per-module p50 budgets, and the
+	//    burst-sampled loss/jitter codes (#744).
 	var reasons []string
 	okSum := 0.0
 	for _, l := range all {
@@ -786,6 +931,27 @@ func judgeVantage(
 		if l.st.P50Ms > 0 && l.st.P50Ms > budget {
 			reasons = append(reasons, "latency_high")
 			break
+		}
+	}
+	for _, l := range all {
+		if l.st.LossPct > cfg.LossPctThreshold {
+			reasons = append(reasons, "loss_burst")
+			break
+		}
+	}
+	for _, l := range all {
+		if l.st.JitterMs > cfg.JitterDegradedMs {
+			reasons = append(reasons, "jitter_high")
+			break
+		}
+	}
+	// #745 attribution: every icmp leg dead while a TCP-reachable leg still
+	// passes = this network drops UDP; it is not offline. Attribution only —
+	// appended to an already-degraded verdict, never minting one.
+	if len(pings) > 0 && allFailed(pings) && len(reasons) > 0 {
+		tcpAlive := len(directs)+len(others) > 0 && (!allFailed(directs) || !allFailed(others))
+		if tcpAlive {
+			reasons = append(reasons, "udp_egress_blocked.tcp_alive_udp_dead")
 		}
 	}
 	vr.Score = okRateScore(all)

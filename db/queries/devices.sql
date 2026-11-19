@@ -64,6 +64,15 @@ UPDATE devices SET user_attributes = ?, updated_at = CURRENT_TIMESTAMP WHERE id 
 -- store/sqlite call this with the freshly-marshalled JSON after a scan run.
 UPDATE devices SET scan_attributes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
 
+-- name: GetGatewayDeviceForNetwork :one
+-- The network's primary router device for the gateway-profile ingest
+-- (#753): first live router-type row by id. No row = no ingest target.
+SELECT id, name, scan_attributes
+FROM devices
+WHERE network_id = ? AND type = 'router' AND archived_at IS NULL
+ORDER BY id
+LIMIT 1;
+
 -- name: DeleteDevice :execrows
 DELETE FROM devices
 WHERE id = ?;

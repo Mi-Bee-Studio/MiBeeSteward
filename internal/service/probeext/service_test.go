@@ -21,6 +21,20 @@ import (
 	"mibee-steward/internal/db"
 )
 
+// stubReachedTrace pins the trace runner to a deterministic one-hop reach.
+// The real Tracer's loopback behaviour is kernel-dependent (a dev box answers
+// in one TTL; CI runners under -coverpkg instrumentation walk to max_ttl), so
+// any test that asserts the reached sample must inject this.
+func stubReachedTrace(svc *Service) *Service {
+	svc.SetTraceHost(func(_ context.Context, host string, _ int, _ string) TraceResult {
+		return TraceResult{
+			Method: "tcp", DstIP: host, EndState: "reached", ReachedTTL: 1, ReplyTTL: 64,
+			Hops: []PathHop{{TTL: 1, IP: host, MS: 0.2}},
+		}
+	})
+	return svc
+}
+
 // openTestQueries builds an in-memory main DB with the probe_targets table
 // (the minimal slice of db/schema.sql the service reads). Returns the
 // queries plus the raw connection for test-row inserts.
@@ -90,7 +104,7 @@ func TestTraceTargetPersists(t *testing.T) {
 	queries, conn := openTestQueries(t)
 	insertTarget(t, conn, 1, "local-site", "http", srv.URL, "manual", true, nil)
 	store := openTestStore(t)
-	svc := NewService(testServiceCfg(), store, queries, nil)
+	svc := stubReachedTrace(NewService(testServiceCfg(), store, queries, nil))
 
 	sample, err := svc.traceTarget(context.Background(), mustGet(t, queries, 1), "baseline")
 	if err != nil {
@@ -112,7 +126,7 @@ func TestTraceNowAndSnapshots(t *testing.T) {
 	queries, conn := openTestQueries(t)
 	insertTarget(t, conn, 7, "biz-site", "http", srv.URL, "manual", true, nil)
 	store := openTestStore(t)
-	svc := NewService(testServiceCfg(), store, queries, nil)
+	svc := stubReachedTrace(NewService(testServiceCfg(), store, queries, nil))
 
 	sample, err := svc.TraceNow(context.Background(), 7)
 	if err != nil {
@@ -156,7 +170,7 @@ func TestTraceDueTargetsCategoryFilter(t *testing.T) {
 	insertTarget(t, conn, 2, "lan", "http", srv.URL, "auto", true, 55)
 	insertTarget(t, conn, 3, "off", "http", srv.URL, "manual", false, nil)
 	store := openTestStore(t)
-	svc := NewService(testServiceCfg(), store, queries, nil)
+	svc := stubReachedTrace(NewService(testServiceCfg(), store, queries, nil))
 
 	// First tick seeds the stagger; second tick (interval forced due by
 	// rewinding the schedule) traces.

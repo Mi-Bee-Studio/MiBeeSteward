@@ -2033,6 +2033,61 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ProbeSettingsResponse"}
+  /settings/probes/stun-servers:
+    get:
+      tags: [Settings]
+      summary: "STUN server list for the gateway profile (#750): overlay row when written, shipped public defaults otherwise; ?defaults=1 returns the pristine list (restore-defaults data source)"
+      parameters:
+        - {name: defaults, in: query, required: false, schema: {type: string, enum: ["1"]}, description: return the shipped defaults instead of the overlay}
+      responses:
+        "200":
+          description: STUN server list + opt-in switch
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbeNATSettings"}
+    put:
+      tags: [Settings]
+      summary: "Replace the whole list (PUT semantics): host:port validated, deduped, max 8 rows; builtin rows may be disabled but never dropped; triggers the gateway re-probe"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ProbeNATSettings"}
+      responses:
+        "200":
+          description: Post-update effective list
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProbeNATSettings"}
+        "400": {description: invalid endpoint / duplicate / builtin dropped / over cap}
+  /settings/probes/stun-servers/test:
+    post:
+      tags: [Settings]
+      summary: "One STUN Binding Request from the center (#750): mapped address + RTT, WYSIWYG check before saving a custom node; never persists"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint]
+              properties:
+                endpoint: {type: string, description: host:port (3478 implied)}
+      responses:
+        "200":
+          description: "ok=true with mapped_ip/mapped_port/rtt_ms, or ok=false with error"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: {type: boolean}
+                  endpoint: {type: string}
+                  mapped_ip: {type: string}
+                  mapped_port: {type: integer}
+                  rtt_ms: {type: number}
+                  error: {type: string}
+        "400": {description: invalid endpoint}
   /system:
     get:
       tags: [Settings]
@@ -2909,6 +2964,8 @@ components:
         send: {type: string, description: "tcp only; ASCII payload written right after connect"}
         expect: {type: string, description: "tcp only; banner match against the first bytes read"}
         expect_mode: {type: string, enum: [contains, regex], description: "tcp only; default contains"}
+        burst_count: {type: integer, description: "icmp only (#744); echoes per round, 0/1 = single ping (legacy, no burst metrics); max 20"}
+        burst_interval_ms: {type: integer, description: "icmp only (#744); gap between echoes, 0 = prober default (20ms); 10-1000; requires burst_count"}
     ProbeVantageLatest:
       type: object
       description: Newest probe outcome of one executor's track.
@@ -2919,6 +2976,8 @@ components:
         latency_ms: {type: number}
         error_message: {type: string}
         checked_at: {type: string}
+        loss_pct: {type: number, description: "burst sampling (#744); omitted when not measured"}
+        jitter_ms: {type: number, description: "burst sampling (#744); omitted when not measured"}
     ProbeTargetList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
@@ -2940,6 +2999,8 @@ components:
         cert_trusted: {type: boolean, nullable: true, description: null = no cert collected that run}
         checked_at: {type: string}
         vantage: {type: string, description: "'center' or 'agent:{id}'"}
+        loss_pct: {type: number, description: "burst sampling (#744); omitted when not measured (single-ping rounds, non-icmp modules)"}
+        jitter_ms: {type: number, description: "burst sampling (#744); omitted when not measured"}
     ProbeResultList:
       allOf:
         - $ref: "#/components/schemas/PageMeta"
@@ -3210,6 +3271,8 @@ components:
         p50_ms: {type: number}
         samples: {type: integer}
         last_status: {type: string}
+        loss_pct: {type: number, description: "burst sampling (#744); window mean over a burst target's rows; omitted when the target is not a burst target"}
+        jitter_ms: {type: number, description: "burst sampling (#744); window mean over a burst target's rows; omitted otherwise"}
     ProbeSettingsResponse:
       type: object
       description: Effective probe policy switches plus where each came from ("overlay" = edited in web UI, "config" = the YAML file)
@@ -3242,6 +3305,25 @@ components:
       properties:
         enabled: {type: boolean}
         max_targets: {type: integer, minimum: 1, maximum: 1000}
+    ProbeNATSettings:
+      type: object
+      description: "Gateway-profile policy + STUN server list (#750). Defaults are PUBLIC infrastructure only (the product carries no self-hosted STUN); enabled defaults OFF - probing exposes the site mapping to third parties, explicit opt-in."
+      required: [enabled, source, burst_timeout_ms, servers]
+      properties:
+        enabled: {type: boolean, description: absent key resolves OFF (opt-in)}
+        source: {type: string, enum: [overlay, default]}
+        burst_timeout_ms: {type: integer, description: per-server query deadline, clamped 200-5000 (default 1500)}
+        servers:
+          type: array
+          maxItems: 8
+          items:
+            type: object
+            required: [endpoint, enabled]
+            properties:
+              endpoint: {type: string, description: host:port (3478 implied by the probe)}
+              label: {type: string}
+              builtin: {type: boolean, description: shipped public rows may be disabled but never dropped}
+              enabled: {type: boolean}
         interval_seconds: {type: integer, minimum: 10}
     AutogenSweepResult:
       type: object

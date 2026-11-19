@@ -49,6 +49,39 @@ pub struct AgentMeta {
     /// wire shape, byte-compatible).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub self_interfaces: Vec<SelfInterface>,
+    /// Local-network facts for attribution (#746): interface error counters,
+    /// default-route fingerprint, DNS resolution latency. Sampled on a
+    /// min-interval cadence, absent on sampling failure and on older agents.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hostnet: Option<HostnetReport>,
+    /// SNTP clock offset vs the configured public NTP pool (#749), in
+    /// milliseconds (local clock minus server clock). 0 = unknown/skipped.
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub clock_offset_ms: f64,
+}
+
+/// Go `domain.AgentHostnet` (inside AgentMeta, #746) — one HostNet sample.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct HostnetReport {
+    /// RFC3339 UTC, sampler clock.
+    #[serde(default)]
+    pub checked_at: String,
+    /// Per-interface raw counters: {"eth0": {"rx_errors": n, "tx_errors": n,
+    /// "rx_dropped": n, "tx_dropped": n}}. Raw, NOT deltas — the center
+    /// computes deltas between consecutive samples (a counter going backwards
+    /// = interface reset, not regression).
+    #[serde(default)]
+    pub iface_stats: std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
+    /// Default-route fingerprint "iface|gateway-dotted" ('' = none found); a
+    /// change between consecutive samples is a route event.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub default_route: String,
+    /// Last DNS resolution latency in milliseconds (0 = not measured).
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub dns_ms: f64,
+    /// Sampler remarks (skipped reason, resolver used).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
 }
 
 /// Go `domain.AgentSelfInterface` (inside AgentMeta, #686).
@@ -382,6 +415,12 @@ pub struct ProbeTargetOptions {
     pub expect: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub expect_mode: String, // contains | regex
+    // icmp (#744): burst sampling — one round becomes N echoes so loss and
+    // jitter become measurable. Absent = legacy single ping.
+    #[serde(default, skip_serializing_if = "is_zero_i64")]
+    pub burst_count: i64,
+    #[serde(default, skip_serializing_if = "is_zero_i64")]
+    pub burst_interval_ms: i64,
 }
 
 /// POST /api/v1/agents/probe-report row — Go `probetarget.AgentResultReport`.
@@ -410,6 +449,13 @@ pub struct ProbeResultReport {
     /// the center stores whatever stages a row actually carries.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phases: Option<ProbePhases>,
+    /// Burst sampling metrics (#744, icmp module) — Go `probe.Result`
+    /// LossPct/JitterMs. Zero = not measured; skipped on the wire the same
+    /// way the Go JSON omitempty drops them.
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub loss_pct: f64,
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub jitter_ms: f64,
 }
 
 /// Per-stage breakdown of one probe run — Go `probe.Phases` (same snake_case

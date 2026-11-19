@@ -133,6 +133,9 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 		r.Put("/auth", settingsHandler.UpdateAuth)
 		r.Get("/probes", settingsHandler.GetProbes)
 		r.Put("/probes", settingsHandler.UpdateProbes)
+		r.Get("/probes/stun-servers", settingsHandler.GetSTUNServers)
+		r.Put("/probes/stun-servers", settingsHandler.UpdateSTUNServers)
+		r.Post("/probes/stun-servers/test", settingsHandler.TestSTUNServer)
 	})
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth)

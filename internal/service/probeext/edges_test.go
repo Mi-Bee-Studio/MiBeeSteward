@@ -89,7 +89,7 @@ func TestTraceDueConcurrency(t *testing.T) {
 	insertTarget(t, conn, 11, "ext-a", "http", srv, "manual", true, nil)
 	insertTarget(t, conn, 12, "ext-b", "http", srv, "manual", true, nil)
 	store := openTestStore(t)
-	svc := NewService(testServiceCfg(), store, queries, nil)
+	svc := stubReachedTrace(NewService(testServiceCfg(), store, queries, nil))
 	now := time.Now()
 	svc.traceDueTargets(context.Background(), now)
 	svc.mu.Lock()
