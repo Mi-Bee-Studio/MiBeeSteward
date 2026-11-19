@@ -70,6 +70,14 @@
 
 ![变更历史](images/pb-changes.webp)
 
+## 网络异常诊断（#761）
+
+- **回答什么**：当一台设备看似在不断变换 IP 时，这是真实的轮换——还是假象？判定引擎把地址目击历史（sightings）与逐 IP 扫描存活事实（snapshots）、多宿主 presence 层、变更流做联接，对模式进行分类并输出证据链。
+- **实证分类**：`stale_arp_scan_artifact`（大量目击地址、无一在扫描中应答——目击来自陈旧 ARP 缓存读取，而非设备真的在移动）、`multihomed_alias`（同一台主机活跃于多个网段）、`locally_administered_mac`（虚拟/软 MAC；按 MAC 做绑定不会生效）、`ip_slot_takeover`（变更流记录到同一地址上 MAC 被替换）、`hostname_identity_split`（多行设备以不同 MAC 广播同一主机名）。
+- **设计原则**：单看 sightings 是歧义的——它记录的是"某视角观测到了什么"，包括陈旧 ARP 缓存的读取。因此每个地址都会与扫描快照（`miss_count`、`flap_count`）交叉核对后才出结论；`stale_arp_scan_artifact` 是唯一高置信分类，正因为它立足于存活事实。
+- **消费接口**：`GET /api/v1/devices/{id}/diagnosis`（只读、按需计算）与设备详情页的**网络异常诊断**面板——判定徽章、带证据的结论、逐地址存活时间线、同名兄弟行。
+- **刻意不做告警**：遵循"告警只看影响，不看变化"原则，判定为拉取式；若下游影响需要推送，请挂接既有变更流的通知规则。
+
 ## 设备配置备份（Config Backup，v0.5.0，opt-in）
 
 Oxidized/RANCID 风格的网络设备配置拉取与版本管理：

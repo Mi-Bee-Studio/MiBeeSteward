@@ -1807,6 +1807,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/devices/{id}/diagnosis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Network-anomaly diagnosis of a device (#761)
+         * @description Classified verdict over the persisted sightings/snapshot/change facts: the per-address timeline annotated with scan liveness (alive, miss streak, flaps), anomaly findings (stale-ARP artifact, multi-homed alias, locally-administered MAC, IP-slot takeover, hostname identity split) each with an evidence chain, and sibling device rows announcing the same hostname under a different MAC. Read-only, computed on demand.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Diagnosis verdict */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DeviceDiagnosis"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/devices/{id}/interfaces": {
         parameters: {
             query?: never;
@@ -7019,6 +7061,83 @@ export interface components {
             last_seen: string;
             /** Format: int64 */
             see_count: number;
+        };
+        /** @description Per-device network-anomaly verdict (#761), computed on demand */
+        DeviceDiagnosis: {
+            /** Format: int64 */
+            device_id?: number;
+            device_name?: string;
+            device_mac?: string;
+            device_ip?: string;
+            /** @enum {string} */
+            device_status?: "online" | "offline" | "unknown";
+            /**
+             * @description Verdict level (anomaly = critical/warning finding present)
+             * @enum {string}
+             */
+            status?: "anomaly" | "watch" | "healthy";
+            /**
+             * @description Highest-severity finding code (empty when healthy)
+             * @enum {string}
+             */
+            classification?: "stale_arp_scan_artifact" | "multihomed_alias" | "locally_administered_mac" | "ip_slot_takeover" | "hostname_identity_split";
+            /**
+             * @description high when the verdict rests on per-address liveness facts
+             * @enum {string}
+             */
+            confidence?: "high" | "medium";
+            summary?: string;
+            findings?: components["schemas"]["DiagnosisFinding"][];
+            addresses?: components["schemas"]["DiagnosisAddress"][];
+            siblings?: components["schemas"]["DiagnosisSibling"][];
+            /** Format: date-time */
+            generated_at?: string;
+        };
+        DiagnosisFinding: {
+            code?: string;
+            /** @enum {string} */
+            severity?: "info" | "warning" | "critical";
+            summary?: string;
+            evidence?: {
+                /** @description sighting | snapshot | change | attribute | presence | sibling */
+                kind?: string;
+                detail?: string;
+                /** Format: date-time */
+                at?: string | null;
+            }[];
+        };
+        DiagnosisAddress: {
+            ip_address?: string;
+            macs?: string[];
+            /** @description the address answered the latest scan (snapshot miss_count == 0) */
+            alive?: boolean;
+            /** @description consecutive scans absent; -1 = never seen alive */
+            missing_scans?: number;
+            /** @description liveness transitions; -1 = unknown */
+            flap_count?: number;
+            /** Format: int64 */
+            see_count?: number;
+            /** Format: date-time */
+            first_seen?: string;
+            /** Format: date-time */
+            last_seen?: string;
+            sources?: string[];
+            vantages?: string[];
+            /** @description the address the device row currently points at */
+            current?: boolean;
+        };
+        DiagnosisSibling: {
+            /** Format: int64 */
+            id?: number;
+            name?: string;
+            status?: string;
+            ip_address?: string;
+            mac_address?: string;
+            hostname?: string;
+            /** Format: int64 */
+            network_id?: number;
+            /** Format: date-time */
+            last_seen?: string | null;
         };
         SightingList: {
             sightings?: components["schemas"]["DeviceSighting"][];

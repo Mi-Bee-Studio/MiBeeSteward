@@ -37,6 +37,7 @@ import (
 	"mibee-steward/internal/service/agentwatch"
 	"mibee-steward/internal/service/archive"
 	"mibee-steward/internal/service/demoseed"
+	"mibee-steward/internal/service/diagnostics"
 	"mibee-steward/internal/service/discovery"
 	"mibee-steward/internal/service/flows"
 	"mibee-steward/internal/service/listenwatch"
@@ -1129,6 +1130,12 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	registerDeviceSpeaksRoutes(r, scopeResolver, dbConn, speaksHandler)
 	registerDeviceSightingsRoutes(r, scopeResolver, dbConn, sightingsHandler)
 	registerDeviceInterfacesRoutes(r, scopeResolver, dbConn, interfacesHandler)
+
+	// Per-device network-anomaly diagnosis (#761): read-only verdict over the
+	// persisted sightings/snapshot/change facts. Classification lives in the
+	// diagnostics service; any logged-in user may read.
+	diagnosisHandler := handler.NewDeviceDiagnosisHandler(diagnostics.NewService(dbConn))
+	registerDeviceDiagnosisRoutes(r, scopeResolver, dbConn, diagnosisHandler)
 
 	registerDeviceCertificateRoutes(r, scopeResolver, dbConn, tlsCertHandler)
 

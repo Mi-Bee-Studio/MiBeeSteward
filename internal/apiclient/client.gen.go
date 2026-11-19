@@ -366,6 +366,93 @@ func (e DeviceType) Valid() bool {
 	}
 }
 
+// Defines values for DeviceDiagnosisClassification.
+const (
+	HostnameIdentitySplit  DeviceDiagnosisClassification = "hostname_identity_split"
+	IpSlotTakeover         DeviceDiagnosisClassification = "ip_slot_takeover"
+	LocallyAdministeredMac DeviceDiagnosisClassification = "locally_administered_mac"
+	MultihomedAlias        DeviceDiagnosisClassification = "multihomed_alias"
+	StaleArpScanArtifact   DeviceDiagnosisClassification = "stale_arp_scan_artifact"
+)
+
+// Valid indicates whether the value is a known member of the DeviceDiagnosisClassification enum.
+func (e DeviceDiagnosisClassification) Valid() bool {
+	switch e {
+	case HostnameIdentitySplit:
+		return true
+	case IpSlotTakeover:
+		return true
+	case LocallyAdministeredMac:
+		return true
+	case MultihomedAlias:
+		return true
+	case StaleArpScanArtifact:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DeviceDiagnosisConfidence.
+const (
+	High   DeviceDiagnosisConfidence = "high"
+	Medium DeviceDiagnosisConfidence = "medium"
+)
+
+// Valid indicates whether the value is a known member of the DeviceDiagnosisConfidence enum.
+func (e DeviceDiagnosisConfidence) Valid() bool {
+	switch e {
+	case High:
+		return true
+	case Medium:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DeviceDiagnosisDeviceStatus.
+const (
+	DeviceDiagnosisDeviceStatusOffline DeviceDiagnosisDeviceStatus = "offline"
+	DeviceDiagnosisDeviceStatusOnline  DeviceDiagnosisDeviceStatus = "online"
+	DeviceDiagnosisDeviceStatusUnknown DeviceDiagnosisDeviceStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the DeviceDiagnosisDeviceStatus enum.
+func (e DeviceDiagnosisDeviceStatus) Valid() bool {
+	switch e {
+	case DeviceDiagnosisDeviceStatusOffline:
+		return true
+	case DeviceDiagnosisDeviceStatusOnline:
+		return true
+	case DeviceDiagnosisDeviceStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DeviceDiagnosisStatus.
+const (
+	Anomaly DeviceDiagnosisStatus = "anomaly"
+	Healthy DeviceDiagnosisStatus = "healthy"
+	Watch   DeviceDiagnosisStatus = "watch"
+)
+
+// Valid indicates whether the value is a known member of the DeviceDiagnosisStatus enum.
+func (e DeviceDiagnosisStatus) Valid() bool {
+	switch e {
+	case Anomaly:
+		return true
+	case Healthy:
+		return true
+	case Watch:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DeviceNeighborProtocol.
 const (
 	DeviceNeighborProtocolARP        DeviceNeighborProtocol = "ARP"
@@ -396,6 +483,27 @@ func (e DeviceNeighborProtocol) Valid() bool {
 	case DeviceNeighborProtocolSpeaksWith:
 		return true
 	case DeviceNeighborProtocolWiFi:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DiagnosisFindingSeverity.
+const (
+	Critical DiagnosisFindingSeverity = "critical"
+	Info     DiagnosisFindingSeverity = "info"
+	Warning  DiagnosisFindingSeverity = "warning"
+)
+
+// Valid indicates whether the value is a known member of the DiagnosisFindingSeverity enum.
+func (e DiagnosisFindingSeverity) Valid() bool {
+	switch e {
+	case Critical:
+		return true
+	case Info:
+		return true
+	case Warning:
 		return true
 	default:
 		return false
@@ -2062,6 +2170,41 @@ type DeviceConfigSummary struct {
 	Protocol   string    `json:"protocol"`
 }
 
+// DeviceDiagnosis Per-device network-anomaly verdict (#761), computed on demand
+type DeviceDiagnosis struct {
+	Addresses *[]DiagnosisAddress `json:"addresses,omitempty"`
+
+	// Classification Highest-severity finding code (empty when healthy)
+	Classification *DeviceDiagnosisClassification `json:"classification,omitempty"`
+
+	// Confidence high when the verdict rests on per-address liveness facts
+	Confidence   *DeviceDiagnosisConfidence   `json:"confidence,omitempty"`
+	DeviceId     *int64                       `json:"device_id,omitempty"`
+	DeviceIp     *string                      `json:"device_ip,omitempty"`
+	DeviceMac    *string                      `json:"device_mac,omitempty"`
+	DeviceName   *string                      `json:"device_name,omitempty"`
+	DeviceStatus *DeviceDiagnosisDeviceStatus `json:"device_status,omitempty"`
+	Findings     *[]DiagnosisFinding          `json:"findings,omitempty"`
+	GeneratedAt  *time.Time                   `json:"generated_at,omitempty"`
+	Siblings     *[]DiagnosisSibling          `json:"siblings,omitempty"`
+
+	// Status Verdict level (anomaly = critical/warning finding present)
+	Status  *DeviceDiagnosisStatus `json:"status,omitempty"`
+	Summary *string                `json:"summary,omitempty"`
+}
+
+// DeviceDiagnosisClassification Highest-severity finding code (empty when healthy)
+type DeviceDiagnosisClassification string
+
+// DeviceDiagnosisConfidence high when the verdict rests on per-address liveness facts
+type DeviceDiagnosisConfidence string
+
+// DeviceDiagnosisDeviceStatus defines model for DeviceDiagnosis.DeviceStatus.
+type DeviceDiagnosisDeviceStatus string
+
+// DeviceDiagnosisStatus Verdict level (anomaly = critical/warning finding present)
+type DeviceDiagnosisStatus string
+
 // DeviceDocumentList defines model for DeviceDocumentList.
 type DeviceDocumentList struct {
 	Documents *[]Document `json:"documents,omitempty"`
@@ -2185,6 +2328,57 @@ type DeviceSystemList struct {
 // DeviceTagList defines model for DeviceTagList.
 type DeviceTagList struct {
 	Tags *[]TagBrief `json:"tags,omitempty"`
+}
+
+// DiagnosisAddress defines model for DiagnosisAddress.
+type DiagnosisAddress struct {
+	// Alive the address answered the latest scan (snapshot miss_count == 0)
+	Alive *bool `json:"alive,omitempty"`
+
+	// Current the address the device row currently points at
+	Current   *bool      `json:"current,omitempty"`
+	FirstSeen *time.Time `json:"first_seen,omitempty"`
+
+	// FlapCount liveness transitions; -1 = unknown
+	FlapCount *int       `json:"flap_count,omitempty"`
+	IpAddress *string    `json:"ip_address,omitempty"`
+	LastSeen  *time.Time `json:"last_seen,omitempty"`
+	Macs      *[]string  `json:"macs,omitempty"`
+
+	// MissingScans consecutive scans absent; -1 = never seen alive
+	MissingScans *int      `json:"missing_scans,omitempty"`
+	SeeCount     *int64    `json:"see_count,omitempty"`
+	Sources      *[]string `json:"sources,omitempty"`
+	Vantages     *[]string `json:"vantages,omitempty"`
+}
+
+// DiagnosisFinding defines model for DiagnosisFinding.
+type DiagnosisFinding struct {
+	Code     *string `json:"code,omitempty"`
+	Evidence *[]struct {
+		At     *time.Time `json:"at,omitempty"`
+		Detail *string    `json:"detail,omitempty"`
+
+		// Kind sighting | snapshot | change | attribute | presence | sibling
+		Kind *string `json:"kind,omitempty"`
+	} `json:"evidence,omitempty"`
+	Severity *DiagnosisFindingSeverity `json:"severity,omitempty"`
+	Summary  *string                   `json:"summary,omitempty"`
+}
+
+// DiagnosisFindingSeverity defines model for DiagnosisFinding.Severity.
+type DiagnosisFindingSeverity string
+
+// DiagnosisSibling defines model for DiagnosisSibling.
+type DiagnosisSibling struct {
+	Hostname   *string    `json:"hostname,omitempty"`
+	Id         *int64     `json:"id,omitempty"`
+	IpAddress  *string    `json:"ip_address,omitempty"`
+	LastSeen   *time.Time `json:"last_seen,omitempty"`
+	MacAddress *string    `json:"mac_address,omitempty"`
+	Name       *string    `json:"name,omitempty"`
+	NetworkId  *int64     `json:"network_id,omitempty"`
+	Status     *string    `json:"status,omitempty"`
 }
 
 // DiscoveryStatus Passive-discovery runtime observability. NOTE: config/stats inner keys are Go-default PascalCase (the structs carry no json tags) and Interval is time.Duration, an integer in NANOSECONDS.
@@ -5003,6 +5197,13 @@ type ClientInterface interface {
 	// Corresponds with GET /devices/{id}/configs/{configId} (the `GetDevicesIdConfigsConfigId` operationId).
 	GetDevicesIdConfigsConfigId(ctx context.Context, id Id, configId int, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetDevicesIdDiagnosis Network-anomaly diagnosis of a device (#761)
+	//
+	// Classified verdict over the persisted sightings/snapshot/change facts: the per-address timeline annotated with scan liveness (alive, miss streak, flaps), anomaly findings (stale-ARP artifact, multi-homed alias, locally-administered MAC, IP-slot takeover, hostname identity split) each with an evidence chain, and sibling device rows announcing the same hostname under a different MAC. Read-only, computed on demand.
+	//
+	// Corresponds with GET /devices/{id}/diagnosis (the `GetDevicesIdDiagnosis` operationId).
+	GetDevicesIdDiagnosis(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetDevicesIdDocuments Documents linked to a device
 	//
 	// Corresponds with GET /devices/{id}/documents (the `GetDevicesIdDocuments` operationId).
@@ -6760,6 +6961,23 @@ func (c *Client) GetDevicesIdConfigsDiff(ctx context.Context, id Id, params *Get
 // Corresponds with GET /devices/{id}/configs/{configId} (the `GetDevicesIdConfigsConfigId` operationId).
 func (c *Client) GetDevicesIdConfigsConfigId(ctx context.Context, id Id, configId int, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetDevicesIdConfigsConfigIdRequest(c.Server, id, configId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetDevicesIdDiagnosis Network-anomaly diagnosis of a device (#761)
+//
+// Classified verdict over the persisted sightings/snapshot/change facts: the per-address timeline annotated with scan liveness (alive, miss streak, flaps), anomaly findings (stale-ARP artifact, multi-homed alias, locally-administered MAC, IP-slot takeover, hostname identity split) each with an evidence chain, and sibling device rows announcing the same hostname under a different MAC. Read-only, computed on demand.
+//
+// Corresponds with GET /devices/{id}/diagnosis (the `GetDevicesIdDiagnosis` operationId).
+func (c *Client) GetDevicesIdDiagnosis(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetDevicesIdDiagnosisRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -11370,6 +11588,40 @@ func NewGetDevicesIdConfigsConfigIdRequest(server string, id Id, configId int) (
 	}
 
 	operationPath := fmt.Sprintf("/devices/%s/configs/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetDevicesIdDiagnosisRequest constructs an http.Request for the GetDevicesIdDiagnosis method
+func NewGetDevicesIdDiagnosisRequest(server string, id Id) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/devices/%s/diagnosis", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17396,6 +17648,15 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /devices/{id}/configs/{configId} (the `GetDevicesIdConfigsConfigId` operationId).
 	GetDevicesIdConfigsConfigIdWithResponse(ctx context.Context, id Id, configId int, reqEditors ...RequestEditorFn) (*GetDevicesIdConfigsConfigIdResponse, error)
 
+	// GetDevicesIdDiagnosisWithResponse Network-anomaly diagnosis of a device (#761)
+	//
+	// Classified verdict over the persisted sightings/snapshot/change facts: the per-address timeline annotated with scan liveness (alive, miss streak, flaps), anomaly findings (stale-ARP artifact, multi-homed alias, locally-administered MAC, IP-slot takeover, hostname identity split) each with an evidence chain, and sibling device rows announcing the same hostname under a different MAC. Read-only, computed on demand.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /devices/{id}/diagnosis (the `GetDevicesIdDiagnosis` operationId).
+	GetDevicesIdDiagnosisWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetDevicesIdDiagnosisResponse, error)
+
 	// GetDevicesIdDocumentsWithResponse Documents linked to a device
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -20778,6 +21039,54 @@ func (r GetDevicesIdConfigsConfigIdResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetDevicesIdConfigsConfigIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetDevicesIdDiagnosisResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DeviceDiagnosis
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetDevicesIdDiagnosisResponse) GetJSON200() *DeviceDiagnosis {
+	return r.JSON200
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetDevicesIdDiagnosisResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
+// GetBody returns the raw response body bytes
+func (r GetDevicesIdDiagnosisResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetDevicesIdDiagnosisResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetDevicesIdDiagnosisResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetDevicesIdDiagnosisResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -27016,6 +27325,21 @@ func (c *ClientWithResponses) GetDevicesIdConfigsConfigIdWithResponse(ctx contex
 	return ParseGetDevicesIdConfigsConfigIdResponse(rsp)
 }
 
+// GetDevicesIdDiagnosisWithResponse Network-anomaly diagnosis of a device (#761)
+//
+// Classified verdict over the persisted sightings/snapshot/change facts: the per-address timeline annotated with scan liveness (alive, miss streak, flaps), anomaly findings (stale-ARP artifact, multi-homed alias, locally-administered MAC, IP-slot takeover, hostname identity split) each with an evidence chain, and sibling device rows announcing the same hostname under a different MAC. Read-only, computed on demand.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /devices/{id}/diagnosis (the `GetDevicesIdDiagnosis` operationId).
+func (c *ClientWithResponses) GetDevicesIdDiagnosisWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetDevicesIdDiagnosisResponse, error) {
+	rsp, err := c.GetDevicesIdDiagnosis(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetDevicesIdDiagnosisResponse(rsp)
+}
+
 // GetDevicesIdDocumentsWithResponse Documents linked to a device
 //
 // Returns a wrapper object for the known response body format(s).
@@ -30308,6 +30632,39 @@ func ParseGetDevicesIdConfigsConfigIdResponse(rsp *http.Response) (*GetDevicesId
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest DeviceConfigDetail
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetDevicesIdDiagnosisResponse parses an HTTP response from a GetDevicesIdDiagnosisWithResponse call
+func ParseGetDevicesIdDiagnosisResponse(rsp *http.Response) (*GetDevicesIdDiagnosisResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetDevicesIdDiagnosisResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DeviceDiagnosis
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

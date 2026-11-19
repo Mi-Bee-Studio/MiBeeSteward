@@ -671,6 +671,26 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/SightingList"}
+  /devices/{id}/diagnosis:
+    get:
+      tags: [Devices]
+      summary: Network-anomaly diagnosis of a device (#761)
+      description: >-
+        Classified verdict over the persisted sightings/snapshot/change
+        facts: the per-address timeline annotated with scan liveness (alive,
+        miss streak, flaps), anomaly findings (stale-ARP artifact,
+        multi-homed alias, locally-administered MAC, IP-slot takeover,
+        hostname identity split) each with an evidence chain, and sibling
+        device rows announcing the same hostname under a different MAC.
+        Read-only, computed on demand.
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Diagnosis verdict
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeviceDiagnosis"}
+        "404": {$ref: "#/components/responses/Error"}
   /devices/{id}/interfaces:
     get:
       tags: [Devices]
@@ -2589,6 +2609,74 @@ components:
         first_seen: {type: string, format: date-time}
         last_seen: {type: string, format: date-time}
         see_count: {type: integer, format: int64}
+    DeviceDiagnosis:
+      type: object
+      description: Per-device network-anomaly verdict (#761), computed on demand
+      properties:
+        device_id: {type: integer, format: int64}
+        device_name: {type: string}
+        device_mac: {type: string}
+        device_ip: {type: string}
+        device_status: {type: string, enum: [online, offline, unknown]}
+        status:
+          type: string
+          enum: [anomaly, watch, healthy]
+          description: Verdict level (anomaly = critical/warning finding present)
+        classification:
+          type: string
+          enum: [stale_arp_scan_artifact, multihomed_alias, locally_administered_mac, ip_slot_takeover, hostname_identity_split]
+          description: Highest-severity finding code (empty when healthy)
+        confidence: {type: string, enum: [high, medium], description: high when the verdict rests on per-address liveness facts}
+        summary: {type: string}
+        findings:
+          type: array
+          items: {$ref: "#/components/schemas/DiagnosisFinding"}
+        addresses:
+          type: array
+          items: {$ref: "#/components/schemas/DiagnosisAddress"}
+        siblings:
+          type: array
+          items: {$ref: "#/components/schemas/DiagnosisSibling"}
+        generated_at: {type: string, format: date-time}
+    DiagnosisFinding:
+      type: object
+      properties:
+        code: {type: string}
+        severity: {type: string, enum: [info, warning, critical]}
+        summary: {type: string}
+        evidence:
+          type: array
+          items:
+            type: object
+            properties:
+              kind: {type: string, description: "sighting | snapshot | change | attribute | presence | sibling"}
+              detail: {type: string}
+              at: {type: string, format: date-time, nullable: true}
+    DiagnosisAddress:
+      type: object
+      properties:
+        ip_address: {type: string}
+        macs: {type: array, items: {type: string}}
+        alive: {type: boolean, description: the address answered the latest scan (snapshot miss_count == 0)}
+        missing_scans: {type: integer, description: consecutive scans absent; -1 = never seen alive}
+        flap_count: {type: integer, description: liveness transitions; -1 = unknown}
+        see_count: {type: integer, format: int64}
+        first_seen: {type: string, format: date-time}
+        last_seen: {type: string, format: date-time}
+        sources: {type: array, items: {type: string}}
+        vantages: {type: array, items: {type: string}}
+        current: {type: boolean, description: the address the device row currently points at}
+    DiagnosisSibling:
+      type: object
+      properties:
+        id: {type: integer, format: int64}
+        name: {type: string}
+        status: {type: string}
+        ip_address: {type: string}
+        mac_address: {type: string}
+        hostname: {type: string}
+        network_id: {type: integer, format: int64}
+        last_seen: {type: string, format: date-time, nullable: true}
     SightingList:
       type: object
       properties:
