@@ -1733,7 +1733,18 @@
 		"Episode No Attribution": "No same-window egress/path change to attribute — recorded without alert",
 		"Episode Attr Egress": "Public egress identity changed in the same window",
 		"Episode Attr Path": "Visible path changed in the same window",
-		"Episode Attr Peer": "Other egress groups degraded in the same window — destination-side cause likely"
+		"Episode Attr Peer": "Other egress groups degraded in the same window — destination-side cause likely",
+		"Matrix Title": "Site-to-site matrix",
+		"Matrix Aria": "Toggle the site-to-site matrix",
+		"Matrix Desc": "RTT, loss and jitter between sites over the last {window} minutes (mesh legs, 10-packet bursts)",
+		"Matrix Window": "Matrix window",
+		"Matrix Error": "Could not load the matrix",
+		"Matrix Empty": "No site-to-site legs yet",
+		"Matrix Empty Hint": "The matrix appears once a second agent registers: the autogen sweep wires center and agent-to-agent links from the agents' report addresses.",
+		"Matrix Source Header": "From / To",
+		"Matrix Cell Tooltip": "{samples} samples · {ok}% ok · p50 {p50} ms · loss {loss}% · jitter {jitter} ms",
+		"Matrix No Leg": "No leg between these sites",
+		"Matrix Legend": "Rows are the probing site, columns the probed site. Colour follows health first, then latency; an em dash means no leg exists, an ellipsis that the leg has not reported in this window."
 	},
 	"fingerprints": {
 		"Title": "Fingerprint Coverage",

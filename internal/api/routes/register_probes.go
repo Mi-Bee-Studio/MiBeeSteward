@@ -27,6 +27,8 @@ func registerProbeTargetRoutes(r chi.Router, probeTargetHandler *handler.ProbeTa
 		r.Get("/api/v1/probe-quality", probeQualityHandler.GetQuality)
 		r.Get("/api/v1/probe-quality/history", probeQualityHandler.GetQualityHistory)
 		r.Get("/api/v1/probe-quality/episodes", probeExtHandler.Episodes)
+		// Site-to-site N×N matrix (#748) over the mesh-* autogen legs.
+		r.Get("/api/v1/probe-matrix", probeQualityHandler.GetMatrix)
 		r.Get("/api/v1/probe-egress", probeExtHandler.Egress)
 		r.Get("/api/v1/probe-paths", probeExtHandler.Paths)
 	})

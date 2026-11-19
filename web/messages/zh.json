@@ -1733,7 +1733,18 @@
 		"Episode No Attribution": "同窗口无出口/路径变更可归因——仅记录不告警",
 		"Episode Attr Egress": "同窗口公网出口身份变化",
 		"Episode Attr Path": "同窗口可见路径变化",
-		"Episode Attr Peer": "其他出口组同窗口也劣化——对端原因可能性大"
+		"Episode Attr Peer": "其他出口组同窗口也劣化——对端原因可能性大",
+		"Matrix Title": "站点间矩阵",
+		"Matrix Aria": "展开或收起站点间矩阵",
+		"Matrix Desc": "最近 {window} 分钟内站点之间的 RTT、丢包与抖动（mesh 链路，每轮 10 包突发）",
+		"Matrix Window": "矩阵时间窗",
+		"Matrix Error": "矩阵加载失败",
+		"Matrix Empty": "暂无站点间链路",
+		"Matrix Empty Hint": "第二个 agent 注册后矩阵才会出现：自动对账会按 agent 上报的源地址接出中心与 agent 之间的链路。",
+		"Matrix Source Header": "源 / 目标",
+		"Matrix Cell Tooltip": "{samples} 个采样 · 成功率 {ok}% · p50 {p50} ms · 丢包 {loss}% · 抖动 {jitter} ms",
+		"Matrix No Leg": "这两个站点之间没有链路",
+		"Matrix Legend": "行为发起探测的站点，列为被探测的站点。颜色先看健康再看延迟；破折号表示没有这条链路，省略号表示本窗口内还没有上报。"
 	},
 	"fingerprints": {
 		"Title": "指纹覆盖率",

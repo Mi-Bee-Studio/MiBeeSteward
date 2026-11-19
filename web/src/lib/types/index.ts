@@ -98,6 +98,11 @@ export type ProbeQualityHistoryReport = Schemas['ProbeQualityHistoryReport'];
 export type ProbeQualityHistoryGroup = Schemas['ProbeQualityHistoryGroup'];
 export type ProbeQualityHistorySeries = Schemas['ProbeQualityHistorySeries'];
 export type ProbeQualityHistoryPoint = Schemas['ProbeQualityHistoryPoint'];
+// Site-to-site N×N matrix (GET /probe-matrix, #748): rows = source vantages,
+// columns = destinations, one cell per mesh-* autogen leg.
+export type ProbeMatrixReport = Schemas['ProbeMatrixReport'];
+export type ProbeMatrixNode = Schemas['ProbeMatrixNode'];
+export type ProbeMatrixCell = Schemas['ProbeMatrixCell'];
 // Egress identity + traced paths (#716/#718/#719).
 export type ProbeEgressReport = Schemas['ProbeEgressReport'];
 export type ProbeEgressVantage = Schemas['ProbeEgressVantage'];

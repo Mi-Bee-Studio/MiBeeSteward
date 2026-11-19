@@ -3234,6 +3234,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/probe-matrix": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Site-to-site N×N matrix (#748) - per-leg RTT/loss/jitter over the mesh-* autogen targets
+         * @description Rows are source vantages, columns destinations. Only legs whose destination agent is currently registered appear: the mesh autogen keys a leg by the destination's last reported source address, so a deregistered agent parks its legs and drops out of the axes.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description lookback minutes (5-1440, default from probe.quality.window_minutes) */
+                    window?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Site matrix */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProbeMatrixReport"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/probe-quality/history": {
         parameters: {
             query?: never;
@@ -7430,6 +7472,46 @@ export interface components {
         ProbeQualityReport: {
             window_minutes: number;
             categories: components["schemas"]["ProbeQualityCategory"][];
+        };
+        /** @description Site-to-site N×N matrix (#748). Cells are (source, destination) legs over the same 15-minute-style window the quality analyzer uses; Samples == 0 means the leg has not reported (parked target or stale agent) and must render as no-data, never as a zero-latency success. */
+        ProbeMatrixReport: {
+            window_minutes: number;
+            /** @description row axes, center first then agents alphabetically */
+            sources: components["schemas"]["ProbeMatrixNode"][];
+            /** @description column axes, same ordering */
+            destinations: components["schemas"]["ProbeMatrixNode"][];
+            cells: components["schemas"]["ProbeMatrixCell"][];
+            /** Format: date-time */
+            generated_at: string;
+        };
+        ProbeMatrixNode: {
+            /** @description center | agent:{agent_id} */
+            id: string;
+            /** @description agent hostname, or 'center' */
+            label: string;
+            network_name?: string;
+        };
+        ProbeMatrixCell: {
+            /** @description vantage that executes the probe */
+            source: string;
+            /** @description vantage whose last reported source address is the leg's target */
+            destination: string;
+            /** Format: int64 */
+            target_id: number;
+            /** @description probed IP */
+            target: string;
+            /** @description false = parked leg (agent deregistered or address lost) */
+            enabled: boolean;
+            samples: number;
+            /** Format: double */
+            ok_rate: number;
+            /** Format: double */
+            p50_ms: number;
+            /** Format: double */
+            loss_pct: number;
+            /** Format: double */
+            jitter_ms: number;
+            last_status?: string;
         };
         ProbeQualityCategory: {
             /**
