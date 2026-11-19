@@ -1341,7 +1341,19 @@
 		"Diagnosis Dead": "无应答",
 		"Diagnosis Never Alive": "从未存活",
 		"Diagnosis Current": "当前",
-		"Diagnosis Siblings": "同名设备行"
+		"Diagnosis Siblings": "同名设备行",
+		"Diagnosis Summary stale_arp_scan_artifact": "同一 MAC 出现在大量地址上且无一应答扫描——这是陈旧 ARP 缓存假象，不是真实漂移。",
+		"Diagnosis Summary multihomed_alias": "资产同时活跃于多个网段——双宿主或网桥，一个身份即正确。",
+		"Diagnosis Summary locally_administered_mac": "身份 MAC 是本地管理位（虚拟/软）MAC——按 MAC 绑定不会生效。",
+		"Diagnosis Summary ip_slot_takeover": "同一地址上的 MAC 被替换——另一身份接管了该槽位。",
+		"Diagnosis Summary hostname_identity_split": "其他设备行以不同 MAC 广播同一主机名——一台机器被拆成多行身份。",
+		"Diagnosis Summary Healthy": "未观察到地址漂移或身份异常。",
+		"Diagnosis Kind sighting": "观测记录",
+		"Diagnosis Kind snapshot": "存活快照",
+		"Diagnosis Kind change": "变更流",
+		"Diagnosis Kind attribute": "扫描属性",
+		"Diagnosis Kind presence": "在场记录",
+		"Diagnosis Kind sibling": "兄弟行"
 	},
 	"certificates": {
 		"Title": "TLS 证书",

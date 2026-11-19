@@ -66,7 +66,37 @@ const mocks = vi.hoisted(() => {
 			updated_at: '2026-09-19T00:00:00Z'
 		}
 	];
-	return { route, device, probeTargets };
+	// #761 network-anomaly diagnosis payload: mutable so the panel tests can
+	// swap the verdict (healthy renders nothing but a badge; findings carry
+	// code + evidence whose detail is locale-neutral data).
+	const diagnosis: Record<string, unknown> = {
+		device_id: 1,
+		device_name: 'zhimi-airp-ua1',
+		device_mac: 'aa:bb:cc:dd:ee:ff',
+		device_ip: '192.168.2.168',
+		device_status: 'offline',
+		status: 'anomaly',
+		classification: 'stale_arp_scan_artifact',
+		confidence: 'high',
+		summary: 'One MAC observed at 4 addresses, 3 of which have no live scan response.',
+		findings: [
+			{
+				code: 'stale_arp_scan_artifact',
+				severity: 'critical',
+				summary: 'One MAC observed at 4 addresses, 3 of which have no live scan response.',
+				evidence: [
+					{ kind: 'sighting', detail: 'single MAC observed at 4 distinct addresses' },
+					{ kind: 'snapshot', detail: '192.168.2.42 seen 3 times until 2026-11-19T12:00:00Z, no live scan response (never seen alive by a scan)', at: '2026-11-19T12:00:00Z' }
+				]
+			}
+		],
+		addresses: [
+			{ ip_address: '192.168.2.168', macs: ['aa:bb:cc:dd:ee:ff'], alive: false, missing_scans: -1, flap_count: -1, see_count: 5, first_seen: '2026-11-19T10:00:00Z', last_seen: '2026-11-19T12:00:00Z', sources: ['scan'], vantages: ['agent-a'], current: true }
+		],
+		siblings: [],
+		generated_at: '2026-11-19T12:00:00Z'
+	};
+	return { route, device, probeTargets, diagnosis };
 });
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));vi.mock('$app/stores', () => ({
@@ -114,6 +144,9 @@ vi.mock('$lib/api/client', () => ({
 			if (path === '/devices/1/systems') {
 				return Promise.resolve({ systems: [], total: 0 });
 			}
+			if (path === '/devices/1/diagnosis') {
+				return Promise.resolve(mocks.diagnosis);
+			}
 			if (path === '/probe-targets/') {
 				return Promise.resolve({ targets: mocks.probeTargets, total: mocks.probeTargets.length });
 			}
@@ -146,6 +179,8 @@ describe('Device detail page', () => {
 		window.history.replaceState(null, '', '/devices/1');
 		vi.mocked(goto).mockClear();
 		mocks.probeTargets[0].target = 'http://192.168.2.168:5000/';
+		mocks.diagnosis.status = 'anomaly';
+		mocks.diagnosis.classification = 'stale_arp_scan_artifact';
 	});
 
 	// #429: tags on the wire are a JSON array string; the asset-info section
@@ -228,6 +263,32 @@ describe('Device detail page', () => {
 	});
 
 	// #606: per-service probe-create button deep-links to /probes prefilled.
+	it('the diagnosis panel renders localized verdicts, not the server English summary (#761 follow-up)', async () => {
+		// The server's `summary`/`detail` strings are deliberately stable
+		// English data; the panel must present the verdict through the
+		// per-code i18n keys and localize the evidence KIND, keeping the
+		// raw detail as the data line.
+		mocks.route.search = '?tab=network';
+		window.history.replaceState(null, '', '/devices/1?tab=network');
+		try {
+			const { container } = render(Detail);
+			await waitFor(() => {
+				expect(container.querySelector('[data-diagnosis-panel]')).toBeTruthy();
+			});
+
+			const panel = container.querySelector('[data-diagnosis-panel]') as HTMLElement;
+			// Localized verdict summary (en locale) — NOT the server English string.
+			expect(panel.textContent).toContain('stale ARP-cache illusion');
+			expect(panel.textContent).not.toContain('One MAC observed at 4 addresses');
+			// Evidence kind is localized; the locale-neutral data detail stays.
+			expect(panel.textContent).toContain('Scan snapshot');
+			expect(panel.textContent).toContain('192.168.2.42 seen 3 times');
+		} finally {
+			mocks.route.search = '';
+			window.history.replaceState(null, '', '/devices/1');
+		}
+	});
+
 	it('detected services offer a probe-create button that routes to /probes prefilled', async () => {
 		mocks.device.detected_services = '[{"port":80,"name":"http"},{"port":22,"name":"ssh"}]';
 		mocks.device.open_ports = '[{"port":80},{"port":22}]';
