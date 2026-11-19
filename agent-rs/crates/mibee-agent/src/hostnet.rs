@@ -165,8 +165,9 @@ pub(crate) async fn sample_once(_dns_hint: &str) -> (Option<HostnetReport>, f64)
 
 /// Sampling loop (#746/#749): one sample at startup, then every `every`.
 /// Nothing here can wedge the report path — a failed sample just keeps the
-/// previous cache and the next round retries.
-pub(crate) async fn run_sampler(
+/// previous cache and the next round retries. Public because the bin crate
+/// (`main.rs`) drives it outside the lib.
+pub async fn run_sampler(
     reporter: std::sync::Arc<crate::center::Reporter>,
     dns_hint: String,
     every: std::time::Duration,

@@ -152,7 +152,7 @@ func (h *AgentReportHandler) Report(w http.ResponseWriter, r *http.Request) {
 				CheckedAt:    hn.CheckedAt,
 				IfaceStats:   string(ifaceJSON),
 				DefaultRoute: hn.DefaultRoute,
-				DnsMs:        hn.DnsMs,
+				DnsMs:        hn.DNSMs,
 				Note:         hn.Note,
 			}); ierr != nil {
 				slog.Debug("agent report: hostnet insert failed", "agent_id", agentID, "error", ierr)

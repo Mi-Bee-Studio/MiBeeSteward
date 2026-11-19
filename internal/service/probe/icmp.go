@@ -80,7 +80,7 @@ func JitterMs(rtts []time.Duration) float64 {
 // Probe sends one round to the target and returns the result. With burst
 // options set the round is N echoes and the result carries loss_pct +
 // jitter_ms; without them it is the legacy single ping.
-func (p *ICMPProber) Probe(ctx context.Context, target string, timeout time.Duration) (*Result, error) {
+func (p *ICMPProber) Probe(_ context.Context, target string, timeout time.Duration) (*Result, error) {
 	count := p.BurstCount
 	if count <= 0 {
 		count = 1

@@ -81,15 +81,15 @@ type ScanAttributes struct {
 	InferredDescription string `json:"inferred_description,omitempty"`
 
 	// Discovery surfaces (kept struct-shaped where stable, free-form otherwise)
-	SNMP             *SNMPDiscovery  `json:"snmp,omitempty"`
-	STP              *STPDiscovery   `json:"stp,omitempty"`
+	SNMP *SNMPDiscovery `json:"snmp,omitempty"`
+	STP  *STPDiscovery  `json:"stp,omitempty"`
 
 	// GatewayProfile is the router's capability half (#752/#753): UPnP IGD
 	// facts + the NAT mapping-behavior verdict, written by the gateway_probe
 	// command ingest (the agent-rs gateway.rs report lands here verbatim).
 	// The server list is PUBLIC-only by design (product neutrality); a user
 	// adds their own nodes through the settings center.
-	Gateway *GatewayProfile `json:"gateway,omitempty"`
+	Gateway          *GatewayProfile `json:"gateway,omitempty"`
 	OpenPorts        []OpenPortEntry `json:"open_ports,omitempty"`
 	DetectedServices []ServiceEntry  `json:"detected_services,omitempty"`
 	Prometheus       *PrometheusInfo `json:"prometheus,omitempty"`

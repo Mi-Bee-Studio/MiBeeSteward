@@ -102,7 +102,7 @@ type AgentHostnet struct {
 	// Default-route fingerprint "iface|gateway-dotted" ('' = none); a
 	// change between consecutive samples is a route event.
 	DefaultRoute string  `json:"default_route,omitempty"`
-	DnsMs        float64 `json:"dns_ms,omitempty"` // last resolution latency
+	DNSMs        float64 `json:"dns_ms,omitempty"` // last resolution latency
 	Note         string  `json:"note,omitempty"`   // sampler remarks
 }
 

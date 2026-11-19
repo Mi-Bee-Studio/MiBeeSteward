@@ -83,13 +83,14 @@ func ParseSTUNBindingResponse(pkt []byte, txID [12]byte) (ip net.IP, port int, e
 		if body+attrLen > len(pkt) {
 			return nil, 0, errors.New("stun attribute overruns packet")
 		}
+		attr := pkt[body : body+attrLen]
 		switch attrType {
 		case stunAttrXorMapped:
-			if ip, port, aerr := decodeXorMapped(pkt[body:body+attrLen], txID); aerr == nil {
+			if ip, port, aerr := decodeXorMapped(attr); aerr == nil {
 				return ip, port, nil
 			}
 		case stunAttrMapped:
-			if ip, port, aerr := decodeMapped(pkt[body : body+attrLen]); aerr == nil {
+			if ip, port, aerr := decodeMapped(attr); aerr == nil {
 				return ip, port, nil
 			}
 		}
@@ -98,7 +99,7 @@ func ParseSTUNBindingResponse(pkt []byte, txID [12]byte) (ip net.IP, port int, e
 	return nil, 0, errors.New("no mapped address in stun response")
 }
 
-func decodeXorMapped(body []byte, txID [12]byte) (net.IP, int, error) {
+func decodeXorMapped(body []byte) (net.IP, int, error) {
 	if len(body) < 8 || body[1] != 0x01 {
 		return nil, 0, errors.New("bad xor-mapped attribute")
 	}
@@ -154,7 +155,10 @@ func STUNQuery(server string, timeout time.Duration) (*STUNResult, error) {
 	}
 	defer conn.Close()
 	deadline := time.Now().Add(timeout)
-	conn.SetDeadline(deadline)
+	if derr := conn.SetDeadline(deadline); derr != nil {
+		res.Err = derr.Error()
+		return res, derr
+	}
 
 	start := time.Now()
 	if _, werr := conn.Write(req[:]); werr != nil {

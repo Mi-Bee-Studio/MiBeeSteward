@@ -16,11 +16,6 @@ import (
 	"time"
 )
 
-// fakeBurstOutcome builds a burstOutcome with per-echo RTTs in one call.
-func fakeBurstOutcome(rtts []time.Duration, sent, recv int) *burstOutcome {
-	return &burstOutcome{RTTs: rtts, Sent: sent, Recv: recv}
-}
-
 // TestLossPct covers the burst loss percentage: the single-ping guard
 // (sent<=0 → 0, never NaN), full loss, and the partial-loss fractions the
 // quality verdicts consume (#744).
@@ -76,7 +71,7 @@ func TestJitterMs(t *testing.T) {
 // consecutive-difference value, and the phases carry TTL + resolved IP.
 func TestICMPProber_BurstSuccess(t *testing.T) {
 	calls := 0
-	p := &ICMPProber{BurstCount: 5, BurstIntervalMS: 10, runner: func(target string, count int, interval, timeout time.Duration) (*burstOutcome, error) {
+	p := &ICMPProber{BurstCount: 5, BurstIntervalMS: 10, runner: func(target string, count int, interval, _ time.Duration) (*burstOutcome, error) {
 		calls++
 		if target != "gw.invalid" {
 			t.Errorf("target = %q", target)
