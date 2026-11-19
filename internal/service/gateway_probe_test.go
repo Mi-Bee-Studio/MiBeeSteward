@@ -68,6 +68,25 @@ func TestDispatchGatewayProbe(t *testing.T) {
 	require.Equal(t, 1200, payload.TimeoutMS)
 }
 
+// TestDispatchGatewayProbe_NoServers: an empty (or all-disabled) server list
+// means the operator turned probing off — no command may be enqueued, so an
+// agent never runs a probe with nothing to talk to.
+func TestDispatchGatewayProbe_NoServers(t *testing.T) {
+	svc, queries, _, _ := gatewayWorld(t)
+	ctx := context.Background()
+
+	sent, err := svc.DispatchGatewayProbe(ctx, []string{"agent-a", "agent-b"}, nil, 1200)
+	require.NoError(t, err)
+	require.Zero(t, sent)
+	sent, err = svc.DispatchGatewayProbe(ctx, []string{"agent-a"}, []string{}, 1200)
+	require.NoError(t, err)
+	require.Zero(t, sent)
+
+	pending, err := queries.ListPendingAgentCommands(ctx, db.ListPendingAgentCommandsParams{AgentID: "agent-a", Limit: 10})
+	require.NoError(t, err)
+	require.Empty(t, pending, "no command may reach the agent")
+}
+
 // TestIngestGatewayProbe: a completed gateway_probe lands the profile in the
 // router's scan_attributes.gateway, preserving other attribute sections.
 func TestIngestGatewayProbe(t *testing.T) {
@@ -145,4 +164,32 @@ func TestIngestGatewayProbe_Rejections(t *testing.T) {
 		require.NoError(t, err)
 		require.Nil(t, attrs.Gateway)
 	}
+}
+
+// TestIngestGatewayProbe_EmptyAndRoutless: a report with nothing to record
+// (no NAT verdict, no UPnP, no WAN IP) and a network whose router row is gone
+// are both silent no-ops — profile data is best-effort, never inventory.
+func TestIngestGatewayProbe_EmptyAndRoutless(t *testing.T) {
+	svc, _, rawConn, _ := gatewayWorld(t)
+	ctx := context.Background()
+
+	// Nothing to record: every profile field empty.
+	gw, err := svc.Enqueue(ctx, "agent-a", "gateway_probe", map[string]any{"servers": []string{"x"}})
+	require.NoError(t, err)
+	empty := `{"checked_at":"","upnp_available":false,"upnp_server":"","wan_ip":""}`
+	require.NoError(t, svc.Complete(ctx, gw.ID, "done", empty))
+	require.NoError(t, svc.IngestGatewayProbe(ctx, gw.ID, "done", empty))
+
+	// Router row removed: the ingest must not resurrect or crash.
+	_, err = rawConn.ExecContext(ctx, `DELETE FROM devices`)
+	require.NoError(t, err)
+	gw2, err := svc.Enqueue(ctx, "agent-a", "gateway_probe", map[string]any{"servers": []string{"x"}})
+	require.NoError(t, err)
+	result := `{"nat_mapping":"edm","public_ip":"203.0.113.9"}`
+	require.NoError(t, svc.Complete(ctx, gw2.ID, "done", result))
+	require.NoError(t, svc.IngestGatewayProbe(ctx, gw2.ID, "done", result))
+
+	var count int
+	require.NoError(t, rawConn.QueryRowContext(ctx, `SELECT COUNT(*) FROM devices`).Scan(&count))
+	require.Zero(t, count, "ingest must not create devices")
 }

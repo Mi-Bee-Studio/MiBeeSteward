@@ -214,3 +214,51 @@ func TestValidateSTUNServer(t *testing.T) {
 		t.Error("URI accepted")
 	}
 }
+
+// TestDecodeMapped_Rejects covers the MAPPED-ADDRESS decoder's two negative
+// branches (the XOR path has the same shape but a distinct port decode).
+func TestDecodeMapped_Rejects(t *testing.T) {
+	if _, _, err := decodeMapped([]byte{0x00, 0x01, 0x30, 0x39}); err == nil {
+		t.Error("short body must fail")
+	}
+	if _, _, err := decodeMapped([]byte{0x00, 0x02, 0x30, 0x39, 192, 0, 2, 1}); err == nil {
+		t.Error("non-IPv4 family must fail")
+	}
+}
+
+// TestBytesEqual pins the compare helper's length and content branches.
+func TestBytesEqual(t *testing.T) {
+	if !bytesEqual([]byte{1, 2}, []byte{1, 2}) {
+		t.Error("equal slices reported different")
+	}
+	if bytesEqual([]byte{1, 2}, []byte{1, 2, 3}) {
+		t.Error("length mismatch reported equal")
+	}
+	if bytesEqual([]byte{1, 2}, []byte{1, 3}) {
+		t.Error("content mismatch reported equal")
+	}
+}
+
+// TestSTUNQuery_Failures covers the pre-dial rejection and the
+// no-answer timeout: a valid but silent endpoint returns the deadline error
+// with the diagnostic stashed on the result.
+func TestSTUNQuery_Failures(t *testing.T) {
+	// Unparseable endpoint rejected before any socket work.
+	res, err := STUNQuery("stun:bad-uri", 50*time.Millisecond)
+	if err == nil || res == nil || res.Err == "" {
+		t.Fatalf("bad endpoint: res=%+v err=%v", res, err)
+	}
+
+	// A bound-then-closed UDP port answers nothing: the read deadline fires.
+	silent, lerr := net.ListenPacket("udp4", "127.0.0.1:0")
+	if lerr != nil {
+		t.Fatalf("listen: %v", lerr)
+	}
+	addr := silent.LocalAddr().String()
+	silent.Close()
+	if res, err = STUNQuery(addr, 80*time.Millisecond); err == nil {
+		t.Fatalf("silent server must time out, got %+v", res)
+	} else if res.Err == "" {
+		t.Error("timeout result must carry the error text")
+	}
+}
