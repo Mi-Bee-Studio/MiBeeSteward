@@ -70,6 +70,14 @@ This page is the complete capability inventory of MiBee Steward, baselined on **
 
 ![Change history](images/pb-changes.webp)
 
+## Network-Anomaly Diagnosis (#761)
+
+- **What it answers**: when a device seems to keep changing its IP, is that real churn — or an artifact? The verdict engine joins the address-observation history (sightings) with the per-IP scan-liveness facts (snapshots), the multi-homed presence layer and the change stream, and classifies the pattern with an evidence chain.
+- **Field-verified classes**: `stale_arp_scan_artifact` (many sighted addresses, none answering a scan — the sightings came from stale ARP-cache reads, not a moving device), `multihomed_alias` (one box actively present in several networks), `locally_administered_mac` (virtual/soft MAC; MAC-based binding will not stick), `ip_slot_takeover` (the change stream saw the MAC replaced at an unchanged address), `hostname_identity_split` (sibling rows announcing the same hostname under different MACs).
+- **Design rule**: sightings alone are ambiguous — they record what a vantage OBSERVED, including stale ARP-cache reads. Every address is therefore cross-checked against the scan snapshot (`miss_count`, `flap_count`) before a verdict is issued; `stale_arp_scan_artifact` is the only high-confidence class precisely because it rests on liveness facts.
+- **Consumption**: `GET /api/v1/devices/{id}/diagnosis` (read-only, computed on demand) and the device-detail **Network Diagnosis** panel — verdict badge, findings with evidence, address timeline with per-address liveness, and same-hostname sibling rows.
+- **Deliberately not an alert**: per the "alert on impact, not on change" principle the verdict is pull-based; wire notifications to the existing change stream if a downstream impact needs pushing.
+
 ## Device Config Backup (v0.5.0, opt-in)
 
 Oxidized/RANCID-style config pull and versioning for network gear:

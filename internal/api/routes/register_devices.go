@@ -111,6 +111,18 @@ func registerDeviceSightingsRoutes(r chi.Router, scopeResolver *scoperesolver.Re
 	})
 }
 
+// registerDeviceDiagnosisRoutes registers the per-device network-anomaly
+// verdict (#761): address timeline with liveness facts + classified
+// findings with an evidence chain. Read-only.
+func registerDeviceDiagnosisRoutes(r chi.Router, scopeResolver *scoperesolver.Resolver, dbConn *sql.DB, diagnosisHandler *handler.DeviceDiagnosisHandler) {
+	r.Route("/api/v1/devices/{id}/diagnosis", func(r chi.Router) {
+		r.Use(middleware.NetworkScope(scopeResolver))
+		r.Use(middleware.ValidateDeviceScope(dbConn))
+		r.Use(middleware.RequireCapability(domain.CapDeviceRead))
+		r.Get("/", diagnosisHandler.Get)
+	})
+}
+
 // registerDeviceSpeaksRoutes registers the per-device speaks-with traffic
 // profile (#500).
 func registerDeviceSpeaksRoutes(r chi.Router, scopeResolver *scoperesolver.Resolver, dbConn *sql.DB, speaksHandler *handler.DeviceSpeaksHandler) {

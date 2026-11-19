@@ -19,6 +19,76 @@
 	import { getErrorMessage } from '$lib/utils/error';
 	import { formatDateTime as formatTimestamp } from '$lib/utils/index';
 	import type { Device, Network, System, DeviceNeighbor, TLSPortCerts, HeartbeatResult, HeartbeatResultList, HeartbeatStats, DeviceSpeaks, DeviceSighting, DeviceInterfaceRow, ProbeTarget, ProbeTargetListResponse } from '$lib/types';
+
+	// Network-anomaly diagnosis types (#761) - mirror of the API contract.
+	interface DiagnosisEvidence {
+		kind: string;
+		detail: string;
+		at?: string;
+	}
+	interface DiagnosisFinding {
+		code: string;
+		severity: 'info' | 'warning' | 'critical';
+		summary: string;
+		evidence: DiagnosisEvidence[];
+	}
+	interface DiagnosisAddress {
+		ip_address: string;
+		macs: string[];
+		alive: boolean;
+		missing_scans: number;
+		flap_count: number;
+		see_count: number;
+		first_seen: string;
+		last_seen: string;
+		sources: string[];
+		vantages: string[];
+		current: boolean;
+	}
+	interface DiagnosisSibling {
+		id: number;
+		name: string;
+		status: string;
+		ip_address: string;
+		mac_address?: string;
+		hostname?: string;
+		network_id: number;
+		last_seen?: string;
+	}
+
+	// Static mapping for finding codes: paraglide message keys are fixed at
+	// compile time, so dynamic template keys cannot be used here.
+	function diagnosisCodeLabel(code: string): string {
+		switch (code) {
+			case 'stale_arp_scan_artifact':
+				return m['topology.Diagnosis Code stale_arp_scan_artifact']();
+			case 'multihomed_alias':
+				return m['topology.Diagnosis Code multihomed_alias']();
+			case 'locally_administered_mac':
+				return m['topology.Diagnosis Code locally_administered_mac']();
+			case 'ip_slot_takeover':
+				return m['topology.Diagnosis Code ip_slot_takeover']();
+			case 'hostname_identity_split':
+				return m['topology.Diagnosis Code hostname_identity_split']();
+			default:
+				return code;
+		}
+	}
+	interface DeviceDiagnosis {
+		device_id: number;
+		device_name: string;
+		device_mac?: string;
+		device_ip?: string;
+		device_status: string;
+		status: 'anomaly' | 'watch' | 'healthy';
+		classification: string;
+		confidence?: string;
+		summary: string;
+		findings: DiagnosisFinding[];
+		addresses: DiagnosisAddress[];
+		siblings: DiagnosisSibling[];
+		generated_at: string;
+	}
 	import type { EChartsOption } from '$lib/charts/echarts';
 	import { certStatus } from '$lib/utils/certs';
 	import { defaultRange, presetWindowMs } from '$lib/utils/dateRange';
@@ -49,6 +119,9 @@
 	let neighbors = $state<DeviceNeighbor[]>([]);
 	let speaks = $state<DeviceSpeaks[]>([]);
 	let sightings = $state<DeviceSighting[]>([]);
+	// Network-anomaly diagnosis (#761): verdict computed on demand over the
+	// sightings/snapshot/change facts. null = not loaded yet.
+	let diagnosis = $state<DeviceDiagnosis | null>(null);
 	let interfaces = $state<DeviceInterfaceRow[]>([]);
 	// VLANs observed on the device's network (#273): tag + name (when the
 	// gateway's dot1qVlanStaticName walk found one). null = not loaded yet.
@@ -462,6 +535,7 @@
 			if (!neighbors.length) fetchNeighbors();
 			if (!speaks.length) fetchSpeaks();
 			if (!sightings.length) fetchSightings();
+			if (!diagnosis) fetchDiagnosis();
 			if (!interfaces.length) fetchInterfaces();
 			if (networkVlans === null && device?.network_id) fetchNetworkVlans();
 		}
@@ -723,6 +797,16 @@
 			sightings = res.sightings || [];
 		} catch {
 			// history enrichment: keep empty
+		}
+	}
+
+	// Network-anomaly diagnosis (#761): classified verdict + evidence chain.
+	// Failures are silent (section simply does not render).
+	async function fetchDiagnosis() {
+		try {
+			diagnosis = await api.get<DeviceDiagnosis>(`/devices/${deviceId}/diagnosis`);
+		} catch {
+			diagnosis = null;
 		}
 	}
 
@@ -1838,6 +1922,112 @@
 				</div>
 			{:else}
 				<p class="text-xs text-text-muted italic">{m['topology.Interfaces Empty']()}</p>
+			{/if}
+		</div>
+	{/if}
+
+	<!-- Network-anomaly diagnosis (#761): classified verdict + evidence chain,
+	     computed on demand over the sightings/snapshot/change facts. -->
+	{#if device && diagnosis}
+		<div class="scan-info-panel mt-4">
+			<h3 class="scan-info-title">
+				<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>
+				{m['topology.Diagnosis']()}
+			</h3>
+			<p class="text-xs text-text-muted mb-3">{m['topology.Diagnosis Desc']()}</p>
+
+			<!-- Verdict row -->
+			<div class="flex flex-wrap items-center gap-2 mb-2">
+				{#if diagnosis.status === 'anomaly'}
+					<span class="px-2 py-0.5 rounded text-xs font-medium bg-red-500/10 text-red-500">{m['topology.Diagnosis Verdict Anomaly']()}</span>
+				{:else if diagnosis.status === 'watch'}
+					<span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-600">{m['topology.Diagnosis Verdict Watch']()}</span>
+				{:else}
+					<span class="px-2 py-0.5 rounded text-xs font-medium bg-green-500/10 text-green-600">{m['topology.Diagnosis Verdict Healthy']()}</span>
+				{/if}
+				{#if diagnosis.classification}
+					<span class="px-1.5 py-0.5 rounded bg-bg-hover text-text-muted font-mono text-xs">{diagnosis.classification ? diagnosisCodeLabel(diagnosis.classification) : ''}</span>
+				{/if}
+				{#if diagnosis.confidence}
+					<span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-xs">{diagnosis.confidence === 'high' ? m['topology.Diagnosis Confidence High']() : m['topology.Diagnosis Confidence Medium']()}</span>
+				{/if}
+			</div>
+			{#if diagnosis.status !== 'healthy'}
+				<p class="text-sm mb-3">{diagnosis.summary}</p>
+			{/if}
+
+			<!-- Findings + evidence chain -->
+			{#if diagnosis.findings.length > 0}
+				<div class="space-y-2 mb-3">
+					{#each diagnosis.findings as f}
+						<div class="border border-border/60 rounded-lg p-2">
+							<div class="flex items-center gap-2">
+								<span class="w-1.5 h-1.5 rounded-full {f.severity === 'critical' ? 'bg-red-500' : f.severity === 'warning' ? 'bg-amber-500' : 'bg-blue-400'}"></span>
+								<span class="text-xs font-medium">{diagnosisCodeLabel(f.code)}</span>
+							</div>
+							<p class="text-xs text-text-muted mt-1">{f.summary}</p>
+							{#if f.evidence.length > 0}
+								<details class="mt-1">
+									<summary class="text-xs text-primary cursor-pointer">{m['topology.Diagnosis Evidence']()} ({f.evidence.length})</summary>
+									<ul class="mt-1 space-y-0.5">
+										{#each f.evidence as e}
+											<li class="text-xs text-text-muted font-mono break-all">[{e.kind}] {e.detail}</li>
+										{/each}
+									</ul>
+								</details>
+							{/if}
+						</div>
+					{/each}
+				</div>
+			{/if}
+
+			<!-- Address timeline with liveness facts -->
+			{#if diagnosis.addresses.length > 0}
+				<div class="overflow-x-auto mb-2">
+					<table class="w-full text-left border border-border rounded-lg overflow-hidden">
+						<thead class="bg-bg/50 border-b border-border">
+							<tr>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Diagnosis Col IP']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Diagnosis Col State']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Diagnosis Col Flaps']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['topology.Diagnosis Col Seen']()}</th>
+								<th class="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">{m['devicedetail.Col Last Seen']()}</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each diagnosis.addresses as a}
+								<tr class="border-b border-border/50 last:border-b-0">
+									<td class="px-3 py-2 font-mono text-xs">
+										{a.ip_address}
+										{#if a.current}<span class="ml-1 px-1 py-0.5 rounded bg-primary/10 text-primary text-[10px]">{m['topology.Diagnosis Current']()}</span>{/if}
+									</td>
+									<td class="px-3 py-2 text-xs">
+										{#if a.alive}
+											<span class="text-green-600">{m['topology.Diagnosis Alive']()}</span>
+										{:else if a.missing_scans < 0}
+											<span class="text-text-muted italic">{m['topology.Diagnosis Never Alive']()}</span>
+										{:else}
+											<span class="text-red-500">{m['topology.Diagnosis Dead']()} ({a.missing_scans})</span>
+										{/if}
+									</td>
+									<td class="px-3 py-2 font-mono text-xs">{a.flap_count < 0 ? '-' : a.flap_count}</td>
+									<td class="px-3 py-2 font-mono text-xs">{a.see_count}</td>
+									<td class="px-3 py-2 text-xs text-text-muted">{a.last_seen}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+
+			<!-- Sibling identity rows -->
+			{#if diagnosis.siblings.length > 0}
+				<p class="text-xs text-text-muted">
+					<span class="font-medium">{m['topology.Diagnosis Siblings']()}:</span>
+					{#each diagnosis.siblings as sib, i}
+						<span class="font-mono">#{sib.id} {sib.ip_address}{sib.mac_address ? ` (${sib.mac_address})` : ''}</span>{i < diagnosis.siblings.length - 1 ? ', ' : ''}
+					{/each}
+				</p>
 			{/if}
 		</div>
 	{/if}
