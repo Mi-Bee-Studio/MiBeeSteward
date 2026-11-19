@@ -68,6 +68,23 @@ func TestDispatchGatewayProbe(t *testing.T) {
 	require.Equal(t, 1200, payload.TimeoutMS)
 }
 
+// TestComplete_NormalizesUnknownStatus: the agent may report a status the
+// schema does not know (a future command kind, a corrupted payload). Complete
+// must fold it to "done" rather than persisting an unqueryable value, and it
+// must survive a nil-free result pointer dance for an empty body.
+func TestComplete_NormalizesUnknownStatus(t *testing.T) {
+	svc, queries, _, _ := gatewayWorld(t)
+	ctx := context.Background()
+
+	cmd, err := svc.Enqueue(ctx, "agent-a", "gateway_probe", map[string]any{"servers": []string{"x"}})
+	require.NoError(t, err)
+	require.NoError(t, svc.Complete(ctx, cmd.ID, "weird-status", ""))
+
+	got, err := queries.GetAgentCommand(ctx, cmd.ID)
+	require.NoError(t, err)
+	require.Equal(t, "done", got.Status, "unknown statuses fold to done")
+}
+
 // TestDispatchGatewayProbe_NoServers: an empty (or all-disabled) server list
 // means the operator turned probing off — no command may be enqueued, so an
 // agent never runs a probe with nothing to talk to.
