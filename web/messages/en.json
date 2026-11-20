@@ -1341,7 +1341,19 @@
 		"Diagnosis Dead": "no response",
 		"Diagnosis Never Alive": "never seen alive",
 		"Diagnosis Current": "current",
-		"Diagnosis Siblings": "Same-hostname rows"
+		"Diagnosis Siblings": "Same-hostname rows",
+		"Diagnosis Summary stale_arp_scan_artifact": "One MAC appears across many addresses that never answer a scan — the drift is a stale ARP-cache illusion, not real churn.",
+		"Diagnosis Summary multihomed_alias": "The asset is live in several networks at once — dual-homed or bridging; one identity is correct.",
+		"Diagnosis Summary locally_administered_mac": "The identity MAC is a locally-administered (virtual/soft) MAC — MAC-based binding will not hold.",
+		"Diagnosis Summary ip_slot_takeover": "The MAC at an unchanged address was replaced — another identity took over the slot.",
+		"Diagnosis Summary hostname_identity_split": "Other rows announce the same hostname under different MACs — one physical box split across identity rows.",
+		"Diagnosis Summary Healthy": "No address-drift or identity anomaly observed.",
+		"Diagnosis Kind sighting": "Sighting",
+		"Diagnosis Kind snapshot": "Scan snapshot",
+		"Diagnosis Kind change": "Change stream",
+		"Diagnosis Kind attribute": "Scan attribute",
+		"Diagnosis Kind presence": "Presence",
+		"Diagnosis Kind sibling": "Sibling row"
 	},
 	"certificates": {
 		"Title": "TLS Certificates",

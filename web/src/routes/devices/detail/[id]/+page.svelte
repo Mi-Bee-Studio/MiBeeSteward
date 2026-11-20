@@ -58,6 +58,47 @@
 
 	// Static mapping for finding codes: paraglide message keys are fixed at
 	// compile time, so dynamic template keys cannot be used here.
+	// Localized one-line verdict per classification code: the server's
+	// `summary` field is deliberately stable English data for API consumers;
+	// the panel presents the verdict through these keys instead.
+	function diagnosisSummaryLabel(code: string): string {
+		switch (code) {
+			case 'stale_arp_scan_artifact':
+				return m['topology.Diagnosis Summary stale_arp_scan_artifact']();
+			case 'multihomed_alias':
+				return m['topology.Diagnosis Summary multihomed_alias']();
+			case 'locally_administered_mac':
+				return m['topology.Diagnosis Summary locally_administered_mac']();
+			case 'ip_slot_takeover':
+				return m['topology.Diagnosis Summary ip_slot_takeover']();
+			case 'hostname_identity_split':
+				return m['topology.Diagnosis Summary hostname_identity_split']();
+			default:
+				return m['topology.Diagnosis Summary Healthy']();
+		}
+	}
+
+	// Evidence kinds are a closed set; localize the badge, keep the raw
+	// detail line as the data (addresses/counts/timestamps are locale-neutral).
+	function diagnosisKindLabel(kind: string): string {
+		switch (kind) {
+			case 'sighting':
+				return m['topology.Diagnosis Kind sighting']();
+			case 'snapshot':
+				return m['topology.Diagnosis Kind snapshot']();
+			case 'change':
+				return m['topology.Diagnosis Kind change']();
+			case 'attribute':
+				return m['topology.Diagnosis Kind attribute']();
+			case 'presence':
+				return m['topology.Diagnosis Kind presence']();
+			case 'sibling':
+				return m['topology.Diagnosis Kind sibling']();
+			default:
+				return kind;
+		}
+	}
+
 	function diagnosisCodeLabel(code: string): string {
 		switch (code) {
 			case 'stale_arp_scan_artifact':
@@ -1929,7 +1970,7 @@
 	<!-- Network-anomaly diagnosis (#761): classified verdict + evidence chain,
 	     computed on demand over the sightings/snapshot/change facts. -->
 	{#if device && diagnosis}
-		<div class="scan-info-panel mt-4">
+		<div class="scan-info-panel mt-4" data-diagnosis-panel>
 			<h3 class="scan-info-title">
 				<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>
 				{m['topology.Diagnosis']()}
@@ -1952,9 +1993,7 @@
 					<span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-xs">{diagnosis.confidence === 'high' ? m['topology.Diagnosis Confidence High']() : m['topology.Diagnosis Confidence Medium']()}</span>
 				{/if}
 			</div>
-			{#if diagnosis.status !== 'healthy'}
-				<p class="text-sm mb-3">{diagnosis.summary}</p>
-			{/if}
+			<p class="text-sm mb-3">{diagnosisSummaryLabel(diagnosis.status === 'healthy' ? '' : diagnosis.classification)}</p>
 
 			<!-- Findings + evidence chain -->
 			{#if diagnosis.findings.length > 0}
@@ -1965,13 +2004,16 @@
 								<span class="w-1.5 h-1.5 rounded-full {f.severity === 'critical' ? 'bg-red-500' : f.severity === 'warning' ? 'bg-amber-500' : 'bg-blue-400'}"></span>
 								<span class="text-xs font-medium">{diagnosisCodeLabel(f.code)}</span>
 							</div>
-							<p class="text-xs text-text-muted mt-1">{f.summary}</p>
+							<p class="text-xs text-text-muted mt-1">{diagnosisSummaryLabel(f.code)}</p>
 							{#if f.evidence.length > 0}
 								<details class="mt-1">
 									<summary class="text-xs text-primary cursor-pointer">{m['topology.Diagnosis Evidence']()} ({f.evidence.length})</summary>
 									<ul class="mt-1 space-y-0.5">
 										{#each f.evidence as e}
-											<li class="text-xs text-text-muted font-mono break-all">[{e.kind}] {e.detail}</li>
+											<li class="text-xs text-text-muted break-all">
+												<span class="px-1 py-0.5 rounded bg-bg-hover text-text-muted mr-1">{diagnosisKindLabel(e.kind)}</span>
+												<span class="font-mono">{e.detail}</span>
+											</li>
 										{/each}
 									</ul>
 								</details>
