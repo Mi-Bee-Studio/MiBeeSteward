@@ -789,6 +789,57 @@ interface AddDevicesResponse {
 		return m['devices.Unknown']();
 	}
 
+	// --- Identity-diagnosis badges (#761 surfaced in the list) ---------------
+	// The diagnosis engine already classifies the "device keeps changing IP"
+	// incident (multihomed_alias / hostname_identity_split), but its verdict
+	// lived only in each device's detail network tab — searching a split device
+	// still showed N unrelated rows and looked like the problem was unsolved.
+	// These helpers lift the SAME facts (hostname + ip_aliases already in the
+	// list payload's scan_attributes) into an at-a-glance badge. No backend,
+	// no schema, no extra fetch: the rules mirror the server classifier so the
+	// list and the detail panel never disagree.
+
+	function rowHostname(row: Record<string, unknown>): string {
+		const sa = row.scan_attributes as { hostname?: string } | undefined;
+		// Normalize to the first DNS label: a device seen via Tailscale reports
+		// `n305-server.tail1a481.ts.net` on one interface and `n305-server` on
+		// another — the same physical box. Comparing the full FQDN would split
+		// them into different identity groups and hide the diagnosis.
+		const raw = (sa?.hostname ?? (row.name as string) ?? '').trim().toLowerCase();
+		return raw.split('.')[0] ?? '';
+	}
+
+	function rowIpAliases(row: Record<string, unknown>): string[] {
+		const sa = row.scan_attributes as { extras?: { ip_aliases?: string } } | undefined;
+		const raw = sa?.extras?.ip_aliases;
+		if (!raw) return [];
+		return String(raw).split(',').map((s) => s.trim()).filter(Boolean);
+	}
+
+	// Count of rows in the CURRENT page sharing this hostname. A hostname
+	// appearing on >1 row (typically different MACs: one bond, one wifi, plus
+	// MAC-less mDNS ghosts) is the identity-split signal.
+	const hostnameRowCount = $derived.by(() => {
+		const counts = new Map<string, number>();
+		for (const d of devices) {
+			const h = rowHostname(d as unknown as Record<string, unknown>);
+			if (h) counts.set(h, (counts.get(h) ?? 0) + 1);
+		}
+		return counts;
+	});
+
+	function identityBadges(row: Record<string, unknown>): string {
+		const badges: string[] = [];
+		const h = rowHostname(row);
+		if (h && (hostnameRowCount.get(h) ?? 0) > 1) {
+			badges.push(`<span class="text-xs px-1.5 py-0.5 rounded bg-warning/15 text-warning" title="${escapeAttr(m['devices.Identity Split Hint']())}">${m['devices.Identity Split Badge']()}</span>`);
+		}
+		if (rowIpAliases(row).length > 0) {
+			badges.push(`<span class="text-xs px-1.5 py-0.5 rounded bg-info/15 text-info" title="${escapeAttr(m['devices.Multihomed Hint']())}">${m['devices.Multihomed Badge']()}</span>`);
+		}
+		return badges.length ? `<span class="ml-1 inline-flex gap-1 align-middle">${badges.join('')}</span>` : '';
+	}
+
 	// --- Optional columns (user-toggleable via ColumnPicker) ---
 	// Keys are persisted to localStorage; NEVER rename them. New columns
 	// default ON so existing users see the improvement (they can opt out).
@@ -956,7 +1007,8 @@ interface AddDevicesResponse {
 					})
 					.join('');
 				const lcHtml = lifecycleBadge(row.lifecycle_state);
-				return `<button data-action="detail" data-id="${id}" class="text-left font-medium text-primary hover:underline" title="${m['devices.View Details']()}">${name}</button>${lcHtml}${tagHtml}`;
+				const diagHtml = identityBadges(row);
+				return `<button data-action="detail" data-id="${id}" class="text-left font-medium text-primary hover:underline" title="${m['devices.View Details']()}">${name}</button>${diagHtml}${lcHtml}${tagHtml}`;
 			}
 		},
 		{
