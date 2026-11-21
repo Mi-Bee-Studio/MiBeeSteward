@@ -172,3 +172,76 @@ describe('Devices page — parked rows (#737)', () => {
 		expect(container.textContent).not.toContain('#park:6');
 	});
 });
+
+describe('Devices page — identity diagnosis badges (#761 surfaced)', () => {
+	it('split rows (same hostname, one with ip_aliases) show at-a-glance identity badges', async () => {
+		h.stats = { by_status: { online: 2 }, by_type: { other: 2 } };
+		h.networks = [{ id: 1, name: 'lan-63', cidr: '192.0.2.0/24' }];
+		h.devices = [
+			{
+				id: 68,
+				name: 'n305-server',
+				type: 'other',
+				ip_address: '192.0.2.21',
+				mac_address: '7c:83:34:bb:16:2a',
+				status: 'online',
+				scan_source: 'scanner_v2',
+				network_id: 1,
+				scan_attributes: {
+					// One interface reports a Tailscale FQDN, the other a bare
+					// hostname — normalization to the first label must still
+					// group them as one device.
+					hostname: 'n305-server.tail1a481.ts.net',
+					extras: { ip_aliases: '192.0.2.142,192.0.2.153' }
+				}
+			},
+			{
+				id: 84,
+				name: 'n305-server',
+				type: 'other',
+				ip_address: '192.0.2.107',
+				mac_address: '',
+				status: 'offline',
+				scan_source: 'scanner_v2',
+				network_id: 1,
+				scan_attributes: { hostname: 'n305-server' }
+			}
+		];
+		h.total = 2;
+		const { container } = render(Devices);
+		await waitFor(() => {
+			expect(container.textContent).toContain('n305-server');
+		});
+		// Both rows share a hostname → identity-split badge; row 68 also has
+		// ip_aliases → multihomed badge. The engine verdict is now visible
+		// without opening each device's detail tab.
+		expect(container.querySelectorAll('[title*="identity split"], [title*="same device"], [title*="physical device"]').length).toBeGreaterThan(0);
+		expect(container.textContent).toContain('same device');
+		expect(container.textContent).toContain('multi-homed');
+	});
+
+	it('a lone device with no aliases shows no diagnosis badge', async () => {
+		h.stats = { by_status: { online: 1 }, by_type: { pc: 1 } };
+		h.networks = [{ id: 1, name: 'lan-62', cidr: '192.0.2.0/24' }];
+		h.devices = [
+			{
+				id: 1,
+				name: 'solo-pc',
+				type: 'pc',
+				ip_address: '192.0.2.10',
+				mac_address: '00:11:22:33:44:55',
+				status: 'online',
+				scan_source: 'scanner_v2',
+				network_id: 1,
+				scan_attributes: { hostname: 'solo-pc' }
+			}
+		];
+		h.total = 1;
+		const { container } = render(Devices);
+		await waitFor(() => {
+			expect(container.textContent).toContain('solo-pc');
+		});
+		expect(container.textContent).not.toContain('same device');
+		expect(container.textContent).not.toContain('multi-homed');
+	});
+});
