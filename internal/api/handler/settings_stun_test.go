@@ -16,11 +16,17 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"mibee-steward/internal/api/handler"
+	"mibee-steward/internal/config"
+	"mibee-steward/internal/service"
+	"mibee-steward/internal/testutil"
 )
 
 // stunServerDTO mirrors the wire row for assertions.
@@ -76,8 +82,8 @@ func TestSettings_STUNServers(t *testing.T) {
 		{"endpoint":"stun.cloudflare.com:3478","builtin":true,"enabled":false},
 		{"endpoint":"stun.l.google.com:19302","builtin":true,"enabled":true},
 		{"endpoint":"stun.nextcloud.com:443","builtin":true,"enabled":true},
-		{"endpoint":"stun.qq.com:3478","builtin":true,"enabled":true},
-		{"endpoint":"stun.miwifi.com:3478","builtin":true,"enabled":true},
+		{"endpoint":"stun.chat.bilibili.com:3478","builtin":true,"enabled":true},
+		{"endpoint":"stun.antisip.com:3478","builtin":true,"enabled":true},
 		{"endpoint":"my-stun.example.com:3478","label":"self-hosted","enabled":true}
 	]}`
 	resp, err := doAuthed(t, server, http.MethodPut, "/api/v1/settings/probes/stun-servers", token, bytes.NewBufferString(putBody))
@@ -112,12 +118,83 @@ func TestSettings_STUNServers(t *testing.T) {
 	require.Len(t, rowsOf(t, def), 5)
 }
 
+// TestSettings_STUNServersOverlayUpgrade pins the read-time reconciliation
+// that lets a pre-swap overlay keep working. probe.nat is stored in
+// system_settings (no YAML, no installer migration), so a list written before
+// a builtin swap carries retired endpoints and lacks the newly shipped ones —
+// and the PUT gate rejects any list missing a shipped builtin ("cannot be
+// removed"). Without reconciliation the operator's next save is a 400 with no
+// explanation. See config.ReconcileSTUNServers.
+func TestSettings_STUNServersOverlayUpgrade(t *testing.T) {
+	db, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	// Seed the overlay exactly as a pre-swap binary would have left it: the
+	// retired builtins, the still-shipped ones (Cloudflare disabled by the
+	// operator), and one user row.
+	stale := `{"enabled":true,"burst_timeout_ms":1500,"servers":[
+		{"endpoint":"stun.cloudflare.com:3478","label":"Cloudflare","builtin":true,"enabled":false},
+		{"endpoint":"stun.l.google.com:19302","label":"Google","builtin":true,"enabled":true},
+		{"endpoint":"stun.nextcloud.com:443","label":"Nextcloud","builtin":true,"enabled":true},
+		{"endpoint":"stun.qq.com:3478","label":"Tencent","builtin":true,"enabled":true},
+		{"endpoint":"stun.miwifi.com:3478","label":"Xiaomi","builtin":true,"enabled":true},
+		{"endpoint":"my-stun.example.com:3478","label":"self-hosted","builtin":false,"enabled":true}
+	]}`
+	_, err = db.ExecContext(t.Context(),
+		`INSERT INTO system_settings (key, value) VALUES (?, ?)`, "probe.nat", stale)
+	require.NoError(t, err)
+
+	settingsSvc, err := service.NewSettingsService(db)
+	require.NoError(t, err)
+	h := handler.NewSettingsHandler(settingsSvc, nil, &config.Config{}, nil)
+
+	// Read: retired builtins gone, new ones present, operator flags kept.
+	rec := httptest.NewRecorder()
+	h.GetSTUNServers(rec, httptest.NewRequest(http.MethodGet, "/api/v1/settings/probes/stun-servers", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, "overlay", got["source"])
+	rows := rowsOf(t, got)
+	byEndpoint := map[string]stunRow{}
+	for _, r := range rows {
+		byEndpoint[r.Endpoint] = r
+	}
+	require.NotContains(t, byEndpoint, "stun.qq.com:3478", "retired builtin dropped at read time")
+	require.NotContains(t, byEndpoint, "stun.miwifi.com:3478", "retired builtin dropped at read time")
+	require.True(t, byEndpoint["stun.chat.bilibili.com:3478"].Builtin, "new builtin surfaced")
+	require.True(t, byEndpoint["stun.antisip.com:3478"].Builtin, "new builtin surfaced")
+	require.False(t, byEndpoint["stun.cloudflare.com:3478"].Enabled, "operator disable survives the upgrade")
+	require.False(t, byEndpoint["my-stun.example.com:3478"].Builtin, "user row untouched")
+	require.Len(t, rows, 6, "5 builtins + 1 user row")
+
+	// Save what the GET returned — the exact list a UI round-trip sends. This
+	// is the regression the reconciliation exists for: pre-reconcile, this PUT
+	// failed with "builtin server(s) cannot be removed".
+	saveBody := stunRowsPayload(rows)
+	putRec := httptest.NewRecorder()
+	h.UpdateSTUNServers(putRec, httptest.NewRequest(http.MethodPut, "/api/v1/settings/probes/stun-servers",
+		bytes.NewBufferString(saveBody)))
+	require.Equal(t, http.StatusOK, putRec.Code, "a reconciled list must pass the builtin gate; body: %s", putRec.Body.String())
+}
+
+// stunRowsPayload renders rows back into the PUT payload shape.
+func stunRowsPayload(rows []stunRow) string {
+	parts := make([]string, 0, len(rows))
+	for _, r := range rows {
+		parts = append(parts, `{"endpoint":"`+r.Endpoint+`","label":"`+r.Label+
+			`","builtin":`+strconv.FormatBool(r.Builtin)+`,"enabled":`+strconv.FormatBool(r.Enabled)+`}`)
+	}
+	return `{"enabled":true,"servers":[` + strings.Join(parts, ",") + `]}`
+}
+
 func TestSettings_STUNServersValidation(t *testing.T) {
 	server, db := setupTestServer(t)
 	insertTestAdmin(t, db)
 	token := loginAsAdmin(t, server)
 
-	builtin := []string{"stun.cloudflare.com:3478", "stun.l.google.com:19302", "stun.nextcloud.com:443", "stun.qq.com:3478", "stun.miwifi.com:3478"}
+	builtin := []string{"stun.cloudflare.com:3478", "stun.l.google.com:19302", "stun.nextcloud.com:443", "stun.chat.bilibili.com:3478", "stun.antisip.com:3478"}
 	allBuiltin := `[` + strings.Join(mapEndpoints(builtin), ",") + `]`
 	overCap := allBuiltin[:len(allBuiltin)-1]
 	for i := 0; i < 4; i++ {
