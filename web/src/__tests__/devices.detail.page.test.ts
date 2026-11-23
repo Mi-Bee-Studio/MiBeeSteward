@@ -313,4 +313,29 @@ describe('Device detail page', () => {
 			'/probes?create=1&module=tcp&target=' + encodeURIComponent('192.168.2.168:22') + '&device_id=1'
 		);
 	});
+
+	// #754 surfaced in the header: the cone/symmetric verdict was buried three
+	// levels deep (discovery tab → Discovery panel → Network Profile card). The
+	// header badge must show the SAME verdict from the same data at a glance.
+	it('shows the gateway NAT mapping verdict in the device header', async () => {
+		const original = mocks.device.scan_attributes;
+		// The real API returns scan_attributes as a deserialized object (the
+		// JSON column is unmarshalled server-side); the fixture's legacy '{}'
+		// string only worked because no prior assertion read its fields.
+		mocks.device.scan_attributes = {
+			mac: 'aa:bb:cc:dd:ee:ff',
+			gateway: { nat_mapping: 'edm', public_ip: '198.51.100.7', stun_servers_seen: 2 }
+		};
+		try {
+			const { container } = render(Detail);
+			await waitFor(() => {
+				expect(container.textContent).toContain('zhimi-airp-ua1');
+			});
+			// The header badge uses the same localized label as the deep card.
+			// Test locale defaults to English (the deep card's key resolves likewise).
+			expect(container.textContent).toContain('symmetric (EDM)');
+		} finally {
+			mocks.device.scan_attributes = original;
+		}
+	});
 });
