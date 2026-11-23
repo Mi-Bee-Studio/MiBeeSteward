@@ -144,6 +144,7 @@
 			items: [
 				{ path: '/dashboard', label: m['navigation.Dashboard'](), icon: LayoutDashboard },
 				{ path: '/devices', label: m['navigation.Devices'](), icon: Server },
+				{ path: '/network-center', label: m['navigation.Network Center'](), icon: Network },
 				{ path: '/archive', label: m['navigation.Archive'](), icon: Archive },
 				{ path: '/changes', label: m['navigation.Changes'](), icon: History },
 				{ path: '/probes', label: m['navigation.Probes'](), icon: Activity }
