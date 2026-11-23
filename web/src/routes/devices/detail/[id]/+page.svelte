@@ -1268,6 +1268,7 @@
 	{#if device}
 		{@const sa = device.scan_attributes}
 		{@const mac = sa?.mac || device.mac_address}
+		{@const gwNat = (sa as { gateway?: { nat_mapping?: string } } | undefined)?.gateway?.nat_mapping}
 		<div class="device-info-header">
 			<div class="flex items-center justify-between gap-3 flex-wrap">
 				<div class="flex items-center gap-3">
@@ -1285,6 +1286,16 @@
 					{#if device.network_name}
 						<span class="text-xs px-2 py-0.5 rounded-full bg-surface-2 text-muted font-medium">
 							{device.network_name}
+						</span>
+					{/if}
+					<!-- Gateway NAT mapping (#754): surface the cone/symmetric verdict
+					     in the header so it needs no digging through the discovery tab.
+					     Same source (scan_attributes.gateway) and i18n keys as the
+					     deep "Network Profile" card — never a second opinion. -->
+					{#if gwNat}
+						<span class="text-xs px-2 py-0.5 rounded-full font-medium {gwNat === 'eim' ? 'bg-success/15 text-success' : gwNat === 'edm' ? 'bg-warning/15 text-warning' : 'bg-surface-2 text-muted'}"
+							title={m['scanfields.Gateway NAT']()}>
+							{gwNat === 'eim' ? m['scanfields.Gateway NAT Eim']() : gwNat === 'edm' ? m['scanfields.Gateway NAT Edm']() : m['scanfields.Gateway NAT Unknown']()}
 						</span>
 					{/if}
 				</div>
