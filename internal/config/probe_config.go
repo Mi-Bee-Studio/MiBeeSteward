@@ -292,17 +292,26 @@ func (n ProbeNATConfig) EffectiveEnabled() bool {
 // Chinese endpoints. Individual providers are intermittent (field notes);
 // the classifier needs any two responsive servers, the mix survives one
 // dead provider in each region.
+//
+// Liveness matters more than brand (re-measured 2026-11-23 from two vantages,
+// 63 and 62 LANs, five probes each): stun.qq.com and stun.miwifi.com were
+// 0/5 at both — the Tencent endpoint has been dead since at least 2026-11-07,
+// when the P2P team dropped it from production (MiBeeP2PServer#119), and we
+// kept shipping it. stun.chat.bilibili.com answered 4/5 at ~45 ms from both
+// (also the P2P team's production pick); stun.antisip.com answered 5/5.
+// Do not re-add an endpoint because the brand is familiar — probe it first.
 func DefaultSTUNServers() []ProbeSTUNServer {
 	return []ProbeSTUNServer{
 		{Endpoint: "stun.cloudflare.com:3478", Label: "Cloudflare", Builtin: true, Enabled: true},
 		{Endpoint: "stun.l.google.com:19302", Label: "Google", Builtin: true, Enabled: true},
 		{Endpoint: "stun.nextcloud.com:443", Label: "Nextcloud", Builtin: true, Enabled: true},
-		{Endpoint: "stun.qq.com:3478", Label: "Tencent", Builtin: true, Enabled: true},
-		{Endpoint: "stun.miwifi.com:3478", Label: "Xiaomi", Builtin: true, Enabled: true},
+		{Endpoint: "stun.chat.bilibili.com:3478", Label: "Bilibili", Builtin: true, Enabled: true},
+		{Endpoint: "stun.antisip.com:3478", Label: "Antisip", Builtin: true, Enabled: true},
 	}
 }
 
-// NormalizeProbeNAT fills the documented defaults (zero means default).
+// NormalizeProbeNAT fills the documented defaults (zero means default) and
+// upgrades a stored list to the shipped builtin set (see ReconcileSTUNServers).
 func NormalizeProbeNAT(cfg *ProbeNATConfig) {
 	if cfg.BurstTimeoutMS == 0 {
 		cfg.BurstTimeoutMS = 1500
@@ -315,7 +324,61 @@ func NormalizeProbeNAT(cfg *ProbeNATConfig) {
 	}
 	if len(cfg.Servers) == 0 {
 		cfg.Servers = DefaultSTUNServers()
+		return
 	}
+	cfg.Servers = ReconcileSTUNServers(cfg.Servers)
+}
+
+// ReconcileSTUNServers upgrades a stored server list to the current shipped
+// builtin set. Builtin rows are product-owned, not user data: a builtin the
+// product no longer ships (a dead endpoint — the 2026-11-23 Tencent/Xiaomi
+// swap is the first case) is dropped, a newly shipped builtin is appended
+// (list order is display order), and shipped labels win. Rows the user added
+// (Builtin=false) are never touched, so an endpoint someone re-added by hand
+// — including a retired one — survives, and the user's enabled flag on a
+// surviving builtin is preserved. Idempotent: a list already in the shipped
+// shape comes back unchanged.
+//
+// Why this exists rather than a config migration: probe.nat lives in the
+// system_settings overlay, not in YAML, so no installer migration script can
+// reach it. Without reconciliation every pre-upgrade overlay keeps probing
+// retired endpoints, and one that predates a newly shipped builtin fails the
+// PUT "builtin server(s) cannot be removed" gate on its next save — the
+// operator would see a 400 with no way to tell why.
+func ReconcileSTUNServers(servers []ProbeSTUNServer) []ProbeSTUNServer {
+	shipped := make(map[string]ProbeSTUNServer, len(DefaultSTUNServers()))
+	for _, s := range DefaultSTUNServers() {
+		shipped[s.Endpoint] = s
+	}
+	out := make([]ProbeSTUNServer, 0, len(servers)+len(shipped))
+	seen := make(map[string]bool, len(servers))
+	for _, s := range servers {
+		if seen[s.Endpoint] {
+			continue
+		}
+		if s.Builtin {
+			ship, ok := shipped[s.Endpoint]
+			if !ok {
+				continue // retired shipped default
+			}
+			seen[s.Endpoint] = true
+			out = append(out, ProbeSTUNServer{
+				Endpoint: ship.Endpoint,
+				Label:    ship.Label,
+				Builtin:  true,
+				Enabled:  s.Enabled,
+			})
+			continue
+		}
+		seen[s.Endpoint] = true
+		out = append(out, s)
+	}
+	for _, ship := range DefaultSTUNServers() {
+		if !seen[ship.Endpoint] {
+			out = append(out, ship)
+		}
+	}
+	return out
 }
 
 // DefaultEgressSources is the shipped echo-source set (#718): a domestic and

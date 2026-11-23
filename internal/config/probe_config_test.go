@@ -189,3 +189,90 @@ func TestNormalizeEgressTrace(t *testing.T) {
 	require.Equal(t, 500, c.Probe.Trace.PerHopMs)
 	require.Equal(t, 2, c.Probe.Trace.Concurrency)
 }
+
+// TestDefaultSTUNServers pins the shipped list and the liveness rule behind
+// the 2026-11-23 swap: endpoints were re-measured from two vantages (63/62
+// LANs, five probes each). stun.qq.com and stun.miwifi.com answered 0/5 at
+// both and must never return without a fresh measurement; the P2P platform
+// dropped the Tencent endpoint from production on 2026-11-07
+// (MiBeeP2PServer#119) while Steward kept shipping it.
+func TestDefaultSTUNServers(t *testing.T) {
+	servers := DefaultSTUNServers()
+	require.Len(t, servers, 5)
+	endpoints := make([]string, 0, len(servers))
+	for _, s := range servers {
+		endpoints = append(endpoints, s.Endpoint)
+		require.True(t, s.Builtin, "%s must be builtin", s.Endpoint)
+		require.True(t, s.Enabled, "%s ships enabled", s.Endpoint)
+		require.NotEmpty(t, s.Label, "%s needs a label", s.Endpoint)
+	}
+	require.NotContains(t, endpoints, "stun.qq.com:3478", "dead since at least 2026-11-07 (0/5 on both rigs)")
+	require.NotContains(t, endpoints, "stun.miwifi.com:3478", "dead on both rigs (0/5)")
+	for _, want := range []string{
+		"stun.cloudflare.com:3478",
+		"stun.l.google.com:19302",
+		"stun.nextcloud.com:443",
+		"stun.chat.bilibili.com:3478", // fastest domestic source: 4/5 at ~45ms
+		"stun.antisip.com:3478",       // steadiest international source: 5/5
+	} {
+		require.Contains(t, endpoints, want)
+	}
+}
+
+// TestReconcileSTUNServers pins the overlay upgrade path. probe.nat lives in
+// system_settings (not YAML), so a list stored before a builtin swap is only
+// fixable at read time — otherwise the old rows keep probing dead endpoints
+// and the PUT builtin-must-be-present gate rejects every later save.
+func TestReconcileSTUNServers(t *testing.T) {
+	// Pre-swap overlay: the two retired builtins plus two still-shipped ones
+	// (one disabled by the operator) and a user row.
+	stale := []ProbeSTUNServer{
+		{Endpoint: "stun.cloudflare.com:3478", Label: "Cloudflare", Builtin: true, Enabled: false},
+		{Endpoint: "stun.qq.com:3478", Label: "Tencent", Builtin: true, Enabled: true},
+		{Endpoint: "stun.miwifi.com:3478", Label: "Xiaomi", Builtin: true, Enabled: true},
+		{Endpoint: "stun.l.google.com:19302", Label: "Google", Builtin: true, Enabled: true},
+		{Endpoint: "my-stun.example.com:3478", Label: "self-hosted", Builtin: false, Enabled: true},
+	}
+	got := ReconcileSTUNServers(stale)
+	byEndpoint := map[string]ProbeSTUNServer{}
+	for _, s := range got {
+		require.False(t, byEndpoint[s.Endpoint].Endpoint != "", "duplicate %s", s.Endpoint)
+		byEndpoint[s.Endpoint] = s
+	}
+	require.NotContains(t, byEndpoint, "stun.qq.com:3478", "retired builtin dropped")
+	require.NotContains(t, byEndpoint, "stun.miwifi.com:3478", "retired builtin dropped")
+	require.False(t, byEndpoint["stun.cloudflare.com:3478"].Enabled, "operator's disable survives")
+	require.Equal(t, "Cloudflare", byEndpoint["stun.cloudflare.com:3478"].Label, "shipped label wins")
+	require.True(t, byEndpoint["stun.chat.bilibili.com:3478"].Builtin, "new builtin appended")
+	require.True(t, byEndpoint["stun.antisip.com:3478"].Builtin, "new builtin appended")
+	require.True(t, byEndpoint["my-stun.example.com:3478"].Enabled, "user row untouched")
+	require.False(t, byEndpoint["my-stun.example.com:3478"].Builtin, "user row stays custom")
+	require.Len(t, got, 6, "5 builtins + 1 user row")
+
+	// A user-added row that happens to name a retired endpoint survives as a
+	// user row — reconciliation never eats user data.
+	reAdded := ReconcileSTUNServers([]ProbeSTUNServer{
+		{Endpoint: "stun.qq.com:3478", Label: "my tencent", Builtin: false, Enabled: true},
+	})
+	found := false
+	for _, s := range reAdded {
+		if s.Endpoint == "stun.qq.com:3478" {
+			found = true
+			require.False(t, s.Builtin)
+		}
+	}
+	require.True(t, found, "user re-add of a retired endpoint is preserved")
+
+	// Idempotent: the shipped list reconciles to itself.
+	require.Equal(t, DefaultSTUNServers(), ReconcileSTUNServers(DefaultSTUNServers()))
+
+	// NormalizeProbeNAT routes every non-empty stored list through it.
+	cfg := ProbeNATConfig{Servers: stale}
+	NormalizeProbeNAT(&cfg)
+	for _, s := range cfg.Servers {
+		require.NotEqual(t, "stun.qq.com:3478", s.Endpoint)
+	}
+	empty := ProbeNATConfig{}
+	NormalizeProbeNAT(&empty)
+	require.Equal(t, DefaultSTUNServers(), empty.Servers)
+}
