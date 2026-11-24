@@ -2059,7 +2059,8 @@
 		"Same Device": "同一设备",
 		"Multihomed": "多宿主",
 		"Unidentified": "未识别",
-		"No Gateway": "未观测 NAT"
+		"No Gateway": "未观测 NAT",
+		"Card Cta": "详情"
 	},
 	"assets": {
 		"Place Tab Devices": "设备",

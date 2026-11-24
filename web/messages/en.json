@@ -2059,7 +2059,8 @@
 		"Same Device": "same device",
 		"Multihomed": "multi-homed",
 		"Unidentified": "unidentified",
-		"No Gateway": "no gateway observed"
+		"No Gateway": "no gateway observed",
+		"Card Cta": "Details"
 	},
 	"assets": {
 		"Place Tab Devices": "Devices",

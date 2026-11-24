@@ -173,21 +173,25 @@
 	/* All colours come from themes.css tokens: the page must render correctly in
 	   both light and dark without a local palette (it previously hardcoded a
 	   GitHub-dark set behind undefined vars, which made light theme stay dark). */
-	.nc-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:22px}
-	.nc-eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;color:var(--color-accent-cyan);margin-bottom:6px}
-	.nc-title{font-size:28px;font-weight:600;letter-spacing:-.02em;margin:0;color:var(--color-text)}
+	/* Page gutter. The view previously rendered flush against the sidebar and
+	   the place tab bar, so the heading looked cut off and text ran to the
+	   viewport edge; every other page in the app uses a 24px gutter. */
+	.nc-page{padding:24px}
+	.nc-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:24px}
+		.nc-eyebrow{font-family:var(--font-mono);font-size:12px;letter-spacing:.12em;color:var(--color-accent-cyan);margin-bottom:8px}
+	.nc-title{font-size:26px;font-weight:600;letter-spacing:-.02em;line-height:1.3;margin:0;color:var(--color-text)}
 	.nc-sub{color:var(--color-text-muted);font-size:13px;max-width:68ch;margin-top:8px}
 	.nc-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--color-border);border:1px solid var(--color-border);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:24px}
 	.nc-stat{background:var(--color-surface);padding:15px 18px}
 	.nc-stat .k{color:var(--color-text-muted);font-size:12px;display:flex;align-items:center;gap:7px}
 	.nc-stat .k :global(svg){width:14px;height:14px}
-	.nc-stat .v{font-size:26px;font-weight:600;letter-spacing:-.02em;margin-top:5px;color:var(--color-text)}
+	.nc-stat .v{font-size:19px;font-weight:600;letter-spacing:-.02em;line-height:1.4;margin-top:4px;color:var(--color-text);font-variant-numeric:tabular-nums}
 	.nc-stat .v small{font-size:12px;color:var(--color-text-muted);font-weight:400;margin-left:5px}
-	.nc-sec{display:flex;align-items:center;gap:10px;margin:24px 0 12px}
+	.nc-sec{display:flex;align-items:center;gap:10px;margin:0 0 12px}
 	.nc-sec h3{font-size:15px;font-weight:600;margin:0;color:var(--color-text)}
 	.nc-sec .line{flex:1;height:1px;background:var(--color-border)}
-	.nc-sec .note{color:var(--color-text-muted);font-size:12px}
-	.nc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px}
+	.nc-sec .note{color:var(--color-text-muted);font-size:12px;white-space:nowrap}
+	.nc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
 	.nc-card{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:18px;cursor:pointer;transition:.16s;position:relative;overflow:hidden}
 	.nc-card::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:var(--color-accent-cyan);opacity:.5}
 	.nc-card:hover{transform:translateY(-2px);border-color:var(--color-border-strong)}
@@ -197,17 +201,29 @@
 	.nc-ci :global(svg){width:20px;height:20px}
 	.nc-card-name h4{font-size:17px;font-weight:600;margin:0;color:var(--color-text)}
 	.nc-card-name .cidr{font-family:var(--font-mono);font-size:12px;color:var(--color-text-muted);margin-top:2px}
-	.nc-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:15px 0 12px}
+	/* A prose subtitle (the interconnect teaser) must not wear the address
+	   style: no monospace, wraps inside the card instead of overflowing. */
+	.nc-card-name .cidr.prose{font-family:inherit;line-height:1.5;margin-top:4px}
+	/* 1.25fr for the address column: an IPv4 or IPv6 egress address is the
+	   longest of the three values, and an ellipsised address is useless. Equal
+	   columns made it read "121.8.49..." at 1440. */
+	.nc-metrics{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:8px;margin:16px 0 12px}
 	.nc-m{background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:9px 11px}
-	.nc-m .k{color:var(--color-text-muted);font-size:11.5px}
-	.nc-m .v{font-family:var(--font-mono);font-size:13px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--color-text)}
+	.nc-m .k{color:var(--color-text-muted);font-size:12px}
+	/* Addresses never wrap (a split IPv4 is unreadable and makes one card's
+	   metric row taller than its neighbours'); they shrink a little instead.
+	   clamp() holds the floor at 12px so it stays legible on narrow cards. */
+	.nc-m .v{font-family:var(--font-mono);font-size:clamp(12px,1.05vw,13px);line-height:1.45;margin-top:4px;white-space:nowrap;color:var(--color-text)}
 	.nc-q{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 	.nc-qbar{flex:1;height:6px;background:var(--color-surface-2);border-radius:6px;overflow:hidden}
 	.nc-qbar i{display:block;height:100%}
+	.nc-qbar i:first-child{border-radius:6px 0 0 6px}
+	.nc-qbar i:last-child{border-radius:0 6px 6px 0}
+	.nc-qbar i:only-child{border-radius:6px}
 	.nc-card-foot{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--color-border);padding-top:11px;color:var(--color-text-muted);font-size:12px}
 	.nc-go{color:var(--color-accent-cyan);display:inline-flex;align-items:center;gap:4px}
 	.nc-go :global(svg){width:13px;height:13px}
-	.nc-badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 9px;border-radius:20px;font-family:var(--font-mono);white-space:nowrap}
+	.nc-badge{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:3px 9px;border-radius:20px;font-family:var(--font-mono);white-space:nowrap;line-height:1.5}
 	.nc-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
 	.nc-b-ok{background:color-mix(in srgb, var(--color-success) 14%, transparent);color:var(--color-success)}
 	.nc-b-warn{background:color-mix(in srgb, var(--color-warning) 14%, transparent);color:var(--color-warning)}
@@ -216,45 +232,57 @@
 	.nc-detail{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 	.nc-panel.full{grid-column:1/-1}
 	.nc-ph{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
-	.nc-ph h4{font-size:14px;font-weight:600;margin:0;display:flex;align-items:center;gap:8px;color:var(--color-text)}
+	.nc-ph h4{font-size:15px;font-weight:600;margin:0;display:flex;align-items:center;gap:8px;color:var(--color-text)}
 	.nc-ph h4 :global(svg){width:16px;height:16px;color:var(--color-accent-cyan)}
-	.nc-ph .hint{color:var(--color-text-muted);font-size:11px}
+	.nc-ph .hint{color:var(--color-text-muted);font-size:12px}
 	.nc-kv{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 	.nc-kv .it{background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:11px 12px}
-	.nc-kv .k{color:var(--color-text-muted);font-size:11px;display:flex;align-items:center;gap:6px}
+	.nc-kv .k{color:var(--color-text-muted);font-size:12px;display:flex;align-items:center;gap:6px}
 	.nc-kv .k :global(svg){width:13px;height:13px}
-	.nc-kv .v{font-size:16px;font-weight:600;margin-top:4px;color:var(--color-text)}
-	.nc-kv .v.mono{font-family:var(--font-mono);font-size:12.5px;font-weight:400}
+	.nc-kv .v{font-size:17px;font-weight:600;margin-top:4px;color:var(--color-text)}
+	.nc-kv .v.mono{font-family:var(--font-mono);font-size:13px;font-weight:400}
 	.nc-note{color:var(--color-text-muted);font-size:12px;margin-top:12px;padding:9px 11px;background:color-mix(in srgb, var(--color-warning) 10%, transparent);border-radius:var(--radius-sm);display:flex;gap:8px;align-items:flex-start}
 	.nc-note :global(svg){width:14px;height:14px;color:var(--color-warning);flex:none;margin-top:1px}
 	.nc-vrow{display:flex;align-items:center;gap:9px;padding:7px 10px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);margin-bottom:5px;font-size:12px;color:var(--color-text)}
 	.nc-vrow .vn{flex:1}
 	.nc-table{width:100%;border-collapse:collapse;font-size:12px;color:var(--color-text)}
-	.nc-table th{text-align:left;color:var(--color-text-muted);font-size:11px;padding:8px 9px;border-bottom:1px solid var(--color-border)}
+	.nc-table th{text-align:left;color:var(--color-text-muted);font-size:12px;font-weight:500;padding:8px 9px;border-bottom:1px solid var(--color-border)}
 	.nc-table td{padding:8px 9px;border-bottom:1px solid var(--color-border)}
 	.nc-table tr:last-child td{border-bottom:0}
 	.nc-table tbody tr:hover{background:var(--color-surface-2)}
-	.nc-table .mono{font-family:var(--font-mono);font-size:11.5px}
+	.nc-table .mono{font-family:var(--font-mono);font-size:12px}
 	.nc-sdot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px}
 	.nc-on{background:var(--color-success)}.nc-off{background:var(--color-error)}
-	.nc-chip{display:inline-block;font-size:10px;padding:2px 7px;border-radius:5px;background:var(--color-surface-2);color:var(--color-text-muted);margin-right:4px}
+	.nc-chip{display:inline-block;font-size:12px;line-height:1.5;padding:1px 7px;border-radius:5px;background:var(--color-surface-2);color:var(--color-text-muted);margin-right:4px}
 	.nc-map{height:400px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-lg);overflow:hidden}
 	.nc-map svg{width:100%;height:100%}
 	.nc-node{cursor:pointer}
 	.nc-node rect{fill:var(--color-surface-2);stroke:var(--color-border);stroke-width:1.2}
 	.nc-node text{font-size:12px;fill:var(--color-text);pointer-events:none}
-	.nc-node .sub{font-family:var(--font-mono);font-size:10px;fill:var(--color-text-muted)}
+	.nc-node .sub{font-family:var(--font-mono);font-size:12px;fill:var(--color-text-muted)}
 	.nc-edge{stroke:var(--color-text-muted);stroke-width:1.5;fill:none;opacity:.5}
 	.nc-edge.hot{stroke:var(--color-accent-cyan);stroke-width:2;opacity:.9}
-	.nc-elab{font-family:var(--font-mono);font-size:11px;fill:var(--color-text-muted);pointer-events:none}
+	.nc-elab{font-family:var(--font-mono);font-size:12px;fill:var(--color-text-muted);pointer-events:none}
 	.nc-seg{display:inline-flex;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:3px}
-	.nc-seg button{border:0;background:transparent;color:var(--color-text-muted);font:inherit;font-size:12.5px;padding:7px 13px;border-radius:var(--radius-sm);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
-	.nc-seg button.on{background:var(--color-surface-2);color:var(--color-text)}
+	.nc-seg button{border:0;background:transparent;color:var(--color-text-muted);font:inherit;font-size:13px;padding:7px 13px;border-radius:var(--radius-sm);cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:color .15s ease,background-color .15s ease}
+	.nc-seg button:hover{color:var(--color-text)}
+	.nc-seg button.on{background:color-mix(in srgb,var(--color-primary) 16%,transparent);color:var(--color-primary);font-weight:600}
+	.nc-seg button:focus-visible{outline:2px solid var(--color-primary);outline-offset:1px}
 	.nc-seg button :global(svg){width:14px;height:14px}
 	.nc-crumb{color:var(--color-text-muted);font-size:12px;margin-bottom:12px}
 	.nc-crumb b{color:var(--color-text);font-weight:500}
 	.nc-loading{padding:60px;text-align:center;color:var(--color-text-muted)}
-	@media(max-width:760px){.nc-stats{grid-template-columns:repeat(2,1fr)}.nc-detail{grid-template-columns:1fr}.nc-grid{grid-template-columns:1fr}.nc-map{height:320px}}
+	@media(max-width:760px){
+		.nc-stats{grid-template-columns:repeat(2,1fr)}
+		.nc-detail{grid-template-columns:1fr}
+		.nc-grid{grid-template-columns:1fr}
+		.nc-map{height:320px}
+		/* One column of cards: the metric labels wrapped ("设备 / 在" / "线")
+		   because the padding was tuned for a 3-across desktop card. */
+		.nc-page{padding:16px}
+		.nc-m{padding:8px 9px}
+		.nc-m .k{font-size:12px;line-height:1.35}
+	}
 </style>
 
 {#if loading}
@@ -262,6 +290,7 @@
 {:else if error}
 	<div class="nc-loading">{error}</div>
 {:else}
+<div class="nc-page">
 
 	<div class="nc-head">
 		<div>
@@ -285,7 +314,7 @@
 
 	<!-- ══ OVERVIEW ══ -->
 	{#if view === 'overview'}
-		<div class="nc-sec"><h3>{m['networkCenter.Stat Networks']()}</h3><div class="line"></div><span class="note">{m['networkCenter.Click Network']()}</span></div>
+		<div class="nc-sec"><h3>{m['networkCenter.Stat Networks']()}</h3><div class="line"></div></div>
 		<div class="nc-grid">
 			{#each cards as c (c.id)}
 			<div class="nc-card" role="button" tabindex="0" onclick={() => open(c.id)} onkeydown={(e) => e.key === 'Enter' && open(c.id)}>
@@ -315,16 +344,16 @@
 					</div>
 					<span style="font-size:12px;color:var(--color-text-muted)">{m['networkCenter.Quality']()} {c.quality.vantages.length ? Math.round(c.quality.vantages.reduce((a,v)=>a+(v.score||0),0)/c.quality.vantages.length) : '—'}</span>
 				</div>
-				<div class="nc-card-foot"><span>{c.agent}{c.agentStale ? ' · stale' : ''}</span><span class="nc-go">{m['networkCenter.Click Network']()} <ChevronRight /></span></div>
+				<div class="nc-card-foot"><span>{c.agent}{c.agentStale ? ' · stale' : ''}</span><span class="nc-go">{m['networkCenter.Card Cta']()} <ChevronRight /></span></div>
 			</div>
 			{/each}
 
 			<!-- interconnection teaser card -->
 			<div class="nc-card" role="button" tabindex="0" onclick={() => nav('topology')} onkeydown={(e) => e.key === 'Enter' && nav('topology')} style="background:linear-gradient(150deg,color-mix(in srgb,var(--color-accent-cyan) 8%,transparent),var(--color-surface))">
-				<div class="nc-card-top"><div class="nc-card-name"><div class="nc-ci" style="background:color-mix(in srgb,var(--color-accent-cyan) 13%,transparent);color:var(--color-accent-cyan)"><Route /></div><div><h4>{m['networkCenter.Interconnect']()}</h4><div class="cidr">{m['networkCenter.Interconnect Desc']()}</div></div></div></div>
+				<div class="nc-card-top"><div class="nc-card-name"><div class="nc-ci" style="background:color-mix(in srgb,var(--color-accent-cyan) 13%,transparent);color:var(--color-accent-cyan)"><Route /></div><div><h4>{m['networkCenter.Interconnect']()}</h4><div class="cidr prose">{m['networkCenter.Interconnect Desc']()}</div></div></div></div>
 				<div class="nc-metrics" style="margin-top:18px">
 					{#each cards as c (c.id)}
-						<div class="nc-m"><div class="k">{c.name}</div><div class="v" style="font-size:11px">{c.links.length} {m['networkCenter.Route Hint']()}</div></div>
+						<div class="nc-m"><div class="k">{c.name}</div><div class="v" style="font-size:12px">{c.links.length} {m['networkCenter.Route Hint']()}</div></div>
 					{/each}
 				</div>
 				<div class="nc-card-foot"><span>{cards.length} {m['networkCenter.Stat Networks']()}</span><span class="nc-go">{m['networkCenter.View Topology']()} <ChevronRight /></span></div>
@@ -335,8 +364,8 @@
 	<!-- ══ NETWORK DETAIL ══ -->
 	{#if view === 'network' && selected}
 		<div class="nc-stats">
-			<div class="nc-stat"><div class="k"><Globe />{m['networkCenter.Public IP']()}</div><div class="v" style="font-size:18px;font-family:var(--font-mono)">{selected.egressIp || selected.publicIp || '—'}</div></div>
-			<div class="nc-stat"><div class="k"><Shield />{m['networkCenter.NAT Mapping']()}</div><div class="v" style="font-size:18px">{selected.nat === 'eim' ? 'EIM' : selected.nat === 'edm' ? 'EDM' : '—'}</div></div>
+			<div class="nc-stat"><div class="k"><Globe />{m['networkCenter.Public IP']()}</div><div class="v" style="font-size:17px;font-family:var(--font-mono)">{selected.egressIp || selected.publicIp || '—'}</div></div>
+			<div class="nc-stat"><div class="k"><Shield />{m['networkCenter.NAT Mapping']()}</div><div class="v" style="font-size:17px">{selected.nat === 'eim' ? 'EIM' : selected.nat === 'edm' ? 'EDM' : '—'}</div></div>
 			<div class="nc-stat"><div class="k"><Activity />{m['networkCenter.Quality']()}</div><div class="v">{selected.quality.vantages.length ? Math.round(selected.quality.vantages.reduce((a,v)=>a+(v.score||0),0)/selected.quality.vantages.length) : '—'}<small>/ 100</small></div></div>
 			<div class="nc-stat"><div class="k"><Server />{m['networkCenter.Stat Devices']()}</div><div class="v">{selected.online}<small>/ {selected.devices}</small></div></div>
 		</div>
@@ -382,7 +411,7 @@
 				<div class="nc-ph"><h4><NetworkIcon />{m['networkCenter.Inter networks']()}</h4><span class="hint">{m['networkCenter.Click Switch']()}</span></div>
 				{#each cards.filter(c => c.id !== selected.id) as c (c.id)}
 					<div class="nc-vrow" role="button" tabindex="0" onclick={() => open(c.id)} onkeydown={(e) => e.key === 'Enter' && open(c.id)} style="cursor:pointer">
-						<span class="vn"><NetworkIcon size={14} /> {c.name} <span style="color:var(--color-text-muted)">{c.cidr}</span></span><span style="color:var(--color-text-muted);font-size:11px">{c.agent}</span><ChevronRight size={14} />
+						<span class="vn"><NetworkIcon size={14} /> {c.name} <span style="color:var(--color-text-muted)">{c.cidr}</span></span><span style="color:var(--color-text-muted);font-size:12px">{c.agent}</span><ChevronRight size={14} />
 					</div>
 				{/each}
 				<button class="nc-go" style="border:0;background:transparent;cursor:pointer;margin-top:10px;font-size:12px" onclick={() => nav('overview')}>← {m['networkCenter.Back Overview']()}</button>
@@ -450,7 +479,7 @@
 			</section>
 			<section class="nc-panel">
 				<div class="nc-ph"><h4><Info />{m['networkCenter.Why This IA']()}</h4></div>
-				<p style="color:var(--color-text-muted);font-size:12.5px;margin:0">{m['networkCenter.Why This IA Text']()}</p>
+				<p style="color:var(--color-text-muted);font-size:13px;margin:0">{m['networkCenter.Why This IA Text']()}</p>
 			</section>
 		</div>
 	{/if}
@@ -469,4 +498,5 @@
 		</section>
 	{/if}
 
+</div>
 {/if}
