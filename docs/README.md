@@ -6,7 +6,7 @@ MiBee Steward automatically discovers what devices are on a network, infers what
 
 Documentation is maintained bilingually: `zh/` (中文) and `en/` (English) are structurally aligned, page for page.
 
-## Manual (14 pages per language)
+## Manual (23 pages per language)
 
 ### 入门 / Getting Started
 

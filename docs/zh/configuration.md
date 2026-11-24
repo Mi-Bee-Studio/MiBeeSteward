@@ -402,7 +402,9 @@ scanner:
 | `probe.quality.http_degraded_ms` | int | 800 | http 腿的 p50 延迟阈值，超出即标记视角降级（叠加在成功率阈值之上）。 |
 | `probe.quality.dns_degraded_ms` | int | 300 | dns 腿的同上阈值。 |
 | `probe.quality.ok_rate_threshold` | float | 0.9 | 窗口内最低成功率（0..1]。 |
-| `probe.quality.groups` | map | 见下 | 拨测点矩阵，`组名 → [{name, module, target, options}]`。保留组 `domestic` 驱动主判定；`international`（及任何其它组名）仅作参照--跨境波动是独立信号，不算出口故障。留空 = 出厂默认：国内组（双公共解析器做 DNS 差分诊断、主流 HTTP 站点、204 端点、免 DNS 的直连 IP TCP 腿）加国际参照组。所有取值均可配置，无一硬编码。 |
+| `probe.quality.loss_pct_threshold` | float | 5 | 突发采样的丢包率阈值（#744），超出即在成功率阈值之外把该视角标记为劣化，对应稳定判定码 `loss_burst`。 |
+| `probe.quality.jitter_degraded_ms` | float | 30 | 突发抖动预算（ms，#744，相邻回显 RTT 差分均值），超出即以稳定判定码 `jitter_high` 把该视角标记为劣化。 |
+| `probe.quality.groups` | map | 见下 | 拨测点矩阵，`组名 → [{name, module, target, options}]`。保留组 `domestic` 驱动主判定；`international`（及任何其它组名）仅作参照--跨境波动是独立信号，不算出口故障。留空 = 出厂默认：国内组（双公共解析器做 DNS 差分诊断、主流 HTTP 站点、204 端点、免 DNS 的直连 IP TCP 腿）加国际参照组。所有取值均可配置，无一硬编码。icmp 目标的突发指标（`loss_burst` / `jitter_high`）同样参与判定。 |
 | `probe.quality.episodes.enabled` | bool | （跟随 quality） | 劣化段检测器开关（#720）。缺省时跟随 `probe.quality.enabled`；显式 false 即关闭。 |
 | `probe.quality.episodes.latency_ratio` | float | 2.0 | 轨道窗口 p50 在 `p50 >= max(基线 × ratio, 基线 + min_delta)` 时计为劣化。 |
 | `probe.quality.episodes.latency_min_delta_ms` | int | 50 | 延迟劣化的绝对增量下限——3ms 的基线不会"翻倍"成噪音。 |
@@ -415,6 +417,7 @@ scanner:
 | `probe.autogen.interval_seconds` | int | 300 | auto 目标的探测间隔（≥10）。 |
 | `probe.autogen.max_targets` | int | 100 | 存量上限（1–1000），避免千台设备的 LAN 炸出 3000 个目标。 |
 | `probe.autogen.sweep_interval_minutes` | int | 15 | 对账周期：为新服务建目标、为离开扫描的服务挂起目标、回归即复活。手工目标永不触碰。 |
+| `probe.autogen.mesh_enabled` | bool | true（键缺省=开） | 站点间 N×N 矩阵（#747）：根据上报的源地址自动生成视角矩阵目标（中心 → 每个 agent、每个 agent → 其它 agent），无需手工接线即有 RTT/丢包/抖动矩阵。缺省即开启，显式 `false` 才关闭。 |
 | `probe.egress.enabled` | bool | false | 出口身份记录器（#718）：每到 interval，center 向一组公网回显源（HTTP/STUN/DNS）询问当前出口呈现的公网 IP，对去重后的 IP 做来源 ASN 富化，并把整轮结果存入 `data/probe_ext.db`。只记录——变更本身不通知（#716）。同一份回显源与周期也会下发给声明了 `egress` 能力的 agent：每个视角各自跑轮次并回传（`POST /agents/egress-report`，令牌绑定身份，ASN 由 center 富化）。裸配置默认**关闭**；`configs/config.example.yaml` 以推荐值 `enabled: true` 出厂。环境变量 `MIBEE_PROBE_EGRESS_ENABLED`。 |
 | `probe.egress.interval_seconds` | int | 300 | 采集周期（60–86400）。环境变量 `MIBEE_PROBE_EGRESS_INTERVAL_SECONDS`。 |
 | `probe.egress.asn_resolvers` | []string | ["223.5.5.5"] | Team Cymru 来源 ASN TXT 查询所用的 DNS 服务器，按优先级排列。 |
@@ -438,6 +441,8 @@ probe:
     http_degraded_ms: 800
     dns_degraded_ms: 300
     ok_rate_threshold: 0.9
+    loss_pct_threshold: 5
+    jitter_degraded_ms: 30
     groups:
       domestic:
         - {name: quality-dns-ali,    module: dns,  target: www.baidu.com, options: {record: A, resolver: 223.5.5.5}}
@@ -455,6 +460,7 @@ probe:
     interval_seconds: 300
     max_targets: 100
     sweep_interval_minutes: 15
+    mesh_enabled: true
 ```
 
 矩阵支撑的判定语义（为什么两个解析器、为什么有直连 IP TCP 腿、为什么国际组只作参照）见[架构 → 拨测](architecture.md)，并由 `GET /api/v1/probe-quality` 呈现。

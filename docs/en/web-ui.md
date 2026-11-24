@@ -4,6 +4,8 @@ Every management capability of MiBee Steward ships inside its built-in web UI, e
 
 > The UI supports Chinese / English switching (language selector at the bottom of the sidebar) and light / dark themes. Screenshots below use the light theme.
 
+The sidebar is organized by **places, not features** (#776): five entries — **Overview** (`/dashboard`), **Assets** (`/devices`), **Networks** (`/network-center`), **Observation** (`/probes`), and **Administration** (`/users`, admins only). Capabilities live inside each place as a tab bar — Assets holds devices, changes, archive, fingerprint coverage, documents and the scan center; Networks holds the Network Center, the segment registry and the collector fleet; Administration holds users, the audit log and the settings centre. Routes and URLs are unchanged, so every bookmark, deep link and API path still resolves.
+
 ## Login
 
 The first visit to `http://<host>:8080` redirects to the login page. Sign in with the initial admin account (`admin` + the password from `auth.initial_admin_password`); TOTP two-factor authentication is supported, and user registration is admin-initiated.
@@ -22,7 +24,7 @@ The device list is the day-to-day workhorse: every registered device across all 
 
 ![Device list](images/devices.webp)
 
-Click any device for the detail page: base info, scan attributes (SNMP sysName/description, open ports, detected services and versions), TLS certificates, heartbeat history, neighbor relationships, config backup versions, and attached documents, all on one page.
+Click any device for the detail page: base info, scan attributes (SNMP sysName/description, open ports, detected services and versions), TLS certificates, heartbeat history, neighbor relationships, config backup versions, and attached documents, all on one page. The **Network Diagnosis** panel (#761/#767) answers "is this device really changing its IP?" with verdict badges and an evidence panel (address timeline, liveness facts, sibling rows) — pull-based on demand, deliberately **not** an alert. The device list lifts the same identity-split / multi-homed verdicts onto affected rows as at-a-glance badges.
 
 ![Device detail](images/device-detail.webp)
 
@@ -58,6 +60,17 @@ For switched networks with LLDP / CDP / Bridge-MIB support, the topology page re
 
 The graph renders through one of two interchangeable canvases chosen in the toolbar: the classic 2D force graph (ECharts) or a 3D scene (three.js; the choice persists in the URL as `&dim=3d`). The 3D view stacks the hierarchy along the vertical axis - gateway on top, then switches/routers, access, endpoints - and supports orbit/zoom, dragging individual nodes into place (positions survive refreshes), hover cards (name · IP · type · status · brand), and the same panels and double-click-to-device navigation as 2D. Node identification is controlled next to it: **color by layer** (the hierarchy) or **color by device type** - six buckets (network gear / cameras / computers & servers / mobile / smart devices & IoT / other), where the gateway and core layers always classify as network gear regardless of the vendor string a scanner reported - and **label density** (auto / all / none) so a large graph can label every point. The type chips double as click-to-filter toggles (they combine with the layer pills; edges drop with their endpoints), unidentified-neighbor edges render as dashed links to a synthetic stub, and edges past their freshness window (10 min generic / 5 min WiFi) fade to dashed on their own.
 
+## Network Center
+
+The read-only **Network Center** (`/network-center`, #771) gives networks a first-class home with four layers. It aggregates data the UI already fetches (`/networks`, `/devices`, `/probe-quality`, `/probe-egress`, `/probe-matrix`, `/agents/status`) — no new API or schema.
+
+- **Overview**: one card per network with its egress IP, NAT type (EIM / EDM), quality score, device count and an interconnect teaser.
+- **Network detail**: click a card for the gateway profile (public IP, NAT mapping behavior, local gateway), per-vantage quality, routing/interconnects, and that network's assets.
+- **Inter-network topology**: cross-network RTT/loss/jitter links; click a node to switch networks.
+- **Cross-network assets**: one asset list spanning all networks.
+
+![Network Center](images/network-center.webp)
+
 ## Change Center
 
 The Changes page lays out device additions / attribute changes / losses / config changes on a timeline, the "history axis" of the quasi-realtime network portrait. The SSE-based `/changes/watch` endpoint feeds downstream integrations.
@@ -90,7 +103,7 @@ Branch offices or isolated segments run `mibee-agent`, registering with the cent
 
 ![Agents](images/agents.webp)
 
-The Networks page manages logical networks (multi-LAN / multi-site): CIDR, site identifier, bound agent, and device count for each.
+The **Networks** place contains three tabs (#776): **Overview** (`/network-center`, the read-only Network Center above), **Segments** (`/networks`) and **Collectors** (`/agents`). The Segments tab is the logical-network registry (multi-LAN / multi-site): CIDR, site identifier, bound agent, and device count for each — the editable CRUD counterpart to the read-only Network Center.
 
 ![Networks](images/networks.webp)
 

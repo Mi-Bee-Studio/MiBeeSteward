@@ -1,6 +1,6 @@
 # MiBee Steward 产品介绍
 
-MiBee Steward v0.5.0（2026-08-19）是一个**设备/网络层的资产发现、识别与登记**工具--面向网络与 IoT 资产的轻量 CMDB（CMDB-lite），以单个零依赖二进制交付。后端采用 Go + Chi 路由 + modernc.org/sqlite（CGO-free 的纯 Go SQLite 实现）+ sqlc 生成的数据访问层，配置管理基于 koanf（YAML 文件 + `MIBEE_*` 环境变量）；前端为 SvelteKit 5 单页应用，通过 `go:embed` 嵌入二进制。许可证为 AGPL-3.0，并提供商业双授权。
+MiBee Steward v0.10.0（2026-11-24）是一个**设备/网络层的资产发现、识别与登记**工具--面向网络与 IoT 资产的轻量 CMDB（CMDB-lite），以单个零依赖二进制交付。后端采用 Go + Chi 路由 + modernc.org/sqlite（CGO-free 的纯 Go SQLite 实现）+ sqlc 生成的数据访问层，配置管理基于 koanf（YAML 文件 + `MIBEE_*` 环境变量）；前端为 SvelteKit 5 单页应用，通过 `go:embed` 嵌入二进制。许可证为 AGPL-3.0，并提供商业双授权。
 
 它回答三个问题：
 

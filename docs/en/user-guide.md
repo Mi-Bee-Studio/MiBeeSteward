@@ -12,9 +12,11 @@ The complete walkthrough of the MiBee Steward web UI: every page, what it shows,
 
 The landing overview: online/offline device counts, per-network device trends, recent change-log events, agent health, and heartbeat failure summaries. Widgets link into their respective pages, all reading from the same API the individual pages use.
 
-## Networks (`/networks`)
+## Networks (`/network-center`, `/networks`)
 
-Each managed LAN is one network row: **name, CIDR, and which agent owns it** (`agent_id`).
+The **Networks** place has three tabs: **Overview** (the read-only `/network-center`), **Segments** (`/networks`, the registry below) and **Collectors** (`/agents`). `/network-center` gives networks a first-class, read-only view: per-network egress IP / NAT type / quality / device count, an inter-network topology and a cross-network asset list.
+
+Each managed LAN is one network row on `/networks`: **name, CIDR, and which agent owns it** (`agent_id`).
 
 - **Add a network**: name + CIDR (e.g. `lan-1` / `192.168.1.0/24`). The CIDR drives scan targeting and device→network attribution.
 - **Agent binding** is the dispatch switch: an `agent_id` on the network means its scan tasks are dispatched to that agent (distributed mode); **empty = the center scans it locally**. When devices from an agent-covered LAN stop updating, check this field first: an accidentally emptied `agent_id` silently flips the network back to center-local scans.
@@ -34,7 +36,7 @@ Identity rules, in one paragraph: **one row per MAC** (MAC-primary identity). A 
 
 ### Device detail (`/devices/detail/{id}`)
 
-Everything known about one asset: identity card, open ports + detected services, scan attributes (SNMP sysDescr, OS/kernel, inference sources with their confidence), heartbeat status history, L2 topology edges (`device_neighbors`, learned from LLDP/CDP/Bridge-MIB probes), and the device's change history.
+Everything known about one asset: identity card, open ports + detected services, scan attributes (SNMP sysDescr, OS/kernel, inference sources with their confidence), heartbeat status history, L2 topology edges (`device_neighbors`, learned from LLDP/CDP/Bridge-MIB probes), and the device's change history. The **Network Diagnosis** panel verdict badges (with their evidence) answer "is this device really changing its IP?" — pull-based, not an alert; the device list mirrors the identity-split / multi-homed verdicts as row badges.
 
 ### Discovery & scans (`/devices/discovery`, `/devices/scan-results`, `/devices/scan-tasks`, `/devices/scanner`)
 
@@ -44,7 +46,7 @@ Everything known about one asset: identity card, open ports + detected services,
 
 ## Agents (`/agents`)
 
-The fleet view for distributed deployments: each agent's version (e.g. `mibee-agent-rs/0.1.5`), uptime, last report age, scan counter, and its adopted fingerprint-corpus revision.
+The fleet view for distributed deployments: each agent's version (e.g. `mibee-agent-rs/0.2.4`), uptime, last report age, scan counter, and its adopted fingerprint-corpus revision.
 
 - **Mint a token** (Agents page → create): binds `agent_id + network_id`, plaintext shown **exactly once**; paste it into the agent's `agent.yaml` (`center.auth_token`). Tokens are revocable; revoked agents fail auth immediately.
 - **Remote ops**: with `agent_fleet.remote_ops_enabled` on the center side and the agent's `center.remote_ops_enabled: true`, the center can request on-demand scans and log retrieval.
@@ -81,6 +83,7 @@ Accordion sections (expand in place):
 - **Security** — JWT secret rotation, cookie flags, password policy.
 - **Scanner** — engine tuning, discovery sources, SNMP credentials (SNMPv3 passphrases are vault-encrypted at rest and **never** echo back from any API).
 - **Notifications** — webhook/notification channels for heartbeat and change events.
+- **Probes** — admin switches for the egress quality matrix (`probe.quality`) and auto-generated probes (`probe.autogen`); a flip reseeds immediately, no restart. The probe-point list and thresholds stay in the YAML config (#737).
 - **Users** — account management (admin capability).
 
 ## Users (`/users`)
@@ -99,7 +102,7 @@ Start the center with `server.demo_mode: true` (or `-demo`): it seeds a fictiona
 
 | Symptom | First check |
 |---|---|
-| Devices from an agent LAN frozen / stale | The network's `agent_id` on `/networks`; the agent's service status + last report age on `/agents` |
+| Devices from an agent LAN frozen / stale | The network's `agent_id` on `/networks`; the agent's service status + last report age on `/agents`; the affected network's egress / quality on `/network-center` |
 | Agent 401s in the center log | Token revoked or rotated; mint a new one, update `center.auth_token` |
 | Two device rows for one box (Ethernet + WiFi) | That's `mac_aliases` at work; UI-side alias aggregation is roadmap — merge intent is recorded |
 | A device "moved" to a random-looking MAC | Locally-administered (randomized) MAC; the real holder is parked and returns; see [agent-rs.md](agent-rs.md) / CHANGELOG |

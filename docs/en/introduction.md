@@ -1,6 +1,6 @@
 # MiBee Steward Product Introduction
 
-MiBee Steward v0.5.0 (2026-08-19) is a **device/network-layer asset discovery, identification, and registry** tool, CMDB-lite for network and IoT assets, delivered as a single zero-dependency binary. The backend uses Go + Chi routing + modernc.org/sqlite (CGO-free pure-Go SQLite) + sqlc-generated data layer; configuration is managed by koanf (YAML files + `MIBEE_*` environment variables). The frontend is a SvelteKit 5 single-page application embedded into the binary via `go:embed`. Licensed AGPL-3.0 with a commercial dual-license option.
+MiBee Steward v0.10.0 (2026-11-24) is a **device/network-layer asset discovery, identification, and registry** tool, CMDB-lite for network and IoT assets, delivered as a single zero-dependency binary. The backend uses Go + Chi routing + modernc.org/sqlite (CGO-free pure-Go SQLite) + sqlc-generated data layer; configuration is managed by koanf (YAML files + `MIBEE_*` environment variables). The frontend is a SvelteKit 5 single-page application embedded into the binary via `go:embed`. Licensed AGPL-3.0 with a commercial dual-license option.
 
 It answers three questions:
 

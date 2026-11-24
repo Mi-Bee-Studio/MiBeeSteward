@@ -7,7 +7,7 @@
 # MIBEE_* env and boots the center binary with data on /data (HA's managed
 # volume — survives add-on updates).
 name: MiBee Steward
-version: 0.9.0
+version: 0.10.0
 slug: mibee_steward
 description: Network/IoT asset discovery & registry (CMDB-lite) for your LAN
 url: https://github.com/Mi-Bee-Studio/MiBeeSteward

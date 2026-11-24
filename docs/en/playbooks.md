@@ -8,7 +8,7 @@ Beginner-friendly walkthroughs: a handful of real scenarios, each 5–15 minutes
 
 **Goal**: scan a home or office network once and get an inventory with brands/models/types. This is the foundation for everything else.
 
-1. After logging in, go to **Devices → Quick Scan**.
+1. After logging in, go to **Assets → Devices → Scan → Quick Scan** (the scan center is a tab of the Assets place).
 2. Enter your subnet as the target, e.g. `192.168.1.0/24` (a single IP works too).
 3. If your devices expose SNMP and the default community `public` doesn't match, enter yours; skip it if you don't use SNMP. Leave the timeout at the default 2s.
 
@@ -32,11 +32,11 @@ Beginner-friendly walkthroughs: a handful of real scenarios, each 5–15 minutes
 1. **Take stock**: walk the Devices list with type filters and search, cameras, routers, NAS, PCs, phones. Pay attention to two kinds of rows:
    - "Blank" devices with no type/brand, open the detail page and check the MAC and OUI vendor (the NIC silicon vendor is a strong clue);
    - Devices whose MAC carries the locally-administered bit flag, common on phones with MAC randomization or some embedded gear; it's neutral observability info.
-2. **Read the change history**: open **Changes**, filter by device-added, every device's "arrival time" is on record. Anything you don't recognize shows up here immediately.
+2. **Read the change history**: open **Assets → Changes**, filter by device-added, every device's "arrival time" is on record. Anything you don't recognize shows up here immediately.
 
    ![Change history](images/pb-changes.webp)
 
-3. **Set up join notifications**: go to **Settings → Notifications**, add a channel first (webhook or email), then create a rule: event type "device added", scope your network, target that channel. From now on every new device lands in your Feishu/Telegram/inbox.
+3. **Set up join notifications**: go to **Administration → Settings → Notifications**, add a channel first (webhook or email), then create a rule: event type "device added", scope your network, target that channel. From now on every new device lands in your Feishu/Telegram/inbox.
 4. **(Optional) Heartbeats on critical devices**: configure probes on the detail page of each device you care about, you'll know when they drop.
 
 **Where to go next**: add "device lost" to the notification rules; wire `/metrics` into Prometheus for 24/7 watch (see the [integrations guide](integrations.md)).
@@ -57,7 +57,7 @@ Beginner-friendly walkthroughs: a handful of real scenarios, each 5–15 minutes
 
    ![TLS certificates](images/pb-router-tls.webp)
 
-4. Wondering "why was this classified as a camera?", open the **Fingerprint coverage** page: every identification verdict traces back to a YAML rule (3,869+ and growing).
+4. Wondering "why was this classified as a camera?", open **Assets → Fingerprint coverage**: every identification verdict traces back to a YAML rule (3,869+ and growing).
 
    ![Fingerprint coverage](images/pb-fingerprints.webp)
 
@@ -68,7 +68,7 @@ Beginner-friendly walkthroughs: a handful of real scenarios, each 5–15 minutes
 **Goal**: use LLDP/CDP/Bridge-MIB evidence to draw the L2 adjacency graph and answer "which switch port is this device on, in which VLAN". Prerequisite: switches with SNMP enabled (read-only is enough).
 
 1. Scan the switches' subnet first (scenario 1) with SNMP community/v3 credentials configured, all topology evidence comes from SNMP walks.
-2. Open the **Topology** page: a layered force-directed layout separates core/distribution/access tiers; the legend doubles as a per-tier filter.
+2. On the **Assets** place, open **Devices** and switch to the **topology view** (`/devices?view=topology`; the old `/topology` link redirects there): a layered force-directed layout separates core/distribution/access tiers; the legend doubles as a per-tier filter.
 
    ![Network topology](images/pb-topology.webp)
 
@@ -106,7 +106,7 @@ Beginner-friendly walkthroughs: a handful of real scenarios, each 5–15 minutes
 
 **Goal**: a network at home, one at the office, one in the rack, drop a lightweight agent in each subnet and let the center aggregate a global asset portrait.
 
-1. On the center, create the network and an agent token (**Agents** page; the token is displayed exactly once).
+1. On the center, create the network and an agent token (**Networks → Collectors** tab; the token is displayed exactly once).
 2. On an always-on host in the target subnet, deploy `mibee-agent` (also a single binary, runs as a regular user) configured with the center address and token.
 3. The agent reports outbound to the center (works behind NAT; no inbound exposure); stable networks take the state-hash fast path at near-zero cost.
 4. Trigger scans from the center over the command channel, or let the agent scan on schedule.
