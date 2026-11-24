@@ -36,7 +36,7 @@ vi.mock('$lib/api/client', () => ({
   SessionExpiredError: class SessionExpiredError extends Error {}
 }));
 
-import NetworkCenter from '../routes/network-center/+page.svelte';
+import NetworkCenter from '../routes/(network)/network-center/+page.svelte';
 
 function seed() {
   h.networks = [

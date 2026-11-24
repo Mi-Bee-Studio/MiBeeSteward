@@ -38,7 +38,7 @@ vi.mock('$lib/api/client', () => ({
 }));
 
 import { api } from '$lib/api/client';
-import Devices from '../routes/devices/+page.svelte';
+import Devices from '../routes/(assets)/devices/+page.svelte';
 
 describe('Devices page', () => {
 	beforeEach(() => {
@@ -50,16 +50,19 @@ describe('Devices page', () => {
 		vi.mocked(api.get).mockClear();
 	});
 
-	it('mounts and renders the page header (title + view controls)', () => {
+	it('mounts and renders the page header (view controls + create action)', () => {
 		const { container } = render(Devices);
 
-		// The page header (h2 title) is always rendered: not gated on the
-		// loading state: so it's a stable "the page mounted" signal.
-		const h2 = container.querySelector('h2');
-		expect(h2).toBeTruthy();
-		expect((h2?.textContent ?? '').trim().length).toBeGreaterThan(0);
+		// The page-level h2 was removed in the IA rework: the "Devices" tab
+		// above the page names it, so a second heading was the same fact twice.
+		// The list/topology toggle is a stable "the page mounted" signal now.
+		const toggle = container.querySelector('[role="group"]');
+		expect(toggle).toBeTruthy();
+		// Both view modes are offered (other role=group nodes may be nested
+		// elsewhere on the page, so scope to the toggle's own buttons).
+		expect(toggle?.querySelectorAll('button').length).toBe(2);
 
-		// The list/topology view toggle is part of the header chrome.
+		// The create action lives in the same header row.
 		expect(container.querySelector('button')).toBeTruthy();
 	});
 });

@@ -86,7 +86,7 @@ vi.mock('$lib/api/client', () => ({
 	}
 }));
 
-import Settings from '../routes/settings/+page.svelte';
+import Settings from '../routes/(admin)/settings/+page.svelte';
 
 describe('Fingerprint upstream check panel (null-safe)', () => {
 	it('renders the panel even when the API sends null diff arrays', async () => {

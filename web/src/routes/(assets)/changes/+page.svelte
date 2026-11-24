@@ -1,0 +1,516 @@
+<!--
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+
+  This file is part of MiBee Steward, distributed under the GNU Affero General
+  Public License v3.0 or later. A commercial license is available for use cases
+  the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
+-->
+
+<script lang="ts">
+	import { api } from '$lib/api/client';
+	import { auth } from '$lib/stores/auth';
+	import { m } from '$lib/i18n-paraglide';
+	import { onMount, onDestroy } from 'svelte';
+	import { acquireStream, changeStream, releaseStream } from '$lib/stores/changes';
+	import { getErrorMessage } from '$lib/utils/error';
+	import { html, formatDateTime as formatTime } from '$lib/utils/index';
+	import { addToast } from '$lib/stores/toast';
+	import DataTable from '$lib/components/DataTable.svelte';
+	import Pagination from '$lib/components/Pagination.svelte';
+	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import ChangeDiff from '$lib/components/ChangeDiff.svelte';
+	import { buildDiff } from '$lib/changesDiff';
+	import type { ChangeLogEntry, ChangeType, Network } from '$lib/types';
+
+	let changes = $state<ChangeLogEntry[]>([]);
+	let total = $state(0);
+	let loading = $state(true);
+	let error = $state('');
+	let offset = $state(0);
+	const limit = 50;
+
+	// Server-side search (searchInput = live box, searchQuery = committed).
+	let searchInput = $state('');
+	let searchQuery = $state('');
+	let searchDebounce: ReturnType<typeof setTimeout> | null = null;
+
+	function onSearchInput(value: string) {
+		searchInput = value;
+		if (searchDebounce) clearTimeout(searchDebounce);
+		searchDebounce = setTimeout(() => {
+			searchQuery = value;
+			offset = 0;
+			fetchChanges();
+		}, 400);
+	}
+
+	// Auth is consumed directly via the $auth store (auto-subscribed in .svelte).
+
+	// Filters
+	let filterNetwork = $state('');
+	let filterChangeType = $state('');
+	let networks = $state<Network[]>([]);
+
+	// Expanded row (diff viewer): the entity_id of the open row, or null.
+	let expandedId = $state<number | null>(null);
+
+	// SSE live updates (EventSource on /changes/watch). Falls back silently to
+	// the manual refresh if SSE is unavailable (disabled / network error).
+	// SSE lives in the shared change-stream store (#272): reconnect with
+	// exponential backoff, pause while the tab is hidden, one connection for
+	// every subscribed page. This page just reacts to events.
+	let sseDisconnected = $state(false);
+	let streamUnsub: (() => void) | null = null;
+
+	const changeTypes: ChangeType[] = ['device_added', 'device_changed', 'device_lost', 'device_recovered', 'device_config_changed'];
+
+	onMount(() => {
+		hydrateFromUrl();
+		fetchChanges();
+		// Best-effort: populate the network filter dropdown.
+		api.get<{ networks: Network[]; total: number }>('/networks').then((r) => { networks = r.networks || []; }).catch(() => {});
+		acquireStream();
+		streamUnsub = changeStream().subscribe((st) => {
+			sseDisconnected = !st.connected;
+			const entry = st.lastEvent;
+			if (!entry) return;
+			// Prepend only if not already at the top (dedup by id). Respect the
+			// current filter loosely: if a filter is active, just refresh to
+			// avoid mismatched views; if unfiltered, prepend for instant feedback.
+			if (!filterNetwork && !filterChangeType) {
+				changes = [entry, ...changes.filter((c) => c.id !== entry.id)].slice(0, limit);
+				total += 1;
+				addToast('info', `${changeTypeLabel(entry.change_type)}${entry.entity_id ? ' #' + entry.entity_id : ''}`);
+			}
+		});
+	});
+
+	onDestroy(() => {
+		streamUnsub?.();
+		streamUnsub = null;
+		releaseStream();
+	});
+
+	async function fetchChanges() {
+		loading = true;
+		error = '';
+		try {
+			const params = new URLSearchParams();
+			params.set('limit', String(limit));
+			params.set('offset', String(offset));
+			if (filterNetwork) params.set('network_id', filterNetwork);
+			if (filterChangeType) params.set('change_type', filterChangeType);
+			if (searchQuery) params.set('search', searchQuery);
+			const res = await api.get<{ changes: ChangeLogEntry[]; total: number }>(`/changes?${params}`);
+			changes = res.changes || [];
+			total = res.total || 0;
+			syncUrl();
+		} catch (err: unknown) {
+			error = getErrorMessage(err);
+			addToast('error', error);
+		} finally {
+			loading = false;
+		}
+	}
+
+	function syncUrl() {
+		const params = new URLSearchParams();
+		if (searchQuery) params.set('search', searchQuery);
+		params.set('offset', String(offset));
+		const qs = params.toString();
+		history.replaceState(null, '', qs ? `?${qs}` : '?');
+	}
+
+	function hydrateFromUrl() {
+		const sp = new URLSearchParams(window.location.search);
+		const s = sp.get('search');
+		if (s) {
+			searchInput = s;
+			searchQuery = s;
+		}
+		const o = Number(sp.get('offset'));
+		if (!Number.isNaN(o) && o >= 0) offset = o;
+	}
+
+	function applyFilters() {
+		offset = 0;
+		fetchChanges();
+	}
+
+	function resetFilters() {
+		filterNetwork = '';
+		filterChangeType = '';
+		offset = 0;
+		fetchChanges();
+	}
+
+	function handlePageChange(newOffset: number) {
+		offset = newOffset;
+		fetchChanges();
+	}
+
+	// changeTypeLabel returns the localized label for a change type, falling
+	// back to the raw value if the i18n key is absent (pre-paraglide-regen).
+	function changeTypeLabel(t: string): string {
+		switch (t) {
+			case 'device_added': return m['changes.Event Added']();
+			case 'device_changed': return m['changes.Event Changed']();
+			case 'device_lost': return m['changes.Event Lost']();
+			case 'device_recovered': return m['changes.Event Recovered']();
+			case 'device_config_changed': return m['changes.Event Config Changed']();
+			case 'quality_degraded': return m['changes.Event Quality Degraded']();
+			case 'quality_recovered': return m['changes.Event Quality Recovered']();
+			default: return t;
+		}
+	}
+
+	// changeTypeBadge returns the Tailwind color classes for a change type:
+	// added=success(green), changed=accent(blue), lost=error(red),
+	// recovered=success(green, symmetric with added: a device came back).
+	function changeTypeBadge(t: string): string {
+		switch (t) {
+			case 'device_added': return 'bg-success/10 text-success';
+			case 'device_changed': return 'bg-accent/10 text-accent';
+			case 'device_lost': return 'bg-error/10 text-error';
+			case 'device_recovered': return 'bg-success/10 text-success';
+			case 'device_config_changed': return 'bg-warning/10 text-warning';
+		case 'quality_degraded': return 'bg-error/10 text-error';
+		case 'quality_recovered': return 'bg-success/10 text-success';
+			default: return 'bg-surface border border-border text-text-muted';
+		}
+	}
+
+	// tryParse is a defensive JSON.parse (returns the raw string on failure).
+	function tryParse(s?: string): unknown {
+		if (!s) return null;
+		try {
+			return JSON.parse(s);
+		} catch {
+			return null;
+		}
+	}
+
+	// deviceLabel extracts a human-friendly device identity (name or IP) for the
+	// "Device" column. Four shapes:
+	//  - probe liveness (entity_type=probe_target): after_data.target_name —
+	//    the probe target is the entity; "#id" told the user nothing (#737)
+	//  - quality episodes (entity_type=probe_quality): the affected vantage
+	//    (+ destination group), agent ids mapped to their network name
+	//  - added:   after_data  = full DeviceSnapshot → use name / ip_address
+	//  - lost:    before_data = full DeviceSnapshot → use name / ip_address
+	//  - changed: before/after snapshots (or legacy diff map) → name/ip old
+	//             value (the stable identity: the new value is the change)
+	// Falls back to the entity_id ("#211") only if no snapshot/diff is present.
+		function deviceLabel(row: Record<string, unknown>): string {
+			const ct = String(row.change_type);
+			const eid = row.entity_id ? '#' + row.entity_id : '';
+			const et = String(row.entity_type ?? '');
+			if (et === 'probe_target') {
+				// probe_failed/probe_recovered: after_data names the target.
+				const after = tryParse(String(row.after_data ?? '')) as Record<string, unknown> | null;
+				const name = after && typeof after === 'object' ? after.target_name : null;
+				return String(name ?? eid);
+			}
+			if (et === 'probe_quality') {
+				// quality_degraded/recovered: an episode covers a vantage (group)
+				// plus a destination group. Render the vantage readably.
+				const after = tryParse(String(row.after_data ?? '')) as Record<string, unknown> | null;
+				if (after && typeof after === 'object') {
+					const vg = String(after.vantage_group ?? '');
+					let v: string;
+					if (vg === 'center') v = m['changes.Vantage Center']();
+					else if (vg.startsWith('agent:')) {
+						const aid = vg.slice(6);
+						const net = networks.find((n) => n.agent_id === aid);
+						v = net ? net.name : aid;
+					} else v = vg;
+					const tg = after.target_group ? ' · ' + after.target_group : '';
+					return v + tg;
+				}
+				return eid;
+			}
+			if (ct === 'device_changed') {
+				// The before-snapshot is the stable identity; a legacy diff map has
+				// no snapshot, so fall back to its old values.
+				const before = tryParse(String(row.before_data ?? ''));
+				let name: unknown;
+				let ip: unknown;
+				if (typeof before === 'object' && before !== null) {
+					name = (before as Record<string, unknown>).name;
+					ip = (before as Record<string, unknown>).ip_address;
+				} else {
+					const diff = buildDiff(row.before_data as string, row.after_data as string);
+					name = diff?.name?.[0];
+					ip = diff?.ip_address?.[0];
+				}
+				return String(name ?? ip ?? eid ?? '');
+			}
+		const snap = tryParse(String(ct === 'device_added' ? row.after_data : row.before_data)) as
+			| Record<string, unknown>
+			| null;
+		// A device's display name is usually its name; fall back to IP so the
+		// row is still identifiable when name is empty/unset (common for scans).
+		return String(snap?.name ?? snap?.ip_address ?? eid ?? '');
+	}
+
+	// diffSummary produces a short, human-readable summary for the "Details"
+	// column (the full structured diff is in the row's expand via ChangeDiff).
+	//  - added/lost/recovered: a compact property list "type · brand · ip"
+	//  - changed: "field: old → new" for up to 2 changed fields (+count)
+	function diffSummary(row: Record<string, unknown>): string {
+		const ct = String(row.change_type);
+		if (ct === 'device_changed') {
+			const diff = buildDiff(row.before_data as string, row.after_data as string);
+			if (!diff) return '';
+			const fields = Object.keys(diff);
+			if (fields.length === 0) return '';
+			const parts = fields.slice(0, 2).map((f) => {
+				const [oldV, newV] = diff[f];
+				return `${f}: ${shortVal(oldV)} → ${shortVal(newV)}`;
+			});
+			const extra = fields.length > 2 ? ` (+${fields.length - 2})` : '';
+			return parts.join(', ') + extra;
+		}
+		// added / lost / recovered: snapshot.
+		const snap = tryParse(String(ct === 'device_added' || ct === 'device_recovered' ? row.after_data : row.before_data)) as
+			| Record<string, unknown>
+			| null;
+		if (!snap) return '';
+		return [snap.type, snap.brand, snap.model, snap.ip_address]
+			.filter((v) => v !== undefined && v !== null && v !== '')
+			.map((v) => shortVal(v))
+			.join(' · ');
+	}
+
+	// shortVal renders a single value compactly for the summary (truncate long
+	// strings, stringify scalars; objects/arrays become "<json>").
+	function shortVal(v: unknown): string {
+		if (v === null || v === undefined || v === '') return '-';
+		if (typeof v === 'string') return v.length > 24 ? v.slice(0, 23) + '…' : v;
+		if (typeof v === 'object') return '<json>';
+		return String(v);
+	}
+
+	const columns = $derived([
+		{
+			key: '_expand',
+			label: '',
+			sortable: false,
+			interactive: true
+		},
+		{
+			key: 'detected_at',
+			label: m['changes.Timestamp'](),
+			sortable: true,
+			render: (row: Record<string, unknown>) =>
+				html`<span class="font-mono text-xs text-text-muted">${formatTime(String(row.detected_at))}</span>`
+		},
+		{
+			key: 'change_type',
+			label: m['changes.Change Type'](),
+			sortable: true,
+			render: (row: Record<string, unknown>) => {
+				const t = String(row.change_type);
+				return html`<span class="text-xs px-2 py-0.5 rounded-full font-mono ${changeTypeBadge(t)}">${changeTypeLabel(t)}</span>`;
+			}
+		},
+		{
+			key: 'entity_id',
+			label: m['changes.Device ID'](),
+			render: (row: Record<string, unknown>) => {
+				const label = deviceLabel(row);
+				return html`<span class="text-xs text-text">${label || '-'}</span>`;
+			}
+		},
+		{
+			key: 'network_id',
+			label: m['changes.Network'](),
+			render: (row: Record<string, unknown>) => {
+				const nid = row.network_id as number | undefined;
+				if (!nid) return html`<span class="text-xs text-text-muted">-</span>`;
+				const net = networks.find((n) => n.id === nid);
+				return html`<span class="text-xs text-text-muted">${net ? net.name : '#' + nid}</span>`;
+			}
+		},
+		{
+			key: 'agent_id',
+			label: m['changes.Agent'](),
+			render: (row: Record<string, unknown>) =>
+				html`<span class="font-mono text-xs text-text-muted">${row.agent_id ? row.agent_id : '-'}</span>`
+		},
+		{
+			key: 'after_data',
+			label: m['changes.Details'](),
+			render: (row: Record<string, unknown>) => {
+				const summary = diffSummary(row);
+				if (!summary) return html`<span class="text-xs text-text-muted">-</span>`;
+				// Human-readable summary; the full structured before/after diff is
+				// in the row expand (ChangeDiff component). Render non-mono so the
+				// eye distinguishes the summary from raw-JSON debug output.
+				return html`<span class="text-xs text-text-muted" title="${summary}">${summary.length > 90 ? summary.slice(0, 89) + '…' : summary}</span>`;
+			}
+		}
+	]);
+</script>
+
+{#if !$auth.token}
+	<div class="p-6 text-center text-text-muted">
+		<p>{m["errors.Unauthorized Desc"]()}</p>
+		<a href="/login" class="text-primary hover:underline text-sm mt-2 inline-block">{m["navigation.Login"]()}</a>
+	</div>
+{:else}
+<div class="p-4 sm:p-6">
+	<!-- The tab above already says "Changes"; a 2xl heading repeating it would
+	     be the same fact twice. Only the action stays. -->
+	<div class="flex items-center justify-end mb-5">
+		<button
+			onclick={fetchChanges}
+			class="px-4 py-2 border border-border text-text-muted rounded-lg
+				hover:border-primary hover:text-primary transition-colors text-sm"
+		>
+			{m["dashboard.Refresh"]()}
+		</button>
+	</div>
+
+	<!-- SSE disconnected banner: the live feed gave up reconnecting. -->
+	{#if sseDisconnected}
+		<div class="mb-4 px-4 py-2 bg-warning/10 border border-warning/30 rounded-lg text-sm text-warning flex items-center justify-between gap-2">
+			<span>{m['changes.SSE Disconnected']()}: {m['changes.SSE Disconnected Desc']()}</span>
+			<button onclick={fetchChanges} class="btn btn-sm btn-ghost text-warning">{m["dashboard.Refresh"]()}</button>
+		</div>
+	{/if}
+
+	<!-- Filters -->
+	<div class="bg-surface border border-border rounded-lg p-4 mb-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+			<!-- Network filter -->
+			<div>
+				<label class="block text-xs text-text-muted mb-1">{m['changes.Network']()}</label>
+				<select
+					bind:value={filterNetwork}
+					class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+						focus:border-primary focus:outline-none"
+				>
+					<option value="">{m['devices.All Networks']()}</option>
+					{#each networks as net}
+						<option value={String(net.id)}>{net.name}</option>
+					{/each}
+				</select>
+			</div>
+
+			<!-- Change type filter -->
+			<div>
+				<label class="block text-xs text-text-muted mb-1">{m['changes.Change Type']()}</label>
+				<select
+					bind:value={filterChangeType}
+					class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+						focus:border-primary focus:outline-none"
+				>
+					<option value="">{m['changes.All Events']()}</option>
+					{#each changeTypes as ct}
+						<option value={ct}>{changeTypeLabel(ct)}</option>
+					{/each}
+				</select>
+			</div>
+
+			<!-- Buttons -->
+			<div class="flex items-end gap-2 col-span-2">
+				<button
+					onclick={applyFilters}
+					class="px-4 py-2 bg-primary text-text-inverse font-semibold rounded-lg
+						hover:bg-primary-hover transition-colors text-sm"
+				>
+					{m["common.Filter"]()}
+				</button>
+				<button
+					onclick={resetFilters}
+					class="px-3 py-2 border border-border text-text-muted rounded-lg
+						hover:border-primary hover:text-primary transition-colors text-sm"
+				>
+					{m["audit.Reset"]()}
+				</button>
+			</div>
+		</div>
+	</div>
+
+	<!-- Error -->
+	{#if error}
+		<div class="mb-4 px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error">
+			{error}
+		</div>
+	{/if}
+
+	<!-- Content -->
+	{#if loading}
+		<PageSkeleton type="table" />
+	{:else if changes.length === 0 && (searchQuery || filterNetwork || filterChangeType)}
+		<EmptyState
+			icon="🔍"
+			title={m['common.No Results']()}
+			description={m['common.No Results Desc']({ query: searchQuery || m['common.Clear Filters']() })}
+			actionLabel={m['common.Clear Filters']()}
+			onAction={() => { searchQuery = ''; searchInput = ''; filterNetwork = ''; filterChangeType = ''; fetchChanges(); }}
+		/>
+	{:else if changes.length === 0}
+		<EmptyState
+			icon="📊"
+			title={m['changes.No Changes']()}
+			description={m['changes.No Changes Desc']()}
+		/>
+	{:else}
+		<div class="bg-surface border border-border rounded-lg p-4">
+				<DataTable
+					{columns}
+					rows={changes as unknown as Record<string, unknown>[]}
+					searchPlaceholder={m['common.Search']() + '...'}
+					searchableKeys={['change_type', 'agent_id', 'entity_id']}
+					initialSearch={searchInput}
+					onSearchChange={onSearchInput}
+					emptyTitle={m['changes.No Changes']()}
+					expandedRowId={expandedId ?? undefined}
+				>
+					{#snippet cell(row, col)}
+						{#if col.key === '_expand'}
+							{@const id = row.id as number}
+							{@const isOpen = expandedId === id}
+							<button
+								onclick={() => { expandedId = expandedId === id ? null : id; }}
+								class="p-1 rounded hover:bg-primary/10 transition-colors text-text-muted"
+								aria-label={isOpen ? m['common.Collapse']() : m['common.Expand']()}
+								aria-expanded={isOpen}
+							>
+								<svg class="w-3.5 h-3.5 transition-transform duration-200 {isOpen ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+								</svg>
+							</button>
+						{/if}
+					{/snippet}
+					{#snippet expandedContent(row)}
+						{@const change = changes.find((c) => c.id === row.id)}
+						<div class="border-t border-border bg-bg/40 px-6 py-4">
+							<div class="flex items-center gap-2 mb-3">
+								<span class="text-xs font-medium text-text-muted">{m['changes.Diff Title']()}</span>
+							</div>
+							{#if change}
+								<ChangeDiff
+									changeType={change.change_type}
+									beforeData={change.before_data}
+									afterData={change.after_data}
+								/>
+							{:else}
+								<p class="text-xs text-text-muted italic">{m['changes.Data Unavailable']()}</p>
+							{/if}
+						</div>
+					{/snippet}
+				</DataTable>
+
+			<div class="mt-4">
+				<Pagination {total} {limit} {offset} onPageChange={handlePageChange} />
+			</div>
+		</div>
+	{/if}
+</div>
+{/if}
