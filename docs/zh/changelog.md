@@ -5,7 +5,7 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.10.0] - 2026-11-24
 
 ### Added
 - **诊断：给「设备不断变 IP」一个问题以裁决（#761）**：真实现场实证——一台离线设备裂成四行设备记录、目击地址约 30 个且线上从未应答。新增按设备运行的诊断引擎，把地址目击史（device_sightings）与逐 IP 扫描活性事实（scan_snapshots）、双宿主在位层与变更流联接起来，用证据链给模式分类：`stale_arp_scan_artifact`（目击地址多而无一会答——目击来自陈旧 ARP 缓存读取，不是设备在漂移；唯一高置信类别，正因它立在活性事实上）、`multihomed_alias`（一台设备同时活跃于多个网段）、`locally_administered_mac`（U/L 位中立事实：按 MAC 绑定不会生效）、`ip_slot_takeover`（变更流看到同一地址上的 MAC 被替换）与 `hostname_identity_split`（不同 MAC 的兄弟行报同一主机名）。设计规则：目击本身是含糊的——它记录的是视角**观测到**的东西，包括陈旧 ARP 缓存读数——所以每个地址都要对照快照的 miss/flap 计数器交叉核验后才发裁决。新增只读 API `GET /api/v1/devices/{id}/diagnosis`（openapi 与双生成客户端同步）与设备详情页「网络诊断」面板（裁决徽章、带证据的发现、逐地址活性时间线、同主机名兄弟行；en/zh 文档）。刻意不做告警——按影响优先规则，裁决是拉取式。零 schema 变更：每条输入行都由既有管线写入。实现注记：其中两个读（按主机名找兄弟行、逐 IP 活性）以裸 SQL 运行——sqlc 的 SQLite 解析器会截断这两条语句（已有记录的 ListStaleAgentSnapshots 解析器 bug）。
