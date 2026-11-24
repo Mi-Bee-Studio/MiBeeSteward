@@ -393,23 +393,30 @@
 				return html`<span class="text-xs font-mono ${st?.version ? 'text-text' : 'text-text-muted'}">${st?.version || '-'}</span>`;
 			}
 		},
-		{
-			key: 'fleet_offset',
-			label: m['agents.Fleet Offset'](),
-			render: (row: Record<string, unknown>) => {
-				const st = fleetStatus[row.agent_id as string];
-				if (!st) return html`<span class="text-text-muted">-</span>`;
-				const off = st.clock_offset_seconds;
-				// >60s behind or ahead of the center clock → warn color.
-				const cls = Math.abs(off) > 60 ? 'text-warning' : 'text-text-muted';
-				const sign = off >= 0 ? '+' : '';
-				// Calibrated SNTP offset (#749) refines the heuristic when the
-				// agent's pool query landed (nonzero).
-				const sntp = (st as { sntp_offset_ms?: number }).sntp_offset_ms ?? 0;
-				const sntpPart = sntp !== 0 ? html`<span class="text-text-muted"> · SNTP ${sntp >= 0 ? '+' : ''}${(Math.round(sntp * 10) / 10).toFixed(1)}ms</span>` : '';
-				return html`<span class="text-xs font-mono ${cls}">${sign}${off.toFixed(0)}s</span>${sntpPart}`;
-			}
-		},
+			{
+				key: 'fleet_offset',
+				label: m['agents.Fleet Offset'](),
+				render: (row: Record<string, unknown>) => {
+					const st = fleetStatus[row.agent_id as string];
+					if (!st) return html`<span class="text-text-muted">-</span>`;
+					const off = st.clock_offset_seconds;
+					// >60s behind or ahead of the center clock → warn color.
+					const cls = Math.abs(off) > 60 ? 'text-warning' : 'text-text-muted';
+					const sign = off >= 0 ? '+' : '';
+					// Calibrated SNTP offset (#749) refines the heuristic when the
+					// agent's pool query landed (nonzero).
+					const sntp = (st as { sntp_offset_ms?: number }).sntp_offset_ms ?? 0;
+					const sntpLabel = `${sntp >= 0 ? '+' : ''}${(Math.round(sntp * 10) / 10).toFixed(1)}ms`;
+					// The two spans live in ONE template with the conditionality
+					// driven by plain interpolation. Building the SNTP fragment with a
+					// second html`` call and interpolating that would escape its tags
+					// a second time (html() escapes every interpolation; its output is
+					// an ordinary string) and the cell would show the literal
+					// `<span class="text-text-muted">` — the reported bug.
+					return html`<span class="text-xs font-mono ${cls}">${sign}${off.toFixed(0)}s</span><span
+						class="text-text-muted">${sntp !== 0 ? ` · SNTP ${sntpLabel}` : ''}</span>`;
+				}
+			},
 		{
 			key: 'fleet_uptime',
 			label: m['agents.Fleet Uptime'](),

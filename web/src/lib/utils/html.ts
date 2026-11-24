@@ -17,6 +17,21 @@ import { escapeHtml } from './index.js';
  * a real brand): the intent is to make the "this is already-safe HTML" contract
  * visible at DataTable `render` call sites. Build one with the {@link html}
  * tagged template; do NOT cast raw strings to it.
+ *
+ * A type alias cannot be checked at runtime, and that has one hard consequence
+ * worth stating here because it bit us: **an `html` result interpolated into
+ * another `html` template gets escaped a second time** — the outer call sees a
+ * plain string, so the inner markup shows up as literal `<span …>` text on the
+ * page. When you need to compose fragments, interpolate the *parts* into one
+ * template instead of nesting the calls:
+ *
+ *   html`<span class="x ${cls}">${value}</span>`          // right
+ *   const inner = html`<span class="x">${value}</span>`;  // then ${inner} into
+ *   return html`<div>${inner}</div>`;                     // another template: WRONG
+ *
+ * A shallow `{@html}`-safe React-style wrapper was tried and rejected: `html`
+ * must return a primitive string because `render` callbacks, `===` checks and
+ * plain template interpolation all rely on that.
  */
 export type HtmlString = string;
 
@@ -37,11 +52,6 @@ export type HtmlString = string;
  *
  * escapes username automatically. The same escaping covers attribute values
  * (e.g. `html\`<a href="${row.url}">\``), because escapeHtml escapes `"` too.
- *
- * If you need a value verbatim in the output WITHOUT escaping (e.g. nesting an
- * already-built HtmlString), use a second `html` call and interpolate its
- * result: but only for values you have already constructed safely. There is no
- * "opt out of escaping" escape hatch on purpose.
  *
  * @example
  * html`<span>${row.name}</span>`                      // escapes name
