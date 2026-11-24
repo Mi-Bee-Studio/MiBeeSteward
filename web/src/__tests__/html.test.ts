@@ -42,6 +42,32 @@ describe('html tagged-template helper', () => {
 		expect(html`<div></div>`).toBe('<div></div>');
 	});
 
+	// The nesting trap (user report 2026-11-24: the agents fleet-offset cell
+	// printed the literal text `<span class="text-text-muted"> · SNTP -4.2ms`
+	// on the page). html() escapes EVERY interpolation and returns a plain
+	// string, so nesting one html`` result inside another escapes its tags a
+	// second time. These tests pin that behaviour so the next person composing
+	// a cell finds out here rather than in a screenshot.
+	describe('nesting (documented trap, not a supported pattern)', () => {
+		it('double-escapes markup from a nested html`` result', () => {
+			const inner = html`<span class="mut">x</span>`;
+			const outer = html`<div>${inner}</div>`;
+			// This is the bug: the inner markup survives as escaped TEXT.
+			expect(outer).toContain('&lt;span class=&quot;mut&quot;&gt;');
+			expect(outer).not.toContain('<span class="mut">');
+		});
+
+		it('is why a fragment must be interpolated as a value, not pre-rendered', () => {
+			// Correct shape: the conditional picks a TEXT value; the markup lives
+			// in the single outer template.
+			const sntp = -4.2;
+			const label = `${sntp >= 0 ? '+' : ''}${sntp.toFixed(1)}ms`;
+			const out = html`<span class="off">+0s</span><span class="mut">${` · SNTP ${label}`}</span>`;
+			expect(out).toContain('<span class="mut"> · SNTP -4.2ms</span>');
+			expect(out).not.toContain('&lt;span');
+		});
+	});
+
 	// --- XSS regression cases (the reason this helper exists) ---
 
 	it('neutralises an <img onerror> XSS payload in a DataTable-style column', () => {

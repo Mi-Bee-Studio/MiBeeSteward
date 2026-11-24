@@ -1574,7 +1574,10 @@
 					? html`<div class="flex items-center gap-2"><span class="badge ${t.status === 'success' ? 'badge-success' : t.status === 'timeout' ? 'badge-warning' : 'badge-error'}">${t.status}</span><span class="text-xs font-mono">${fmtLatency(t.latency_ms)}</span></div>`
 					: statusBadge(t.status);
 			if (t.status === 'success' || !t.error_message) return head;
-			return '<div class="space-y-0.5">' + head + errLine(t.error_message) + '</div>';
+			// One html`` call per cell: concatenating a fragment into a bare
+			// template string produces valid markup today but leaves a raw string
+			// path where a future interpolation would not be escaped.
+			return html`<div class="space-y-0.5">${head}${errLine(t.error_message)}</div>`;
 		}
 		const disagree = new Set(tracks.map((t) => t.status === 'success')).size > 1;
 		const lines = tracks.map((t) => {
@@ -1582,7 +1585,7 @@
 			const title = t.error_message ? `${t.vantage}: ${t.error_message}` : t.vantage;
 			const line = html`<div class="flex items-center gap-1.5"><span class="inline-block h-2 w-2 shrink-0 rounded-full ${dot}"></span><span class="max-w-[9rem] truncate font-mono text-xs text-text-muted" title="${title}">${t.vantage}</span><span class="text-xs font-mono text-text-muted">${t.latency_ms > 0 ? fmtLatency(t.latency_ms) : ''}</span></div>`;
 			if (t.status === 'success' || !t.error_message) return line;
-			return '<div>' + line + errLine(t.error_message) + '</div>';
+			return html`<div>${line}${errLine(t.error_message)}</div>`;
 		});
 		if (agentExpected && !tracks.some((t) => t.vantage !== 'center')) {
 			lines.push(html`<div class="text-warning text-xs">${m['probes.Agent No Results']()}</div>`);
@@ -1590,7 +1593,7 @@
 		const wrap = disagree
 			? 'space-y-0.5 rounded-md border border-warning/40 bg-warning/5 px-2 py-1'
 			: 'space-y-0.5';
-		return `<div class="${wrap}">` + lines.join('') + '</div>';
+		return html`<div class="${wrap}">${lines.join('')}</div>`;
 	};
 
 	// Vantage values are protocol tokens (center / all / agent:{id}): shown
