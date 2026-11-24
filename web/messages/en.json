@@ -25,7 +25,13 @@
 		"Toggle Sidebar": "Toggle sidebar",
 		"Probes": "Probes",
 		"Fingerprints": "Fingerprint Coverage",
-		"Archive": "Archive"
+		"Archive": "Archive",
+		"Place Overview": "Overview",
+		"Place Assets": "Assets",
+		"Place Networks": "Networks",
+		"Place Observation": "Observation",
+		"Place Admin": "Administration",
+		"Group Main": "Main"
 	},
 	"auth": {
 		"Username": "Username",
@@ -2054,5 +2060,23 @@
 		"Multihomed": "multi-homed",
 		"Unidentified": "unidentified",
 		"No Gateway": "no gateway observed"
+	},
+	"assets": {
+		"Place Tab Devices": "Devices",
+		"Place Tab Changes": "Changes",
+		"Place Tab Archive": "Archive",
+		"Place Tab Fingerprints": "Fingerprint Coverage",
+		"Place Tab Documents": "Documents",
+		"Place Tab Scan": "Scan"
+	},
+	"network": {
+		"Place Tab Overview": "Overview",
+		"Place Tab Registry": "Segments",
+		"Place Tab Agents": "Collectors"
+	},
+	"admin": {
+		"Place Tab Users": "Users",
+		"Place Tab Audit": "Audit Log",
+		"Place Tab Settings": "Settings"
 	}
 }

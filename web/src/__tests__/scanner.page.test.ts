@@ -24,18 +24,14 @@ vi.mock('$lib/api/client', () => ({
 	SessionExpiredError: class SessionExpiredError extends Error {}
 }));
 
-import Scanner from '../routes/devices/scanner/+page.svelte';
+import Scanner from '../routes/(assets)/devices/(scan)/scanner/+page.svelte';
 
 describe('Scanner page', () => {
-	it('mounts and renders the scan form (heading + target inputs + scan button)', () => {
+	it('mounts and renders the scan form (target inputs + scan button)', () => {
 		const { container } = render(Scanner);
 
-		// Page header is always rendered.
-		const h2 = container.querySelector('h2');
-		expect(h2).toBeTruthy();
-		expect((h2?.textContent ?? '').trim().length).toBeGreaterThan(0);
-
-		// The scan form has target inputs + a submit button.
+		// The page-level heading was removed in the IA rework: the "Quick Scan"
+		// sub-tab names the page. The form itself is the mount signal.
 		expect(container.querySelectorAll('input').length).toBeGreaterThanOrEqual(1);
 		expect(container.querySelector('button')).toBeTruthy();
 	});

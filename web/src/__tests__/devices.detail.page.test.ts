@@ -163,7 +163,7 @@ vi.mock('$lib/api/client', () => ({
 }));
 
 // detail page must be imported AFTER the vi.mock calls so the mocks take effect.
-import Detail from '../routes/devices/detail/[id]/+page.svelte';
+import Detail from '../routes/(assets)/devices/detail/[id]/+page.svelte';
 import { goto } from '$app/navigation';
 
 describe('Device detail page', () => {

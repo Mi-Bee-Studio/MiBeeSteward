@@ -1,0 +1,688 @@
+<!--
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+
+  This file is part of MiBee Steward, distributed under the GNU Affero General
+  Public License v3.0 or later. A commercial license is available for use cases
+  the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
+-->
+
+<script lang="ts">
+	import { api } from '$lib/api/client';
+	import { m } from '$lib/i18n-paraglide';
+	import { html, sanitizeUrl } from '$lib/utils';
+	import { renderMarkdown } from '$lib/utils/markdown';
+	import type { HtmlString } from '$lib/utils/html';
+	import { getErrorMessage } from '$lib/utils/error';
+	import { addToast } from '$lib/stores/toast';
+	import Modal from '$lib/components/Modal.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import DataTable from '$lib/components/DataTable.svelte';
+	import Pagination from '$lib/components/Pagination.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
+	import { LoaderCircle } from '@lucide/svelte';
+	import { onMount } from 'svelte';
+
+	interface Document {
+		id: number;
+		title: string;
+		type: string;
+		url: string;
+		description: string;
+		file_path: string;
+		file_size: number;
+		mime_type: string;
+		created_at: string;
+	}
+
+	let documents = $state<Document[]>([]);
+	let total = $state(0);
+	let loading = $state(true);
+	let error = $state('');
+	let offset = $state(0);
+	const limit = 20;
+
+	// Server-side search (searchInput = live box, searchQuery = committed).
+	let searchInput = $state('');
+	let searchQuery = $state('');
+	let searchDebounce: ReturnType<typeof setTimeout> | null = null;
+
+	function onSearchInput(value: string) {
+		searchInput = value;
+		if (searchDebounce) clearTimeout(searchDebounce);
+		searchDebounce = setTimeout(() => {
+			searchQuery = value;
+			offset = 0;
+			fetchDocuments();
+		}, 400);
+	}
+
+	// URL form modal
+	let urlModalOpen = $state(false);
+	let formTitle = $state('');
+	let formUrl = $state('');
+	let formDescription = $state('');
+	let formLoading = $state(false);
+	let formError = $state('');
+	let editingDocument = $state<Document | null>(null);
+
+	// File upload modal
+	let fileModalOpen = $state(false);
+	let formFileTitle = $state('');
+	let formFileDescription = $state('');
+	let formFile = $state<File | null>(null);
+	let uploading = $state(false);
+	let uploadProgress = $state(0);
+
+	// Delete confirmation
+	let deleteOpen = $state(false);
+	let deleteTarget = $state<Document | null>(null);
+	let deleteMessage = $state('');
+
+	// File preview modal
+	let previewOpen = $state(false);
+	let previewDoc = $state<Document | null>(null);
+	// Markdown preview: fetched + rendered (sanitized) on open.
+	let previewHtml = $state<HtmlString>('');
+	let previewLoading = $state(false);
+	let previewError = $state('');
+
+	onMount(() => {
+		hydrateFromUrl();
+		fetchDocuments();
+	});
+
+	async function fetchDocuments() {
+		loading = true;
+		error = '';
+		try {
+			const params = new URLSearchParams();
+			params.set('limit', String(limit));
+			params.set('offset', String(offset));
+			if (searchQuery) params.set('search', searchQuery);
+			const res = await api.get<{ documents: Document[]; total: number }>(`/documents?${params}`);
+			documents = res.documents || [];
+			total = res.total || 0;
+			syncUrl();
+		} catch (err: unknown) {
+			// Inline banner only on initial load: the parallel toast was
+			// noisy (double-notified on fetch failure, unlike every other
+			// list page). #152 part 2.
+			error = getErrorMessage(err);
+		} finally {
+			loading = false;
+		}
+	}
+
+	function syncUrl() {
+		const params = new URLSearchParams();
+		if (searchQuery) params.set('search', searchQuery);
+		params.set('offset', String(offset));
+		const qs = params.toString();
+		history.replaceState(null, '', qs ? `?${qs}` : '?');
+	}
+
+	function hydrateFromUrl() {
+		const sp = new URLSearchParams(window.location.search);
+		const s = sp.get('search');
+		if (s) {
+			searchInput = s;
+			searchQuery = s;
+		}
+		const o = Number(sp.get('offset'));
+		if (!Number.isNaN(o) && o >= 0) offset = o;
+	}
+
+	// --- URL form ---
+	function openUrlCreate() {
+		editingDocument = null;
+		formTitle = '';
+		formUrl = '';
+		formDescription = '';
+		formError = '';
+		urlModalOpen = true;
+	}
+
+	function openEdit(doc: Document) {
+		editingDocument = doc;
+		if (doc.type === 'url') {
+			formTitle = doc.title;
+			formUrl = doc.url;
+			formDescription = doc.description || '';
+		} else {
+			// file docs can edit metadata only, treat like url form
+			formTitle = doc.title;
+			formUrl = doc.url || '';
+			formDescription = doc.description || '';
+		}
+		formError = '';
+		urlModalOpen = true;
+	}
+
+	async function handleUrlSubmit(e: Event) {
+		e.preventDefault();
+		formLoading = true;
+		formError = '';
+		try {
+			if (editingDocument) {
+				await api.put(`/documents/${editingDocument.id}`, {
+					title: formTitle,
+					type: editingDocument.type,
+					url: formUrl,
+					description: formDescription
+				});
+				addToast('success', m["documents.Edit Document"]());
+			} else {
+				await api.post('/documents', {
+					title: formTitle,
+					type: 'url',
+					url: formUrl,
+					description: formDescription
+				});
+				addToast('success', m["documents.Create Document"]());
+			}
+			urlModalOpen = false;
+			editingDocument = null;
+			fetchDocuments();
+		} catch (err: unknown) {
+			formError = getErrorMessage(err);
+			addToast('error', formError);
+		} finally {
+			formLoading = false;
+		}
+	}
+
+	// --- File upload ---
+	function openFileCreate() {
+		editingDocument = null;
+		formFileTitle = '';
+		formFileDescription = '';
+		formFile = null;
+		formError = '';
+		fileModalOpen = true;
+	}
+
+	async function handleFileSubmit(e: Event) {
+		e.preventDefault();
+		if (!formFile && !editingDocument) {
+			formError = m["documents.no_file_selected"]();
+			return;
+		}
+		formLoading = true;
+		uploading = !editingDocument;
+		uploadProgress = 0;
+		formError = '';
+		try {
+			if (editingDocument) {
+				await api.put(`/documents/${editingDocument.id}`, {
+					title: formFileTitle || editingDocument.title,
+					description: formFileDescription ?? editingDocument.description
+				});
+				addToast('success', m["documents.Edit Document"]());
+			} else {
+				const fd = new FormData();
+				fd.append('file', formFile!);
+				fd.append('title', formFileTitle);
+				fd.append('description', formFileDescription);
+				await api.upload('/documents/upload', fd, (percent) => {
+					uploadProgress = percent;
+				});
+				addToast('success', m["documents.Upload"]());
+			}
+			fileModalOpen = false;
+			editingDocument = null;
+			fetchDocuments();
+		} catch (err: unknown) {
+			formError = getErrorMessage(err);
+			addToast('error', formError);
+		} finally {
+			formLoading = false;
+			uploading = false;
+		}
+	}
+
+	// --- Delete ---
+	function requestDelete(doc: Document) {
+		deleteTarget = doc;
+		deleteOpen = true;
+	}
+
+	async function confirmDelete() {
+		if (!deleteTarget) return;
+		const target = deleteTarget;
+		try {
+			await api.delete(`/documents/${target.id}`);
+			addToast('success', m["documents.Delete Document"](), {
+				callback: async () => {
+					try {
+						await api.post(`/documents/${target.id}/restore`, {});
+						fetchDocuments();
+					} catch {
+						addToast('error', m['documents.Restore Failed']());
+					}
+				},
+				label: m["common.Undo"](),
+				timeout: 10000
+			});
+			deleteTarget = null;
+			fetchDocuments();
+		} catch (err: unknown) {
+			const msg = getErrorMessage(err);
+			addToast('error', msg);
+		}
+	}
+
+	// --- File Preview ---
+	async function openPreview(doc: Document) {
+		previewDoc = doc;
+		previewError = '';
+		previewHtml = '';
+		previewOpen = true;
+		if (isMarkdown(doc)) {
+			// Markdown renders client-side: fetch the raw text through the API
+			// client (auth/CSRF parity with every other request), then sanitize.
+			previewLoading = true;
+			try {
+				const blob = await api.download(`/documents/${doc.id}/download`);
+				previewHtml = renderMarkdown(await blob.text());
+			} catch (err: unknown) {
+				previewError = getErrorMessage(err);
+			} finally {
+				previewLoading = false;
+			}
+		}
+	}
+
+	function isMarkdown(doc: Document): boolean {
+		const mime = doc.mime_type?.toLowerCase() || '';
+		const ext = doc.file_path?.split('.').pop()?.toLowerCase() || '';
+		return mime === 'text/markdown' || ['md', 'markdown'].includes(ext);
+	}
+
+	function isPreviewable(doc: Document): boolean {
+		if (isMarkdown(doc)) return true;
+		const mime = doc.mime_type?.toLowerCase() || '';
+		const ext = doc.file_path?.split('.').pop()?.toLowerCase() || '';
+		return mime.startsWith('image/') || mime === 'application/pdf'
+			|| ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext)
+			|| ext === 'pdf';
+	}
+
+	function isImage(doc: Document): boolean {
+		const mime = doc.mime_type?.toLowerCase() || '';
+		const ext = doc.file_path?.split('.').pop()?.toLowerCase() || '';
+		return mime.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext);
+	}
+
+	function isPdf(doc: Document): boolean {
+		const mime = doc.mime_type?.toLowerCase() || '';
+		const ext = doc.file_path?.split('.').pop()?.toLowerCase() || '';
+		return mime === 'application/pdf' || ext === 'pdf';
+	}
+
+	function formatSize(bytes: number): string {
+		if (bytes === 0) return '-';
+		const units = ['B', 'KB', 'MB', 'GB'];
+		let i = 0;
+		let size = bytes;
+		while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
+		return `${size.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+	}
+
+	function handlePageChange(newOffset: number) {
+		offset = newOffset;
+		fetchDocuments();
+	}
+
+	// Delete message computed
+	$effect(() => {
+		if (deleteTarget) {
+			deleteMessage = m['common.Are you sure?']() + " '" + (deleteTarget?.title ?? '') + "'";
+		} else {
+			deleteMessage = '';
+		}
+	});
+
+	// DataTable column definitions
+	const columns = $derived([
+		{
+			key: 'title',
+			label: m["documents.Title"](),
+			sortable: true,
+			render: (row: Record<string, unknown>) => {
+				const doc = row as unknown as Document;
+				if (doc.type === 'url') {
+					// sanitizeUrl drops javascript:/data:/vbscript: schemes (escapeHtml
+					// alone can't stop a javascript: URL from running on click).
+					const safeHref = sanitizeUrl(doc.url ?? '');
+					if (safeHref) {
+						return html`<a href="${safeHref}" target="_blank" rel="noopener" class="hover:text-primary transition-colors">${doc.title} ↗</a>`;
+					}
+					// Unsafe URL: render the title as plain (escaped) text, no link.
+					return html`<span>${doc.title}</span>`;
+				}
+				return html`<span>${doc.title}</span>`;
+			}
+		},
+		{
+			key: 'type',
+			label: m["documents.Type"](),
+			sortable: true,
+			render: (row: Record<string, unknown>) => {
+				const doc = row as unknown as Document;
+				const isUrl = doc.type === 'url';
+				const label = isUrl ? m["documents.URL"]() : m["documents.File"]();
+				const cls = isUrl
+					? 'text-accent'
+					: 'text-primary';
+				return html`<span class="text-xs px-2 py-0.5 rounded-full ${isUrl ? 'bg-accent/10' : 'bg-primary/10'} ${cls}">${label}</span>`;
+			}
+		},
+		{
+			key: 'description',
+			label: m["documents.Description"](),
+			render: (row: Record<string, unknown>) => {
+				const desc = (row as unknown as Document).description;
+				return html`<span class="text-text-muted">${desc || '-'}</span>`;
+			}
+		},
+		{
+			key: 'file_size',
+			label: m["documents.File Size"](),
+			sortable: true,
+			render: (row: Record<string, unknown>) => {
+				const size = (row as unknown as Document).file_size;
+				return html`<span class="font-mono text-text-muted">${formatSize(size)}</span>`;
+			}
+		},
+		{
+			key: 'actions',
+			label: m["common.Actions"](),
+			interactive: true
+		}
+	]);
+
+	// Since DataTable uses @html, button clicks need event delegation
+	// Downloads go through api.download() so the X-CSRF-Token header + cookie
+	// auth + 401 handling match every other request. The previous raw <a href>
+	// bypassed the client (no CSRF) and relied on the browser's plain-GET cookie
+	// behavior (#72). Mirrors devices/+page.svelte exportDevices.
+	async function downloadDocument(doc: Document) {
+		if (!doc.file_path) return;
+		try {
+			const blob = await api.download(`/documents/${doc.id}/download`);
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = doc.title || `document-${doc.id}`;
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+		} catch (err: unknown) {
+			addToast('error', getErrorMessage(err));
+		}
+	}
+
+	// Actions-column dispatch moved to the `cell` snippet (real onclick handlers,
+	// no event delegation): see the DataTable usage below (#167).
+</script>
+
+<div class="p-4 sm:p-6">
+	<!-- Tab says "Documents"; only the two create actions stay. -->
+	<div class="flex flex-col sm:flex-row items-start sm:items-center justify-end gap-3 mb-5">
+		<div class="flex gap-2">
+			<button
+				onclick={openUrlCreate}
+				class="px-4 py-2 bg-primary text-text-inverse font-semibold rounded-lg
+					hover:bg-primary-hover transition-colors text-sm"
+			>
+				+ {m["documents.Add URL"]()}
+			</button>
+			<button
+				onclick={openFileCreate}
+				class="px-4 py-2 border border-primary text-primary font-semibold rounded-lg
+					hover:bg-primary/10 transition-colors text-sm"
+			>
+				+ {m["documents.Upload"]()}
+			</button>
+		</div>
+	</div>
+
+	<!-- Content -->
+	{#if loading}
+		<PageSkeleton type="table" />
+	{:else if error && documents.length === 0}
+		<EmptyState
+			icon="⚠"
+			title={m["common.Error"]()}
+			description={error}
+			actionLabel={m["common.Back"]()}
+			onAction={fetchDocuments}
+		/>
+	{:else if documents.length === 0 && searchQuery}
+		<EmptyState
+			icon="🔍"
+			title={m["common.No Results"]()}
+			description={m['common.No Results Desc']({ query: searchQuery })}
+			actionLabel={m['common.Clear Search']()}
+			onAction={() => { searchQuery = ''; searchInput = ''; fetchDocuments(); }}
+		/>
+	{:else if documents.length === 0}
+		<EmptyState
+			icon="📄"
+			title={m["common.No Results"]()}
+			description={m["documents.empty_description"]()}
+			actionLabel={m["documents.Add URL"]()}
+			onAction={openUrlCreate}
+		/>
+	{:else}
+		<div>
+			<DataTable
+				{columns}
+				rows={documents as unknown as Record<string, unknown>[]}
+				searchableKeys={['title', 'description', 'type']}
+				searchPlaceholder={m["common.Search"]() + '...'}
+				initialSearch={searchInput}
+				onSearchChange={onSearchInput}
+				emptyTitle={m["common.No Results"]()}
+			>
+				{#snippet cell(row, col)}
+					{#if col.key === 'actions'}
+						{@const doc = documents.find((d) => d.id === row.id)}
+						{#if doc}
+							<div class="flex gap-2">
+								{#if doc.type !== 'url' && isPreviewable(doc)}
+									<button
+										onclick={() => openPreview(doc)}
+										class="text-xs px-2 py-1 rounded text-success hover:bg-success/10 transition-colors"
+									>{m["documents.Preview"]()}</button>
+								{/if}
+								<button
+									onclick={() => openEdit(doc)}
+									class="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10 transition-colors"
+								>{m["common.Edit"]()}</button>
+								{#if doc.type !== 'url' && doc.file_path}
+									<button
+										onclick={() => downloadDocument(doc)}
+										class="text-xs px-2 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
+									>{m["documents.Download"]()}</button>
+								{/if}
+								<button
+									onclick={() => requestDelete(doc)}
+									class="text-xs px-2 py-1 rounded text-error hover:bg-error/10 transition-colors"
+								>{m["common.Delete"]()}</button>
+							</div>
+						{/if}
+					{/if}
+				{/snippet}
+			</DataTable>
+		</div>
+
+		<div class="mt-4">
+			<Pagination {total} {limit} {offset} onPageChange={handlePageChange} />
+		</div>
+	{/if}
+</div>
+
+<!-- URL Form / Edit Modal -->
+<Modal bind:open={urlModalOpen} title={editingDocument ? m["documents.Edit Document"]() : m["documents.Add URL Document"]()}>
+	<form onsubmit={handleUrlSubmit} class="space-y-4">
+		{#if formError}
+			<div class="mb-4 px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error">
+				{formError}
+			</div>
+		{/if}
+		<div>
+			<label class="block text-xs text-text-muted mb-1">{m["documents.Title"]()} *</label>
+			<input bind:value={formTitle} required
+				class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+					focus:border-primary focus:outline-none" />
+		</div>
+		<div>
+			<label class="block text-xs text-text-muted mb-1">{m["documents.URL"]()} *</label>
+			<input bind:value={formUrl} required type="url" placeholder={m['documents.URL Placeholder']()}
+				class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+					focus:border-primary focus:outline-none font-mono" />
+		</div>
+		<div>
+			<label class="block text-xs text-text-muted mb-1">{m["documents.Description"]()}</label>
+			<textarea bind:value={formDescription} rows="3"
+				class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+					focus:border-primary focus:outline-none resize-none"></textarea>
+		</div>
+		<div class="flex gap-3 pt-2">
+			<button type="submit" disabled={formLoading}
+				class="px-6 py-2 bg-primary text-text-inverse font-semibold rounded-lg
+					hover:bg-primary-hover disabled:opacity-50 text-sm inline-flex items-center gap-2">
+				{#if formLoading}<LoaderCircle class="w-4 h-4 animate-spin" aria-hidden="true" />{/if}
+				<span>{m["common.Save"]()}</span>
+			</button>
+			<button type="button" onclick={() => { urlModalOpen = false; editingDocument = null; }}
+				class="px-6 py-2 border border-border text-text-muted rounded-lg
+					hover:border-primary text-sm">
+				{m["common.Cancel"]()}
+			</button>
+		</div>
+	</form>
+</Modal>
+
+<!-- File Upload Modal -->
+<Modal bind:open={fileModalOpen} title={m['documents.Upload']() + ' ' + m['documents.File']()}>
+	<form onsubmit={handleFileSubmit} class="space-y-4">
+		{#if formError}
+			<div class="mb-4 px-4 py-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error">
+				{formError}
+			</div>
+		{/if}
+		<div>
+			<label class="block text-xs text-text-muted mb-1">{m["documents.Title"]()} *</label>
+			<input bind:value={formFileTitle} required
+				class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+					focus:border-primary focus:outline-none" />
+		</div>
+		<div>
+			<label class="block text-xs text-text-muted mb-1">{m["documents.File"]()} *</label>
+			<input type="file" onchange={(e) => { const el = (e.target as HTMLInputElement); formFile = el.files?.[0] || null; }} required
+				class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+					focus:border-primary focus:outline-none" />
+		</div>
+		<div>
+			<label class="block text-xs text-text-muted mb-1">{m["documents.Description"]()}</label>
+			<textarea bind:value={formFileDescription} rows="3"
+				class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text
+					focus:border-primary focus:outline-none resize-none"></textarea>
+		</div>
+		{#if uploading}
+			<div class="mt-3">
+				<div class="w-full bg-border rounded-full h-2">
+					<div class="bg-primary h-2 rounded-full transition-all duration-300" style="width: {uploadProgress}%"></div>
+				</div>
+				<p class="text-xs text-text-muted mt-1">{m["common.Upload Progress"]()} {uploadProgress}%</p>
+			</div>
+		{/if}
+		<div class="flex gap-3 pt-2">
+			<button type="submit" disabled={formLoading}
+				class="px-6 py-2 bg-primary text-text-inverse font-semibold rounded-lg
+					hover:bg-primary-hover disabled:opacity-50 text-sm inline-flex items-center gap-2">
+				{#if formLoading}<LoaderCircle class="w-4 h-4 animate-spin" aria-hidden="true" />{/if}
+				<span>{m["documents.Upload"]()}</span>
+			</button>
+			<button type="button" onclick={() => { fileModalOpen = false; editingDocument = null; }}
+				class="px-6 py-2 border border-border text-text-muted rounded-lg
+					hover:border-primary text-sm">
+				{m["common.Cancel"]()}
+			</button>
+		</div>
+	</form>
+</Modal>
+
+<!-- File Preview Modal -->
+<Modal bind:open={previewOpen} title={m["documents.Preview File"]()} maxWidth="48rem" onClose={() => { previewOpen = false; }}>
+	{#if previewDoc}
+		<div class="text-sm text-text-muted mb-3">{previewDoc.title}</div>
+		{#if isMarkdown(previewDoc)}
+			{#if previewLoading}
+				<div class="flex items-center justify-center gap-2 py-16 text-text-muted">
+					<LoaderCircle class="w-5 h-5 animate-spin" aria-hidden="true" />
+					<span>{m["documents.Rendering Preview"]()}</span>
+				</div>
+			{:else if previewError}
+				<div class="text-center py-8 text-text-muted">
+					<p class="mb-3 text-error">{previewError}</p>
+					{#if previewDoc.file_path}
+						<button
+							onclick={() => downloadDocument(previewDoc!)}
+							class="px-3 py-1.5 text-xs rounded text-primary hover:bg-primary/10 transition-colors border border-primary/30"
+						>
+							{m["documents.Download"]()}
+						</button>
+					{/if}
+				</div>
+			{:else}
+				<!-- previewHtml is sanitized in renderMarkdown (DOMPurify): the only
+				     path through which uploaded file text may reach {@html}. -->
+				<div class="markdown-body max-h-[70vh] overflow-y-auto">{@html previewHtml}</div>
+			{/if}
+		{:else if isImage(previewDoc)}
+			<div class="flex justify-center">
+				<img
+					src="/api/v1/documents/{previewDoc.id}/download?inline=1"
+					alt={previewDoc.title}
+					class="max-w-full max-h-[70vh] rounded-lg border border-border"
+				/>
+			</div>
+		{:else if isPdf(previewDoc)}
+			<iframe
+				src="/api/v1/documents/{previewDoc.id}/download?inline=1"
+				class="w-full h-[70vh] rounded-lg border border-border"
+				title={previewDoc.title}
+			></iframe>
+		{:else}
+			<div class="text-center py-8 text-text-muted">
+				<p class="mb-3">{m["documents.Preview Not Available"]()}</p>
+				{#if previewDoc.file_path}
+					<button
+						onclick={() => downloadDocument(previewDoc!)}
+						class="px-3 py-1.5 text-xs rounded text-primary hover:bg-primary/10 transition-colors border border-primary/30"
+					>
+						{m["documents.Download"]()}
+					</button>
+				{/if}
+			</div>
+		{/if}
+	{/if}
+</Modal>
+
+<!-- Delete confirmation -->
+<ConfirmDialog
+	bind:open={deleteOpen}
+	title={m["documents.Delete Document"]()}
+	message={deleteMessage}
+	confirmLabel={m["common.Delete"]()}
+	confirmVariant="danger"
+	onConfirm={confirmDelete}
+	onCancel={() => { deleteTarget = null; }}
+/>

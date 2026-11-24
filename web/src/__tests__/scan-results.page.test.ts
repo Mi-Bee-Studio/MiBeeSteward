@@ -42,7 +42,7 @@ vi.mock('$lib/api/client', () => ({
 	SessionExpiredError: class SessionExpiredError extends Error {}
 }));
 
-import ScanResults from '../routes/devices/scan-results/+page.svelte';
+import ScanResults from '../routes/(assets)/devices/(scan)/scan-results/+page.svelte';
 
 function seedResult() {
 	return {
@@ -96,11 +96,11 @@ describe('Scan-results page', () => {
 	it('mounts and renders the results table with the seeded row', async () => {
 		const { container } = render(ScanResults);
 
-		const h2 = container.querySelector('h2');
-		expect(h2).toBeTruthy();
-		expect((h2?.textContent ?? '').trim().length).toBeGreaterThan(0);
-
+		// The page-level h2 was removed in the IA rework (the "Scan Results"
+		// sub-tab names the page). The table renders only once the seeded
+		// fetch resolves, so assert it inside waitFor alongside the row.
 		await waitFor(() => {
+			expect(container.querySelector('table')).toBeTruthy();
 			expect(container.textContent).toContain('192.168.2.10');
 		});
 		// Services cell joins the parsed service names.

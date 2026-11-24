@@ -169,4 +169,59 @@ describe('App layout', () => {
 		});
 		expect(container.querySelector('div.fixed.bottom-0')).toBeNull();
 	});
+
+	// 2026-11 IA rework: the sidebar holds PLACES, not features. Thirteen
+	// capability entries became five places; capabilities live in per-place
+	// tab bars. This guards the rule itself — if the nav grows past five rows
+	// again, a new capability was added as an entry instead of a tab.
+	describe('navigation model: places, not features', () => {
+		function navLinks(container: HTMLElement): HTMLAnchorElement[] {
+			return Array.from(container.querySelectorAll<HTMLAnchorElement>('aside nav a'));
+		}
+
+		it('renders exactly five place entries for an admin', async () => {
+			const { container } = render(Layout, { children: (() => {}) as unknown as Snippet });
+			await waitFor(() => expect(navLinks(container).length).toBeGreaterThan(0));
+
+			const hrefs = navLinks(container).map((a) => a.getAttribute('href'));
+			expect(hrefs).toEqual(['/dashboard', '/devices', '/network-center', '/probes', '/users']);
+		});
+
+		it('hides the administration place from non-admins but keeps four places', async () => {
+			mocks.authState.user = { id: 2, username: 'viewer', email: 'v@b.c', role: 'viewer' };
+
+			const { container } = render(Layout, { children: (() => {}) as unknown as Snippet });
+			await waitFor(() => expect(navLinks(container).length).toBeGreaterThan(0));
+
+			const hrefs = navLinks(container).map((a) => a.getAttribute('href'));
+			expect(hrefs).toEqual(['/dashboard', '/devices', '/network-center', '/probes']);
+			// The self-service settings link is the only settings route left
+			// for them, so it must still be present in the footer.
+			expect(container.querySelector('aside a[href="/settings"]')).toBeTruthy();
+		});
+
+		it('keeps a place lit for the sub-routes it owns', async () => {
+			// /settings belongs to 系统管理, /archive to 资产, /agents to 网络:
+			// opening a sub-page must not blank the sidebar's active marker.
+			const cases = [
+				{ pathname: '/settings', expectHref: '/users' },
+				{ pathname: '/archive', expectHref: '/devices' },
+				{ pathname: '/agents', expectHref: '/network-center' }
+			];
+
+			for (const c of cases) {
+				mocks.route.pathname = c.pathname;
+				const { container, unmount } = render(Layout, {
+					children: (() => {}) as unknown as Snippet
+				});
+				const active = await waitFor(() => {
+					const el = container.querySelector('aside nav a[aria-current="page"]');
+					expect(el, `no active place for ${c.pathname}`).toBeTruthy();
+					return el as HTMLAnchorElement;
+				});
+				expect(active.getAttribute('href')).toBe(c.expectHref);
+				unmount();
+			}
+		});
+	});
 });

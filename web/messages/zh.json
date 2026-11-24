@@ -25,7 +25,13 @@
 		"Toggle Sidebar": "切换侧边栏",
 		"Probes": "拨测",
 		"Fingerprints": "指纹覆盖",
-		"Archive": "档案库"
+		"Archive": "档案库",
+		"Place Overview": "总览",
+		"Place Assets": "资产",
+		"Place Networks": "网络",
+		"Place Observation": "观测",
+		"Place Admin": "系统管理",
+		"Group Main": "主要"
 	},
 	"auth": {
 		"Username": "用户名",
@@ -2054,5 +2060,23 @@
 		"Multihomed": "多宿主",
 		"Unidentified": "未识别",
 		"No Gateway": "未观测 NAT"
+	},
+	"assets": {
+		"Place Tab Devices": "设备",
+		"Place Tab Changes": "变更",
+		"Place Tab Archive": "档案库",
+		"Place Tab Fingerprints": "识别覆盖",
+		"Place Tab Documents": "文档",
+		"Place Tab Scan": "扫描"
+	},
+	"network": {
+		"Place Tab Overview": "概览",
+		"Place Tab Registry": "网段",
+		"Place Tab Agents": "采集器"
+	},
+	"admin": {
+		"Place Tab Users": "用户",
+		"Place Tab Audit": "审计日志",
+		"Place Tab Settings": "设置"
 	}
 }

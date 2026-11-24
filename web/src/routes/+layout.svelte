@@ -27,19 +27,13 @@
 	import {
 		LayoutDashboard,
 		Server,
-		FileText,
 		Users,
-		ScrollText,
 		Settings,
 		LogOut,
 		Menu,
 		X,
-		History,
-		Bot,
 		Network,
-		Activity,
-		Archive,
-		Fingerprint
+		Activity
 	} from '@lucide/svelte';
 	import type { Component, Snippet } from 'svelte';
 
@@ -129,50 +123,82 @@
 		goto('/login');
 	}
 
-	// Nav is grouped (Core / Library / Administration) instead of a flat 11-item
-	// list. The admin group is hidden entirely for non-admins: previously the
-	// 4 admin-only items rendered as inert grey rows mixed in with the daily-use
-	// items, which read as "a bunch of things I can't click". /topology and
-	// /discovery were removed as top-level entries: topology is now a view toggle
-	// inside /devices, discovery is a tab under the scan center (/devices/scan-*).
-	interface NavItem { path: string; label: string; icon: Component }
+	// Sidebar = PLACES, not features (2026-11 IA rework, prototype-approved).
+	//
+	// The old nav was three groups of capability names — 13 entries, and every
+	// new capability added a 14th. That is why it read as bloated: it was
+	// organized by what the software can do, not by where a person goes to do
+	// their job. The five entries below are places; capabilities live inside
+	// each place as tabs (see the (assets)/(network)/(admin) layouts). A new
+	// feature now becomes a tab and the sidebar stays five rows.
+	//
+	// /topology and /discovery remain redirect stubs (topology is a view
+	// toggle in /devices; discovery is a scan-center tab).
+	interface NavItem { path: string; label: string; icon: Component; also?: string[] }
 	interface NavGroup { labelKey: string; items: NavItem[] }
 
 	const navGroups: NavGroup[] = [
 		{
-			labelKey: 'navigation.Group Core',
+			labelKey: 'navigation.Group Main',
 			items: [
-				{ path: '/dashboard', label: m['navigation.Dashboard'](), icon: LayoutDashboard },
-				{ path: '/devices', label: m['navigation.Devices'](), icon: Server },
-				{ path: '/network-center', label: m['navigation.Network Center'](), icon: Network },
-				{ path: '/archive', label: m['navigation.Archive'](), icon: Archive },
-				{ path: '/changes', label: m['navigation.Changes'](), icon: History },
-				{ path: '/probes', label: m['navigation.Probes'](), icon: Activity }
-			]
-		},
-		{
-			labelKey: 'navigation.Group Library',
-			items: [
-				{ path: '/documents', label: m['navigation.Documents'](), icon: FileText },
-				{ path: '/fingerprints', label: m['navigation.Fingerprints'](), icon: Fingerprint }
+				{ path: '/dashboard', label: m['navigation.Place Overview'](), icon: LayoutDashboard },
+				// One entry covers devices + changes + archive + fingerprints +
+				// documents + the scan center, which were six sidebar rows.
+				{
+					path: '/devices',
+					label: m['navigation.Place Assets'](),
+					icon: Server,
+					also: ['/changes', '/archive', '/fingerprints', '/documents']
+				},
+				// One entry covers network-center + networks + agents.
+				{
+					path: '/network-center',
+					label: m['navigation.Place Networks'](),
+					icon: Network,
+					also: ['/networks', '/agents']
+				},
+				{ path: '/probes', label: m['navigation.Place Observation'](), icon: Activity }
 			]
 		},
 		{
 			labelKey: 'navigation.Group Admin',
 			items: [
-				{ path: '/networks', label: m['navigation.Networks'](), icon: Network },
-				{ path: '/agents', label: m['navigation.Agents'](), icon: Bot },
-				{ path: '/users', label: m['navigation.Users'](), icon: Users },
-				{ path: '/audit', label: m['navigation.AuditLogs'](), icon: ScrollText }
+				// One entry covers users + audit + the whole settings centre.
+				{
+					path: '/users',
+					label: m['navigation.Place Admin'](),
+					icon: Settings,
+					also: ['/audit', '/settings']
+				}
 			]
 		}
 	];
 
-	// Non-admins don't see the Administration group at all. The Settings entry
-	// stays in the footer (it's self-service profile/security, not admin infra).
+	// Non-admins don't see the Administration place at all: users and audit are
+	// admin surfaces, and the self-service settings page stays reachable from
+	// the footer link below (it is profile/security, not admin infra).
 	const visibleGroups = $derived(
-		navGroups.filter(g => g.labelKey !== 'navigation.Group Admin' || $auth.user?.role === 'admin')
+		navGroups
+			.map((g) =>
+				g.labelKey === 'navigation.Group Admin'
+					? { ...g, items: g.items.filter(() => $auth.user?.role === 'admin') }
+					: g
+			)
+			.filter((g) => g.items.length > 0)
 	);
+
+	/**
+	 * A place stays highlighted for every route it owns, not just its landing
+	 * page: /settings is inside 系统管理, /archive inside 资产, and so on. Without
+	 * this, opening any sub-page would blank the sidebar's active marker and
+	 * the user loses their location.
+	 */
+	function isNavActive(item: NavItem): boolean {
+		const pathname = $page.url.pathname;
+		const owns = (p: string) => pathname === p || pathname.startsWith(p + '/');
+		if (owns(item.path)) return true;
+		return (item.also ?? []).some(owns);
+	}
 
 	// Global keyboard shortcuts
 	$effect(() => {
@@ -264,7 +290,7 @@
 				{/if}
 				<p class="nav-group-label">{(m[group.labelKey as keyof typeof m] as () => string)()}</p>
 				{#each group.items as item (item.path)}
-					{@const active = $page.url.pathname === item.path || (item.path !== '/' && $page.url.pathname.startsWith(item.path + '/'))}
+					{@const active = isNavActive(item)}
 					<a
 						href={item.path}
 						class="flex items-center gap-3 px-3 py-2.5 rounded-md mb-0.5 text-sm transition-colors
@@ -288,19 +314,22 @@
 				<NotificationBell />
 			</div>
 			{#if $auth.token}
-				<!-- Self-service settings (profile/2FA/appearance) + the admin-ish
-				     sub-pages (notification channels, SNMP credentials) live under
-				     /settings; without this link they are undiscoverable (#248). -->
-				<a
-					href="/settings"
-					class="flex items-center gap-1.5 px-1 pt-2 pb-1 text-xs transition-colors
-						{$page.url.pathname.startsWith('/settings')
-						? 'text-primary font-medium'
-						: 'text-muted hover:text-text'}"
-				>
-					<Settings class="w-3.5 h-3.5" />
-					{m['navigation.Settings']()}
-				</a>
+				<!-- Settings lives as a tab inside the 系统管理 place, which is
+				     admin-only. Non-admins never see that place, so for them this
+				     footer link is the only route to profile/password/2FA/theme —
+				     rendering it for admins too would duplicate a visible entry. -->
+				{#if $auth.user?.role !== 'admin'}
+					<a
+						href="/settings"
+						class="flex items-center gap-1.5 px-1 pt-2 pb-1 text-xs transition-colors
+							{$page.url.pathname.startsWith('/settings')
+							? 'text-primary font-medium'
+							: 'text-muted hover:text-text'}"
+					>
+						<Settings class="w-3.5 h-3.5" />
+						{m['navigation.Settings']()}
+					</a>
+				{/if}
 				<div class="flex items-center justify-between pt-1">
 					<span class="text-xs text-muted truncate flex items-center gap-1.5">
 						<Users class="w-3.5 h-3.5" />
