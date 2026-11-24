@@ -39,6 +39,11 @@ MAC_MAP = {k.lower(): v for k, v in _MAPPING["macs"].items()}
 IP_63 = re.compile(r"\b192\.168\.63\.(\d{1,3})\b")
 IP_62 = re.compile(r"\b192\.168\.62\.(\d{1,3})\b")
 MAC_RE = re.compile(r"\b([0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2})\b")
+# Some device names carry the NIC half of the MAC as a suffix (_miap7EAC /
+# _mibt2431). The explicit name map can't enumerate every one of those, so
+# hash the suffix to a stable fake value (same device -> same name across
+# pages) instead of shipping real NIC octets in screenshots.
+NAME_MAC_SUFFIX = re.compile(r"_(miap|mibt)([0-9A-Fa-f]{4})\b")
 
 
 def sanitize(text: str) -> str:
@@ -51,7 +56,11 @@ def sanitize(text: str) -> str:
     def mac_sub(m):
         return MAC_MAP.get(m.group(1).lower(), m.group(0))
 
-    return MAC_RE.sub(mac_sub, text)
+    def name_suffix_sub(m):
+        fake = hashlib.sha256(("name-suffix:" + m.group(2).lower()).encode()).hexdigest()[:4].upper()
+        return "_" + m.group(1) + fake
+
+    return NAME_MAC_SUFFIX.sub(name_suffix_sub, MAC_RE.sub(mac_sub, text))
 
 
 def looks_like_payload(content_type: str, body: bytes) -> bool:

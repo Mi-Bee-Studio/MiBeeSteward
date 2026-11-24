@@ -3614,7 +3614,7 @@ Get device heartbeat results.
 
 
 
-Periodic probing of EXPLICIT user-configured endpoints (blackbox_exporter-style), typically external/internet resources. Five modules: `http` / `tls` / `tcp` / `icmp` / `dns` (bare-domain DNS resolution with optional pinned resolver and expected-IP assertions). The `tls` module, and https-flavored `http` targets, collect the full certificate chain (reusing the scanner's internal cert inventory for external hosts; results carry a trust verdict and TLS version). Targets may carry a per-module `options` object (#605) — http method/expected statuses/body keyword/ignore-TLS-errors, dns record/resolver/expected IPs, tcp send/expect — and bind to a discovered device via `device_id` (#606); every response carries `source` (`manual` / `auto` / `system`). Options deliberately hold no credentials or auth headers: they are plaintext in the DB and ride the secret-free agent command channel. Reads (`CapProbeRead`) are available to any logged-in user; writes (`CapProbeManage`) require operator and above. Field-level documentation lives in [openapi.yaml](https://github.com/Mi-Bee-Studio/MiBeeSteward/blob/main/docs/openapi.yaml) (`ProbeTarget` / `ProbeOptions` / `ProbeQualityReport`).
+Periodic probing of EXPLICIT user-configured endpoints (blackbox_exporter-style), typically external/internet resources. Five modules: `http` / `tls` / `tcp` / `icmp` / `dns` (bare-domain DNS resolution with optional pinned resolver and expected-IP assertions). The `tls` module, and https-flavored `http` targets, collect the full certificate chain (reusing the scanner's internal cert inventory for external hosts; results carry a trust verdict and TLS version). Targets may carry a per-module `options` object (#605) — http method/expected statuses/body keyword/ignore-TLS-errors, dns record/resolver/expected IPs, tcp send/expect, icmp burst_count/burst_interval_ms — and bind to a discovered device via `device_id` (#606); every response carries `source` (`manual` / `auto` / `system`). Options deliberately hold no credentials or auth headers: they are plaintext in the DB and ride the secret-free agent command channel. Reads (`CapProbeRead`) are available to any logged-in user; writes (`CapProbeManage`) require operator and above. Field-level documentation lives in [openapi.yaml](https://github.com/Mi-Bee-Studio/MiBeeSteward/blob/main/docs/openapi.yaml) (`ProbeTarget` / `ProbeOptions` / `ProbeQualityReport`).
 
 
 
@@ -3648,10 +3648,22 @@ Periodic probing of EXPLICIT user-configured endpoints (blackbox_exporter-style)
 
 
 | `/api/v1/probe-targets/{id}/certificates` | GET | Auth · `CapProbeRead` | Current certificate chain (same shape as the device endpoint) |
+| `/api/v1/probe-targets/{id}/phases` | GET | Auth · `CapProbeRead` | Per-stage timing history (#717), newest first (`limit`, default 200/max 500) |
+| `/api/v1/probe-targets/autogen-sweep` | POST | Operator+ · `CapProbeManage` | Run one autogen reconcile sweep now (reads the effective overlay / config policy) |
 
 
 | `/api/v1/probe-quality` | GET | Auth · `CapProbeRead` | Quality analysis (#613): per-category, per-vantage verdicts — lan/external simple health + the egress matrix chain (optional `window` minutes) |
 | `/api/v1/probe-quality/history` | GET | Auth · `CapProbeRead` | Bucketed quality trend — the same verdict chain replayed per hour (`days=7`) or day (`days=30`) bucket |
+| `/api/v1/probe-quality/episodes` | GET | Auth · `CapProbeRead` | Degradation episodes (#720): relative-baseline drops with cross-evidence and attribution (`days`, `active=1` = unresolved only) |
+| `/api/v1/probe-matrix` | GET | Auth · `CapProbeRead` | Site-to-site N×N matrix (#748): per-leg RTT/loss/jitter over the mesh-* autogen targets (optional `window` minutes) |
+| `/api/v1/probe-egress` | GET | Auth · `CapProbeRead` | Current egress identity per vantage (#718): latest public-IP echo round, ASN enrichment, local gateway (recording only) |
+| `/api/v1/probe-paths` | GET | Auth · `CapProbeRead` | Latest traced path per target and vantage (#719): hop list, reached TTL, reply TTL |
+| `/api/v1/settings/probes` | GET | Admin · `CapUserManage` | Effective probe policy switches (quality matrix + autogen; DB overlay > YAML) |
+| `/api/v1/settings/probes` | PUT | Admin · `CapUserManage` | Update probe policy switches (matrix reseeds / autogen sweeps immediately) |
+| `/api/v1/settings/probes/stun-servers` | GET | Admin · `CapUserManage` | STUN server list for the gateway profile (#750); `?defaults=1` returns the shipped defaults |
+| `/api/v1/settings/probes/stun-servers` | PUT | Admin · `CapUserManage` | Replace the whole list (builtins may be disabled but not dropped; max 8) |
+| `/api/v1/settings/probes/stun-servers/test` | POST | Admin · `CapUserManage` | Send one STUN Binding Request to test an endpoint (mapped address + RTT, never persists) |
+| `/api/v1/devices/{id}/diagnosis` | GET | Auth · `CapDeviceRead` | Network-anomaly diagnosis of a device (#761): address timeline with liveness, classified findings with evidence, same-hostname siblings |
 
 
 ### POST /api/v1/probe-targets/
@@ -3732,7 +3744,7 @@ Create a probe target.
 - `vantage` (optional, default `center`): execution plan, `center` (this instance probes), `agent:{agent_id}` (that agent executes over the distributed command channel; the center refuses local execution, so manual trigger returns 409), or `all` (center + every registered agent; each track's rows are stamped `center` / `agent:{id}`, see [Distributed](distributed.md#vantage-probing-277))
 
 
-- `options` (optional, per-module, #605): http — `method` (`GET`/`HEAD`), `expected_status` (exact allowed codes, e.g. `[200,204]`; empty = status < 400), `keyword` + `keyword_mode` (`contains`/`not_contains`/`regex`), `ignore_tls_errors` (default false = verify TLS); dns — `record` (`A`/`AAAA`/`CNAME`/`TXT`), `resolver` (`host[:port]`, empty = system resolver), `expected_ips` (A/AAAA answers must intersect, ≤8 entries); tcp — `send` (payload written after connect), `expect` + `expect_mode` (`contains`/`regex`) banner match. `icmp`/`tls` take no options. Fields foreign to the module are rejected, and no credentials/auth headers exist by design (options are plaintext in the DB and ride the secret-free agent command channel verbatim).
+- `options` (optional, per-module, #605): http — `method` (`GET`/`HEAD`), `expected_status` (exact allowed codes, e.g. `[200,204]`; empty = status < 400), `keyword` + `keyword_mode` (`contains`/`not_contains`/`regex`), `ignore_tls_errors` (default false = verify TLS); dns — `record` (`A`/`AAAA`/`CNAME`/`TXT`), `resolver` (`host[:port]`, empty = system resolver), `expected_ips` (A/AAAA answers must intersect, ≤8 entries); tcp — `send` (payload written after connect), `expect` + `expect_mode` (`contains`/`regex`) banner match. icmp — `burst_count` (1–20 echoes per round; 0/1 = legacy single ping) and `burst_interval_ms` (10–1000 between echoes, 0 = 20 ms prober default, requires `burst_count`), whose burst round reports `loss_pct` / `jitter_ms` as first-class metrics (#744); tls takes no options. Fields foreign to the module are rejected, and no credentials/auth headers exist by design (options are plaintext in the DB and ride the secret-free agent command channel verbatim).
 
 
 - `device_id` (optional, #606): bind the target to a discovered asset; `GET /probe-targets?device_id=` filters by it, and device deletion unbinds (auto-generated targets are disabled, manual ones keep running).

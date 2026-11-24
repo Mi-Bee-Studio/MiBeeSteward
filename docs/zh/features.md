@@ -1,6 +1,6 @@
 # MiBee Steward 功能总览
 
-本页是 MiBee Steward 的完整能力清单，以 **v0.5.0**（2026-08-19 发布）为基线。MiBee Steward 是一个**设备/网络层的资产发现、识别与登记**工具--回答三个问题：*网络上有哪些设备？它们是什么？它们还活着吗？* 每个功能都围绕这三问展开；明确的[产品边界](product-scope.md)之外的活儿，主动让位给更成熟的工具。
+本页是 MiBee Steward 的完整能力清单，覆盖截至 **v0.10.0**（2026-11-24）已发布的能力。MiBee Steward 是一个**设备/网络层的资产发现、识别与登记**工具--回答三个问题：*网络上有哪些设备？它们是什么？它们还活着吗？* 每个功能都围绕这三问展开；明确的[产品边界](product-scope.md)之外的活儿，主动让位给更成熟的工具。
 
 ![仪表盘](images/dashboard.webp)
 
@@ -95,7 +95,7 @@ blackbox 风格的外部资源周期探测--公网站点、托管 TLS 端口等�
 - **五种模块**：`http`（状态 <400 为成功，https 附带证书链）、`tls`（完整证书链）、`tcp`、`icmp`、`dns`（A/AAAA/CNAME/TXT 查询，可指定专用解析器）；每目标可配间隔（10s–86400s）与超时（1–60s）。
 - **按模块选项（#605）**：`http`--method（GET/HEAD）、`expected_status`（精确状态码集合，留空 = 沿用 <400 判定）、`keyword` + `keyword_mode`（contains / not_contains / regex）正文匹配、`ignore_tls_errors`（默认 false = 校验 TLS）；`dns`--`record`、`resolver`（host[:port]，留空用系统解析器）、`expected_ips`（A/AAAA 答案须命中其一）；`tcp`--连接后 `send` 载荷 + `expect` banner 匹配（`expect_mode`）。选项以 JSON 存在目标行上、原样下发 vantage agent。刻意不支持自定义请求头与凭据：选项在数据库中是明文，且必须保持 agent 命令通道无密钥，这是设计保证。
 - **设备绑定与自动生成（#606）**：目标可绑定到已发现设备（`device_id`，`GET /probe-targets?device_id=` 按设备过滤）；设备详情页对每个发现的服务提供一键建拨测 + 绑定目标面板。`probe.autogen`（默认关闭）把发现的 http/https 服务自动生成为设备绑定目标（`source=auto`）并跟随其生命周期--服务消失 → 目标停用挂起，回归 → 复活；手工目标永不触碰。分工口径：心跳回答「设备可达性」，拨测回答「服务层语义」。
-- **出口质量（#608）**：内置公共拨测点矩阵（`probe.quality`，裸配置默认关闭；随附的 `config.example.yaml` 显式设 `enabled: true`），从每个视角（中心 + 全部 agent）执行，按网络在滑动窗口上分析，判定链确定（`egress_down > dns_fault > upstream_resolver > degraded > ok`）并做跨视角目标隔离。判定与分数以 Prometheus gauge `mibee_probe_egress_verdict` / `mibee_probe_quality_score` 导出（仅指标；通知联动刻意未建）。
+- **出口质量（#608）**：内置公共拨测点矩阵（`probe.quality`；自 #737 起缺省 `enabled` 键默认**开启**——升级保留下来的旧配置不再静默失去矩阵；显式 `enabled: false` 仍可关闭，开关也位于「设置 → 拨测」），从每个视角（中心 + 全部 agent）执行，按网络在滑动窗口上分析，判定链确定（`egress_down > dns_fault > upstream_resolver > degraded > ok`）并做跨视角目标隔离。判定与分数以 Prometheus gauge `mibee_probe_egress_verdict` / `mibee_probe_quality_score` 导出（仅指标；通知联动刻意未建）。
 - **引擎**：10s tick 重读目标（增删改即时生效，无需重启）、并发经 `probe.max_concurrency` 可配（默认 8）、断点续跑、手动触发。
 - **证书库存**：复用扫描器的证书链采集，SNI 自动推导；瞬时失败保留最后已知良好链。
 - **多视角（#277）**：目标的探测可由中心、所有已注册 agent 或指定 agent 发起--结果按 `(target, vantage)` 分别记录，历史弹窗并排展示并在不一致时高亮，指标带 `mibee_probe_*{vantage=…}` 标签。调度器按 agent 上报的 `supported_modules` 能力声明过滤计划（#604）；tcp/dns 计划要求 agent 0.2.0+。

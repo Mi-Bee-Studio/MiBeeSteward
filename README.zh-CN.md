@@ -148,14 +148,18 @@ MIBEE_RESET_PASSWORD=newpass ./mibee-steward reset-admin-password -config config
 - [项目概述](docs/zh/introduction.md)，项目概览与功能
 - [快速开始](docs/zh/quick-start.md)，五分钟上手
 - [系统架构](docs/zh/architecture.md)，系统设计与数据流
+- [Web 界面巡礼](docs/zh/web-ui.md)，各界面区域导览与截图
 - [API 参考](docs/zh/api.md)，REST API 文档
 - [配置参考](docs/zh/configuration.md)，配置参考
 - [部署指南](docs/zh/deployment.md)，生产环境部署（systemd / nginx / Docker / OpenWrt）
 - [分布式指南](docs/zh/distributed.md)，中心 + 采集器多网络模型
+- [生态集成](docs/zh/integrations.md)，Grafana 面板、通知渠道（飞书/企微/Telegram/Discord）、n8n 与 Home Assistant
+- [性能基准](docs/zh/benchmark.md)，loadgen 规模压测与 nmap 准确率对比
 - [发现指南](docs/zh/discovery.md)，探测源与识别管线
 - [产品范围](docs/zh/product-scope.md)，是什么 / 不是什么，定位与边界
 - [指纹规范](docs/zh/fingerprint-spec.md)，贡献识别规则（YAML）
 - [开发指南](docs/zh/development.md)，贡献与编码规范
+- [更新日志](docs/zh/changelog.md)，与根目录 `CHANGELOG.md`（英文）同步维护的中文翻译
 
 ## 配置
 

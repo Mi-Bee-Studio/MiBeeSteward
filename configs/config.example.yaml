@@ -234,6 +234,8 @@ probe:
     http_degraded_ms: 800   # p50 threshold marking a vantage degraded.
     dns_degraded_ms: 300
     ok_rate_threshold: 0.9  # min success rate within the window (0..1].
+    loss_pct_threshold: 5   # burst-sampled packet loss % marking a vantage degraded (#744, verdict code loss_burst).
+    jitter_degraded_ms: 30  # burst jitter budget in ms (mean abs diff of consecutive echo RTTs; verdict code jitter_high).
     episodes:               # degradation-episode detector (#720): impact-only alerting.
       # enabled: true       # absent = follow quality.enabled; false = off.
       latency_ratio: 2.0        # window p50 degraded at >= max(base*ratio, base+min_delta).
@@ -264,6 +266,7 @@ probe:
     interval_seconds: 300    # auto-target cadence
     max_targets: 100         # population cap
     sweep_interval_minutes: 15
+    mesh_enabled: true       # site-to-site N×N mesh (#747): absent = ON; explicit false disables.
   # Egress identity recorder (#718): every interval the center asks a set of
   # public echo sources (HTTP/STUN/DNS) which public IP the current egress
   # presents, enriches the distinct IPs with their origin ASN, and stores the

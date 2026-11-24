@@ -12,9 +12,11 @@ MiBee Steward Web 界面完整导览：每个页面展示什么、能做什么�
 
 落地总览：在线/离线设备数、各网段设备趋势、最近变更事件、agent 健康度、心跳失败摘要。各组件直接链到对应页面，数据同源。
 
-## 网段（`/networks`）
+## 网络（`/network-center`、`/networks`）
 
-每个受管 LAN 一行：**名称、CIDR、归属 agent**（`agent_id`）。
+「网络」场所含三个标签页：**概览**（只读的 `/network-center`）、**网段**（`/networks`，下述登记表）与**采集器**（`/agents`）。`/network-center` 让网络成为一等公民、提供只读视图：每个网络的出口 IP / NAT 类型 / 质量 / 设备数、网络间拓扑与跨网络资产清单。
+
+`/networks` 里每个受管 LAN 一行：**名称、CIDR、归属 agent**（`agent_id`）。
 
 - **新增网段**：名称 + CIDR（如 `lan-1` / `192.168.1.0/24`）。CIDR 驱动扫描目标圈定与设备→网段归属。
 - **agent 绑定即派发开关**：网段带 `agent_id` 时，其扫描任务派发给该 agent（分布式模式）；**为空 = 中心本地扫描**。当某 agent 网段的设备停止更新时先查这里：`agent_id` 被意外清空会把网段静默切回中心本地扫描。
@@ -34,7 +36,7 @@ MiBee Steward Web 界面完整导览：每个页面展示什么、能做什么�
 
 ### 设备详情（`/devices/detail/{id}`）
 
-单资产的全部已知信息：身份卡、开放端口 + 识别到的服务、扫描属性（SNMP sysDescr、OS/内核、带置信度的推断来源）、心跳状态历史、L2 拓扑边（`device_neighbors`，来自 LLDP/CDP/Bridge-MIB 探针）、该设备的变更历史。
+单资产的全部已知信息：身份卡、开放端口 + 识别到的服务、扫描属性（SNMP sysDescr、OS/内核、带置信度的推断来源）、心跳状态历史、L2 拓扑边（`device_neighbors`，来自 LLDP/CDP/Bridge-MIB 探针）、该设备的变更历史。**网络异常诊断**面板的判定徽章连证据一起回答「这台设备是不是真在换 IP？」——按需拉取，不是告警；设备列表把身份分裂/多宿主判定同步提升为行级徽章。
 
 ### 发现与扫描（`/devices/discovery`、`/devices/scan-results`、`/devices/scan-tasks`、`/devices/scanner`）
 
@@ -44,7 +46,7 @@ MiBee Steward Web 界面完整导览：每个页面展示什么、能做什么�
 
 ## 采集器（`/agents`）
 
-分布式部署的舰队视图：每个 agent 的版本（如 `mibee-agent-rs/0.1.5`）、运行时长、最近上报时间、扫描计数、采纳的指纹库版本。
+分布式部署的舰队视图：每个 agent 的版本（如 `mibee-agent-rs/0.2.4`）、运行时长、最近上报时间、扫描计数、采纳的指纹库版本。
 
 - **铸发令牌**（Agents 页 → 创建）：绑定 `agent_id + network_id`，明文**仅展示一次**，粘贴进 agent 的 `agent.yaml`（`center.auth_token`）。令牌可吊销，吊销立即生效。
 - **远程运维**：中心侧 `agent_fleet.remote_ops_enabled` + agent 侧 `center.remote_ops_enabled: true` 时，中心可下发按需扫描与日志获取。
@@ -81,6 +83,7 @@ MiBee Steward Web 界面完整导览：每个页面展示什么、能做什么�
 - **安全** — JWT 密钥轮换、Cookie 标志、密码策略。
 - **扫描器** — 引擎调参、发现信号源、SNMP 凭据（SNMPv3 口令落库即 AES 加密，任何 API 都**不会**回显）。
 - **通知** — 心跳与变更事件的 webhook/通知渠道。
+- **拨测** — 管理员开关：出口质量矩阵（`probe.quality`）与自动拨测（`probe.autogen`）；改动即重建，无需重启。探测点清单与阈值仍留在 YAML 配置里（#737）。
 - **用户** — 账号管理（管理员能力位）。
 
 ## 用户（`/users`）
@@ -99,7 +102,7 @@ MiBee Steward Web 界面完整导览：每个页面展示什么、能做什么�
 
 | 症状 | 先查 |
 |---|---|
-| agent 网段的设备冻结 / 陈旧 | `/networks` 里该网段的 `agent_id`；`/agents` 里 agent 服务状态与最近上报时间 |
+| agent 网段的设备冻结 / 陈旧 | `/networks` 里该网段的 `agent_id`；`/agents` 里 agent 服务状态与最近上报时间；`/network-center` 里受影响网络的出口/质量 |
 | 中心日志出现 agent 401 | 令牌被吊销或轮换；重新铸发，更新 `center.auth_token` |
 | 同一台盒子两行（有线 + 无线） | 那是 `mac_aliases` 在生效；UI 侧别名聚合在路线图中，合并意图已记录 |
 | 设备"变成"一个随机样子的 MAC | 本地管理位（随机化）MAC；真实持有者被泊车后会回归——见 [agent-rs.md](agent-rs.md) / CHANGELOG |
