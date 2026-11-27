@@ -40,7 +40,7 @@ Explicit non-goals: **snap** (a scanner needs raw sockets for ICMP/ARP; confinem
 
 ### Download
 
-Grab the prebuilt binary for your platform (amd64/arm64) from [GitHub Releases](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases), or build from source. Standalone deployments use the **center** binary (source entry `cmd/server`, ~24MB, embeds the SvelteKit web UI); the agent (the Rust `agent-rs/` workspace, ~4.8MB, no embedded UI) is for the [OpenWrt](openwrt.md) and [Distributed](distributed.md) scenarios. Each release also ships a **`-full` variant** per arch with the optional LLDP/CDP listeners and ARP sweep compiled in (needs `CAP_NET_RAW`; see the [build variants matrix](build-variants.md)); checksums for all center binaries are in `SHA256SUMS.center`:
+Grab the prebuilt binary for your platform (amd64/arm64) from the [v0.10.0 release](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases/tag/v0.10.0), or build from source. Standalone deployments use the **center** binary (source entry `cmd/server`, ~24MB, embeds the SvelteKit web UI); the agent (the Rust `agent-rs/` workspace, ~4.8MB, no embedded UI) is for the [OpenWrt](openwrt.md) and [Distributed](distributed.md) scenarios. Each release also ships a **`-full` variant** per arch with the optional LLDP/CDP listeners and ARP sweep compiled in (needs `CAP_NET_RAW`; see the [build variants matrix](build-variants.md)); checksums for all center binaries are in `SHA256SUMS.center`:
 
 ```bash
 git clone https://github.com/Mi-Bee-Studio/MiBeeSteward.git
@@ -57,9 +57,9 @@ Debian/RHEL-family hosts can skip the manual steps below entirely: every release
 
 ```bash
 # Debian / Ubuntu / Armbian (apt resolves a local file; arm64 / armhf likewise)
-sudo apt install ./mibee-steward_<version>_amd64.deb
+sudo apt install ./mibee-steward_0.10.0_amd64.deb
 # Fedora / RHEL / openSUSE
-sudo dnf install ./mibee-steward-<version>-1.x86_64.rpm
+sudo dnf install ./mibee-steward-0.10.0-1.x86_64.rpm
 ```
 
 First install does everything the binary deployment below does by hand: it lays down the exact same layout (binary + configs under `/opt/mibee-steward`, the systemd unit in `/usr/lib/systemd/system/`, logrotate, `backup.sh`), **generates `/opt/mibee-steward/configs/config.yaml`** (random `jwt_secret`; empty admin password - the web UI's first-run screen asks you to create it; `cookie_secure: false` as the plain-HTTP LAN default - flip to `true` behind nginx+TLS), opens + persists `net.ipv4.ping_group_range` for unprivileged ICMP, then enables and starts the service. The web UI is at `http://<host>:8080`.
@@ -67,7 +67,7 @@ First install does everything the binary deployment below does by hand: it lays 
 Notes:
 
 - The service runs as **numeric uid/gid 1000** (the unit ships that way deliberately - see its comment); the postinst chowns `/opt/mibee-steward` to match. If uid 1000 is not the intended account on your host, override with a unit drop-in.
-- Upgrade = install the new package: config and data are never touched (config generation is first-install only). `apt purge` / `dnf remove` deletes the generated config but deliberately keeps `data/`.
+- Upgrade = install the new package: package scripts do not actively rewrite config or data (config generation is first-install only). `apt purge` / `dnf remove` deletes the generated config but deliberately keeps `data/`. **Crossing a schema boundary still requires the fresh-database procedure below; installing the package is not data migration.**
 - Migrating a manual binary install to packages just works (the existing config stays), but remove a manually copied `/etc/systemd/system/mibee-steward.service` first - an `/etc` unit shadows the package unit forever (the postinst prints this hint too).
 - The agent package `mibee-agent` follows the same lifecycle with `/etc/mibee/agent.yaml` + a dedicated `mibee-agent` system user; it derives `network.name`/`cidr` from the default route and stays stopped until you fill in `center.url` / `center.auth_token` ([distributed.md](distributed.md)).
 - Packages carry the default build only; the `-full` capability variant stays a manual build ([build variants](build-variants.md)).
@@ -363,8 +363,17 @@ sudo systemctl start mibee-steward
 
 ## Upgrading
 
+> **v0.10.0 important upgrade note (schema v9 → v10 → v11; no in-place upgrade)**: when upgrading from a v0.9.x or older database, run `scripts/backup.sh`, remove the old database, start with a fresh database, and rescan to repopulate it. **Probe history series reset, and archive entries do not survive the rebuild**; they re-accumulate as devices cycle offline. Minor upgrades within v11 still need only a binary swap. Agents should also move to **0.2.4**; older agents keep reporting, but HostNet attribution, SNTP clock offset, UDP DNS retransmit, and chained compression-pointer parsing require 0.2.4.
 
-### Binary Upgrade
+### v0.9.x → v0.10.0 schema-boundary procedure
+
+1. **Stop and back up**: run `scripts/backup.sh` and keep a separate copy of `configs/config.yaml`.
+2. **Remove the old database**: delete `data/mibee.db` and any leftover `-wal` / `-shm` files; do not rename the backup into place as the new database.
+3. **Start v0.10.0**: keep the existing config to create a fresh v11 database, then run discovery to repopulate devices.
+4. **Restore the quality matrix**: binary/systemd and Docker upgrades with a missing `probe.quality` key now default it to on; verify the Settings → Probes switches or follow the `doctor` hint. OpenWrt kept-config upgrades add the default blocks via `migrate-config.sh`.
+5. **Verify**: confirm devices, the probe page's Egress & Paths panel, the site matrix, and Network Center have data before re-enabling alert rules.
+
+### Binary Upgrade (within one schema)
 
 ```bash
 sudo systemctl stop mibee-steward
@@ -386,7 +395,7 @@ docker compose pull  # pull new image
 docker compose up -d
 ```
 
-Data compatibility: since v0.7 the schema is created fresh on first start and is not upgraded in place. A database stamped with an older schema version is rejected at startup with instructions; upgrading across that boundary means backing up the data directory (`scripts/backup.sh`), starting with a new database, and letting the next scan repopulate devices. Within a compatible schema version, replacing the binary is all an upgrade needs. ARMv7 devices have no prebuilt release artifact, cross-compile locally with `make build-linux-arm`.
+Data compatibility: since v0.7 the schema is created fresh on first start and is not upgraded in place. A database stamped with an older schema version is rejected at startup with instructions; **a v0.9 → v0.10 boundary database must be rebuilt, and so must a v0.10 → v0.11 one — a binary swap or package install alone is not enough**. Within a compatible schema version, replacing the binary is all an upgrade needs. ARMv7 devices have no prebuilt release artifact, cross-compile locally with `make build-linux-arm`.
 
 > **Crossing schema 8 → 9 (the asset-archive portfolio, #662–#669)** — two things to expect after the fresh database:
 >
