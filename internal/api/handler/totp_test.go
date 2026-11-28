@@ -8,7 +8,6 @@ import (
 	"database/sql"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"testing"
 	"time"
 
@@ -89,12 +88,13 @@ func Test2FA_EnableWithInvalidCode_Rejected(t *testing.T) {
 // code for an enabled user, issues a session token (completes 2FA login).
 func Test2FA_VerifyValidCode_ReturnsToken(t *testing.T) {
 	server, db := setupTestServer(t)
-	secret, userID, _ := setupAndEnable2FA(t, server, db, "liam", "Liam@2026")
+	secret, _, _ := setupAndEnable2FA(t, server, db, "liam", "Liam@2026")
+	challenge, _ := login2FAChallenge(t, server, "liam", "Liam@2026")
 
 	code, err := totp.GenerateCode(secret, time.Now())
 	require.NoError(t, err)
 	resp := authPost(t, server.URL+"/api/v1/auth/2fa/verify", "",
-		`{"user_id":`+itoaInt64(userID)+`,"code":"`+code+`"}`)
+		`{"challenge":"`+challenge+`","code":"`+code+`"}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var body map[string]any
@@ -107,10 +107,11 @@ func Test2FA_VerifyValidCode_ReturnsToken(t *testing.T) {
 // most security-critical assertion in the 2FA surface.
 func Test2FA_VerifyInvalidCode_Rejected(t *testing.T) {
 	server, db := setupTestServer(t)
-	_, userID, _ := setupAndEnable2FA(t, server, db, "mike", "Mike@2026")
+	_, _, _ = setupAndEnable2FA(t, server, db, "mike", "Mike@2026")
+	challenge, _ := login2FAChallenge(t, server, "mike", "Mike@2026")
 
 	resp := authPost(t, server.URL+"/api/v1/auth/2fa/verify", "",
-		`{"user_id":`+itoaInt64(userID)+`,"code":"000000"}`)
+		`{"challenge":"`+challenge+`","code":"not-a-code"}`)
 	require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode,
 		"a wrong 2FA code must be rejected with 422: accepting it is a 2FA bypass")
 	// And critically, no token is issued.
@@ -119,5 +120,21 @@ func Test2FA_VerifyInvalidCode_Rejected(t *testing.T) {
 	require.Empty(t, body["token"], "no session token on a rejected 2FA verify")
 }
 
-// itoaInt64 formats an int64 for the verify request body.
-func itoaInt64(n int64) string { return strconv.FormatInt(n, 10) }
+// login2FAChallenge completes password authentication for an enrolled user and
+// returns the one-time challenge plus user id. Verify must never trust a user_id
+// supplied by the client.
+func login2FAChallenge(t *testing.T, server *httptest.Server, username, password string) (string, int64) {
+	t.Helper()
+	resp := authPost(t, server.URL+"/api/v1/auth/login", "",
+		`{"username":"`+username+`","password":"`+password+`"}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var body struct {
+		Challenge string `json:"challenge"`
+		User      struct {
+			ID int64 `json:"id"`
+		} `json:"user"`
+	}
+	decodeJSON(t, resp, &body)
+	require.NotEmpty(t, body.Challenge)
+	return body.Challenge, body.User.ID
+}

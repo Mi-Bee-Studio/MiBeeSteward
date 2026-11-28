@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -182,8 +181,8 @@ func Test2FA_ErrorBranchSweep(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, code)
 	code, _ = postPlain(t, server.URL+"/api/v1/auth/2fa/verify", `{}`)
 	require.Equal(t, http.StatusBadRequest, code)
-	code, _ = postPlain(t, server.URL+"/api/v1/auth/2fa/verify", `{"user_id":1,"code":"000000"}`)
-	require.Equal(t, http.StatusBadRequest, code, "user 1 has no TOTP row → not configured")
+	code, _ = postPlain(t, server.URL+"/api/v1/auth/2fa/verify", `{"challenge":"invalid","code":"000000"}`)
+	require.Equal(t, http.StatusBadRequest, code, "caller-supplied user_id is no longer accepted")
 
 	// Enable before setup → 400; empty code → 400; bad body → 400.
 	resp := authPost(t, server.URL+"/api/v1/auth/2fa/enable", token, `{"code":"123456"}`)
@@ -211,8 +210,8 @@ func Test2FA_ErrorBranchSweep(t *testing.T) {
 	require.NotEmpty(t, setup.Secret)
 
 	code, _ = postPlain(t, server.URL+"/api/v1/auth/2fa/verify",
-		`{"user_id":`+userIDJSON(t, db, "2faerr")+`,"code":"123456"}`)
-	require.Equal(t, http.StatusBadRequest, code, "secret exists but not enabled → 2FA is not enabled")
+		`{"challenge":"invalid","code":"123456"}`)
+	require.Equal(t, http.StatusBadRequest, code, "no challenge is issued before 2FA is enabled")
 
 	// Enable with a WRONG code → 422 (the bypass guard, at the route level).
 	resp = authPost(t, server.URL+"/api/v1/auth/2fa/enable", token, `{"code":"000000"}`)
@@ -223,8 +222,9 @@ func Test2FA_ErrorBranchSweep(t *testing.T) {
 	require.NoError(t, err)
 	resp = authPost(t, server.URL+"/api/v1/auth/2fa/enable", token, `{"code":"`+valid+`"}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+	challenge, _ := login2FAChallenge(t, server, "2faerr", "Err@2026")
 	code, _ = postPlain(t, server.URL+"/api/v1/auth/2fa/verify",
-		`{"user_id":`+userIDJSON(t, db, "2faerr")+`,"code":"000000"}`)
+		`{"challenge":"`+challenge+`","code":"not-a-code"}`)
 	require.Equal(t, http.StatusUnprocessableEntity, code)
 
 	// Wrong password on disable AFTER enable.
@@ -243,13 +243,6 @@ func postPlain(t *testing.T, url, body string) (int, string) {
 	b, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	return resp.StatusCode, string(b)
-}
-
-func userIDJSON(t *testing.T, db *sql.DB, username string) string {
-	t.Helper()
-	var id int64
-	require.NoError(t, db.QueryRow(`SELECT id FROM users WHERE username = ?`, username).Scan(&id))
-	return strconv.FormatInt(id, 10)
 }
 
 // TestAgentReport_RecordsDetectedSubnets (#737 follow-up): the runner's

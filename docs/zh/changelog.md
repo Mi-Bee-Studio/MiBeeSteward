@@ -5,6 +5,14 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Fixed
+- **生产可信化 P0——公开占位凭据与可预测 HA JWT（#785）**：启动校验现在拒绝已知公开模板占位 JWT/管理员密钥；生产与 Docker 模板不再携带可直接使用的公开默认值；Home Assistant 首次启动生成密码学随机 JWT，以 0600 持久化到 `/data/steward/`，重启复用。
+- **生产可信化 P0——Rust Agent 发布语料真正内嵌（#783）**：指纹 YAML 与 SNMP 表编译进二进制，不再运行时读取构建机 `CARGO_MANIFEST_DIR`；新增 `mibee-agent fingerprint-check`，在无配置/源码树时验证内嵌语料，CI 与发布均从空工作目录执行。
+- **生产可信化 P0——Helm 运行时契约（#782）**：配置挂载到 `/app/configs/config.yaml`，全部权威状态挂载到 `/data`，existing secret/claim 下 PVC 选择正确，容器以 non-root 且禁止权限提升运行。
+- **生产可信化 P0——2FA challenge 与 closed scope（#787）**：2FA verify 现在要求绑定密码验证成功的一次性短时 challenge，执行尝试次数/账户锁定检查，不再信任客户端 `user_id`；closed 模式授权 DB 故障时 fail-closed。
+
 ## [0.10.0] - 2026-11-24
 
 ### Added

@@ -54,6 +54,7 @@ func TestLogin_TwoFactorChallengeCookieRoute(t *testing.T) {
 		`{"username":"challu","password":"Chal@2026"}`)
 	require.Equal(t, http.StatusOK, code)
 	require.Contains(t, body, `"two_factor_required":true`)
+	require.Contains(t, body, `"challenge":`)
 	require.NotContains(t, body, `"token":"eyJ`, "no session token in the challenge response")
 }
 

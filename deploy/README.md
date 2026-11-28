@@ -275,7 +275,7 @@ docker compose --profile host logs -f
 mkdir -p ~/mibee-steward-backups
 
 # 设置 Docker 容器内的备份任务
-docker compose exec mibee-steward bash -c "cd /app && ./scripts/backup.sh /app/data/mibee.db /app/data/backups 30"
+docker compose exec mibee-steward bash -c "cd /app && ./scripts/backup.sh /data/mibee.db /data/backups 30"
 
 # 或者设置宿主机上的备份脚本
 echo '#!/bin/bash

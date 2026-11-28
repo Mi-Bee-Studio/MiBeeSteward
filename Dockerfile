@@ -69,10 +69,11 @@ RUN if [ "${SETCAP}" = "1" ]; then \
 
 WORKDIR /app
 EXPOSE 8080
-# Pre-create /data owned by mibee so the non-root USER can write the SQLite DB
-# on a freshly-created docker volume (volumes inherit the image's ownership the
-# first time they're mounted; without this /data is owned by root).
-RUN mkdir -p /data && chown -R mibee:mibee /data
+# Runtime contract used by Compose/Helm: config is mounted at
+# /app/configs/config.yaml and authoritative state is mounted at /data.
+# Pre-create both directories for the non-root user (first-run config generation
+# writes /app/configs when no file is mounted).
+RUN mkdir -p /app/configs /data && chown -R mibee:mibee /app/configs /data
 VOLUME ["/data"]
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

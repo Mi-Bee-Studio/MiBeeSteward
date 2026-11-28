@@ -28,8 +28,8 @@ func TestTOTPSetupRequest_JSONTags(t *testing.T) {
 
 func TestTOTPVerifyRequest_JSONTags(t *testing.T) {
 	req := TOTPVerifyRequest{
-		UserID: 1,
-		Code:   "123456",
+		Challenge: "one-time-challenge",
+		Code:      "123456",
 	}
 
 	data, err := json.Marshal(req)
@@ -42,11 +42,14 @@ func TestTOTPVerifyRequest_JSONTags(t *testing.T) {
 		t.Fatalf("failed to unmarshal: %v", err)
 	}
 
-	expectedFields := []string{"user_id", "code"}
+	expectedFields := []string{"challenge", "code"}
 	for _, field := range expectedFields {
 		if _, ok := decoded[field]; !ok {
 			t.Errorf("missing JSON field %q in TOTPVerifyRequest", field)
 		}
+	}
+	if _, ok := decoded["user_id"]; ok {
+		t.Error("TOTPVerifyRequest must not accept caller-supplied user_id")
 	}
 }
 

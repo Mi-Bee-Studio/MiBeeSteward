@@ -206,6 +206,9 @@ jobs:
           cp agent-rs/target/armv7-unknown-linux-musleabihf/release/mibee-agent mibee-agent-linux-armv7
           ./mibee-agent-linux-amd64 --version
           ./mibee-agent-linux-amd64 --version | grep -q "^mibee-agent ${GITHUB_REF_NAME}$"
+          bin="$PWD/mibee-agent-linux-amd64"
+          tmp="$(mktemp -d)"
+          (cd "$tmp" && "$bin" fingerprint-check)
           file mibee-agent-linux-arm64 mibee-agent-linux-armv7
       # Router package forms for the agent (arm64, same arch choice as the
       # center's openwrt job): tarball / .ipk / .apk. AGENT_BIN reuses the

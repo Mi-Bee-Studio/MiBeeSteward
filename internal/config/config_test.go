@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -101,6 +102,58 @@ func TestValidationValidSQLite(t *testing.T) {
 
 	if err := Validate(cfg); err != nil {
 		t.Errorf("Validate failed: %v", err)
+	}
+}
+
+func TestValidateRejectsPlaceholderSecrets(t *testing.T) {
+	jwtPlaceholders := []string{
+		"change-me-in-production",
+		"CHANGE_THIS (generate with: openssl rand -base64 32)",
+		"Change-Me-To-A-Random-String-32-Chars-Min",
+		"your-strong-jwt-secret-here",
+		"replace-me-with-a-real-random-secret-32chars",
+		"<random-32-char>",
+	}
+	for _, secret := range jwtPlaceholders {
+		t.Run("jwt/"+secret, func(t *testing.T) {
+			cfg := &Config{Auth: AuthConfig{JWTSecret: secret}}
+			err := Validate(cfg)
+			if err == nil || !strings.Contains(err.Error(), "auth.jwt_secret") {
+				t.Fatalf("Validate(%q) = %v, want placeholder auth.jwt_secret error", secret, err)
+			}
+		})
+	}
+
+	adminPlaceholders := []string{
+		"CHANGE_THIS (first-run admin password)",
+		"your-password",
+		"replace-me",
+	}
+	for _, password := range adminPlaceholders {
+		t.Run("admin/"+password, func(t *testing.T) {
+			cfg := &Config{Auth: AuthConfig{
+				JWTSecret:            "a-32-char-secret-for-testing-purposes",
+				InitialAdminPassword: password,
+			}}
+			err := Validate(cfg)
+			if err == nil || !strings.Contains(err.Error(), "auth.initial_admin_password") {
+				t.Fatalf("Validate(%q) = %v, want placeholder auth.initial_admin_password error", password, err)
+			}
+		})
+	}
+}
+
+func TestValidateAllowsEmptyAdminPasswordAndRealSecrets(t *testing.T) {
+	cfg := &Config{Auth: AuthConfig{
+		JWTSecret: "k7Qv9mR2xL8pN4cT6yW1zB5sH0dF3gJ7",
+	}}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("Validate rejected empty browser-first-run admin password: %v", err)
+	}
+
+	cfg.Auth.InitialAdminPassword = "CorrectHorse!42Battery"
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("Validate rejected a non-placeholder admin password: %v", err)
 	}
 }
 

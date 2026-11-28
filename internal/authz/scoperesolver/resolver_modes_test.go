@@ -38,6 +38,17 @@ func TestResolver_ModeAndInvalidateAll(t *testing.T) {
 	r.InvalidateAll()
 }
 
+func TestResolver_ClosedModeDBFailureFailsClosed(t *testing.T) {
+	db, err := testutil.SetupTestDBFromSchema()
+	require.NoError(t, err)
+	r := New(db, domain.ScopeModeClosed)
+	require.NoError(t, db.Close())
+
+	scope := r.Resolve(context.Background(), 7, domain.RoleUser)
+	require.False(t, scope.Global, "closed-mode storage failure must not widen to global scope")
+	require.Empty(t, scope.NetworkIDs, "failed authorization resolution must expose no networks")
+}
+
 func TestDeleteByUserNetwork(t *testing.T) {
 	db, err := testutil.SetupTestDBFromSchema()
 	require.NoError(t, err)

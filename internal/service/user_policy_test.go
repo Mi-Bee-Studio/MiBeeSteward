@@ -127,6 +127,8 @@ func TestLogin_TwoFactorRequiredChallenge(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, resp.TwoFactorRequired, "enrolled user must receive the 2FA challenge")
 	require.Empty(t, resp.Token, "no session token before the second factor")
+	require.NotEmpty(t, resp.Challenge, "password success must issue a one-time 2FA challenge")
+	require.Equal(t, int(totpChallengeTTL.Seconds()), resp.ChallengeExpiresIn)
 
 	// Wrong password still fails outright even when enrolled.
 	_, err = svc.Login(ctx, "tfu", "wrong")

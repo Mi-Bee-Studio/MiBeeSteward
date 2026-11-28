@@ -93,7 +93,7 @@ database:
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `auth.jwt_secret` | string | none (required) | JWT signing key. **Required**: startup fails when empty, shorter than 32 characters, or equal to the placeholder `"change-me-in-production"` (25 chars, it fails both checks). |
+| `auth.jwt_secret` | string | none (required) | JWT signing key. **Required**: startup fails when empty, shorter than 32 characters, or set to a known public template placeholder such as `CHANGE_THIS...`, `change-me-in-production`, or `your-strong-jwt-secret-here`. |
 | `auth.token_expiry` | string | "24h" | JWT token lifetime |
 | `auth.initial_admin_password` | string | `""` | Bootstrap admin credential. **Empty (default) = first-run browser setup**: the admin is seeded with no password and the login page asks you to create one (`GET /auth/setup-status` → `POST /auth/setup`, policy-checked, one-shot). A non-empty value is a temporary credential; first login forces a change. |
 | `auth.cookie_domain` | string | "" | Cookie domain (empty = current domain) |
@@ -929,7 +929,7 @@ The application validates configuration on startup (`internal/config/config.go`)
 
 **Center / standalone mode**:
 - `auth.jwt_secret` is required and must be at least 32 characters long
-- `auth.jwt_secret` must not equal the placeholder `"change-me-in-production"`
+- `auth.jwt_secret` must not be a known public template placeholder (for example `CHANGE_THIS...`, `change-me-in-production`, or `your-strong-jwt-secret-here`).
 - an empty `auth.initial_admin_password` now means "first-run browser setup", not a startup exit (see `cmd/server/main.go`)
 
 The following produce **warnings only** and do not block startup:

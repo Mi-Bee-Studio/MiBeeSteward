@@ -65,5 +65,8 @@ secrets:
 config:
   # Non-secret server config (rendered into a ConfigMap; env-based, see
   # deploy/env.example for the full key list). Scanner/probe tuning keys
-  # carry the MIBEE_ prefix here directly.
+  # carry the MIBEE_ prefix here directly. The runtime PVC is mounted at /data;
+  # keep every writable state path under it.
+  MIBEE_DATABASE_SQLITE_PATH: "/data/mibee.db"
+  MIBEE_STORAGE_UPLOAD_PATH: "/data/uploads"
   MIBEE_SCANNER_ALLOW_RESERVED_TARGETS: "false"

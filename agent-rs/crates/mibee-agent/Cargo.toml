@@ -36,6 +36,7 @@ futures = "0.3"
 base64 = "0.22"
 tar = "0.4"
 flate2 = "1"
+include_dir = "0.7"
 rand = "0.8"
 aes-gcm = "0.10"
 # SNMPv3 USM crypto (gosnmp parity): RFC3414 MD5/SHA1 manual HMAC,

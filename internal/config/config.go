@@ -706,6 +706,34 @@ func normalizeRBAC(cfg *Config) {
 	}
 }
 
+// isPlaceholderSecret catches the public examples shipped in templates and
+// docs. A length check alone is not enough: several placeholders are longer
+// than 32 characters and would otherwise become valid signing keys or admin
+// passwords on a forgetful first deploy. Matching is deliberately limited to
+// known template markers rather than generic words such as "secret" so real
+// random values are not rejected.
+func isPlaceholderSecret(value string) bool {
+	v := strings.ToLower(strings.TrimSpace(value))
+	if v == "" {
+		return false
+	}
+	if strings.HasPrefix(v, "<") && strings.HasSuffix(v, ">") {
+		return true
+	}
+	compact := strings.NewReplacer("_", "-", " ", "").Replace(v)
+	for _, marker := range []string{
+		"change-this", "changeme", "change-me",
+		"replace-this", "replaceme", "replace-me",
+		"your-secret", "your-password", "your-strong",
+		"placeholder", "example-secret",
+	} {
+		if strings.Contains(compact, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 // Validate checks the configuration for errors.
 func Validate(cfg *Config) error {
 	// Agent mode (center URL set) doesn't serve users/SPA, so it has no JWT,
@@ -728,8 +756,11 @@ func Validate(cfg *Config) error {
 	if len(cfg.Auth.JWTSecret) < 32 {
 		return errors.New("auth.jwt_secret must be at least 32 characters long")
 	}
-	if cfg.Auth.JWTSecret == "change-me-in-production" {
-		return errors.New("auth.jwt_secret must be changed from the default value")
+	if isPlaceholderSecret(cfg.Auth.JWTSecret) {
+		return errors.New("auth.jwt_secret must be changed from the template placeholder to a random secret")
+	}
+	if cfg.Auth.InitialAdminPassword != "" && isPlaceholderSecret(cfg.Auth.InitialAdminPassword) {
+		return errors.New("auth.initial_admin_password must be changed from the template placeholder (or left empty for browser first-run setup)")
 	}
 
 	// Validation warnings for insecure configurations

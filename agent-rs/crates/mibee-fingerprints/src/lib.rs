@@ -68,18 +68,34 @@ impl RuleClassifier {
             Ok(rd) => rd,
             Err(_) => return Ok(()), // missing/unreadable dir: silent, unloaded
         };
-        let mut names: Vec<String> = rd
+        let mut files: Vec<(String, String)> = rd
             .filter_map(|e| e.ok())
             .filter(|e| e.path().is_file())
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .filter(|n| n.ends_with(".yaml"))
-            .collect();
-        names.sort();
+            .map(|name| {
+                let text = std::fs::read_to_string(path.join(&name))
+                    .map_err(|e| LoadError(format!("fingerprint {name}: {e}")))?;
+                Ok((name, text))
+            })
+            .collect::<Result<_, LoadError>>()?;
+        files.sort_by(|a, b| a.0.cmp(&b.0));
+        self.load_contents(files)
+    }
+
+    /// Load rule YAML from in-memory `(filename, contents)` pairs. This is the
+    /// same compiler path as `load_from_dir`, used by binaries that embed the
+    /// corpus at compile time and therefore have no runtime source tree.
+    pub fn load_contents<I, T>(&mut self, files: I) -> Result<(), LoadError>
+    where
+        I: IntoIterator<Item = (String, T)>,
+        T: AsRef<str>,
+    {
+        let mut files: Vec<(String, T)> = files.into_iter().collect();
+        files.sort_by(|a, b| a.0.cmp(&b.0));
         let mut all: Vec<CompiledRule> = Vec::new();
-        for name in &names {
-            let text = std::fs::read_to_string(path.join(name))
-                .map_err(|e| LoadError(format!("fingerprint {name}: {e}")))?;
-            let mut rules = compile_rules_from_str(&text, name)?;
+        for (name, text) in files {
+            let mut rules = compile_rules_from_str(text.as_ref(), &name)?;
             all.append(&mut rules);
         }
         // Priority DESC, id ASC, stable over the filename-ordered concat.

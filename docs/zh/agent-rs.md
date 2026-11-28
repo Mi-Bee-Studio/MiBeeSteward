@@ -162,7 +162,7 @@ bpf2go 产物逐字节相同 —— bpf2go 的 `go generate` 步骤一条命令�
 ## 发布与验证门禁
 
 - **CI**：cargo workspace 在每个 PR 上跑独立测试任务（`agent-rs`）——全量测试套件加全语料加载，规则数断言为下限（语料只增不减）。2026-10-09 之前这套测试只在开发机上跑；该任务上线的当天就抓到一个在语料批次中静默断裂的计数 pin。
-- **发版**：`v*` tag 构建静态 musl 二进制，覆盖 amd64、arm64 与 armv7，版本串在构建期由 tag 注入（`MIBEE_AGENT_VERSION`；日常构建报 Cargo.toml 版本）。制品以 `mibee-agent-linux-amd64` / `-arm64` / `-armv7` 挂上 GitHub Release，流水线还会在 runner 上执行 amd64 二进制核验版本戳。
+- **发版**：`v*` tag 构建静态 musl 二进制，覆盖 amd64、arm64 与 armv7，版本串在构建期由 tag 注入（`MIBEE_AGENT_VERSION`；日常构建报 Cargo.toml 版本）。制品以 `mibee-agent-linux-amd64` / `-arm64` / `-armv7` 挂上 GitHub Release，流水线还会在 runner 上执行 amd64 二进制核验版本戳，并从空工作目录运行 `fingerprint-check`，验证规则语料与 SNMP 表真正编译进产物、不依赖构建机源码路径。
 - **实测覆盖率**：两 crate 合计 74.3% 行 / 74.6% 函数（`cargo llvm-cov`，2026-10-09，19,244 行被统计）。这个数字低估了验证强度：对等关键的分类器与 SNMP 层由全语料字节对拍和上文的真实 net-snmp 差分把门，行覆盖率看不见它们。Rust 侧的覆盖率棘轮是候选后续项，当前不是门禁。
 
 ## 已知缺口 / 后续项

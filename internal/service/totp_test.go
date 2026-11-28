@@ -24,6 +24,9 @@ func setupTOTPTest(t *testing.T) (*TOTPService, *sql.DB, *db.Queries, int64) {
 
 	dbConn, err := sql.Open("sqlite", ":memory:")
 	require.NoError(t, err)
+	// :memory: is per-connection; keep the harness on one connection so the
+	// challenge verification's user lookup sees the seeded tables.
+	dbConn.SetMaxOpenConns(1)
 	t.Cleanup(func() { dbConn.Close() })
 
 	// Create users table
@@ -38,6 +41,7 @@ func setupTOTPTest(t *testing.T) (*TOTPService, *sql.DB, *db.Queries, int64) {
 			locked_until DATETIME,
 			must_change_password BOOLEAN NOT NULL DEFAULT 0,
 			password_changed_at DATETIME,
+			token_version INTEGER NOT NULL DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)
@@ -77,6 +81,54 @@ func setupTOTPTest(t *testing.T) (*TOTPService, *sql.DB, *db.Queries, int64) {
 
 	svc := NewTOTPService(dbConn, nil)
 	return svc, dbConn, queries, userID
+}
+
+func TestTOTPChallenge_OneTimeAndBounded(t *testing.T) {
+	svc, _, _, userID := setupTOTPTest(t)
+	ctx := context.Background()
+	setup, err := svc.Setup(ctx, userID, "testuser")
+	require.NoError(t, err)
+	code, err := totp.GenerateCode(setup.Secret, time.Now())
+	require.NoError(t, err)
+	require.NoError(t, svc.Enable(ctx, userID, code))
+
+	challenge, ttl, err := svc.IssueChallenge(userID)
+	require.NoError(t, err)
+	require.Equal(t, totpChallengeTTL, ttl)
+	require.NotEmpty(t, challenge)
+
+	verifiedID, err := svc.VerifyChallenge(ctx, challenge, code)
+	require.NoError(t, err)
+	require.Equal(t, userID, verifiedID)
+	_, err = svc.VerifyChallenge(ctx, challenge, code)
+	require.ErrorIs(t, err, ErrTOTPChallengeInvalid, "a consumed challenge must not be reusable")
+
+	bounded, _, err := svc.IssueChallenge(userID)
+	require.NoError(t, err)
+	for i := 0; i < totpChallengeMaxAttempts; i++ {
+		_, err = svc.VerifyChallenge(ctx, bounded, "not-a-code")
+		require.ErrorIs(t, err, ErrInvalidTOTPCode)
+	}
+	_, err = svc.VerifyChallenge(ctx, bounded, code)
+	require.ErrorIs(t, err, ErrTOTPChallengeInvalid, "attempt budget exhaustion must invalidate the challenge")
+}
+
+func TestTOTPChallenge_LockedUserRejected(t *testing.T) {
+	svc, dbConn, _, userID := setupTOTPTest(t)
+	ctx := context.Background()
+	setup, err := svc.Setup(ctx, userID, "testuser")
+	require.NoError(t, err)
+	code, err := totp.GenerateCode(setup.Secret, time.Now())
+	require.NoError(t, err)
+	require.NoError(t, svc.Enable(ctx, userID, code))
+
+	lockedUntil := time.Now().Add(30 * time.Minute)
+	_, err = dbConn.Exec(`UPDATE users SET locked_until = ? WHERE id = ?`, lockedUntil, userID)
+	require.NoError(t, err)
+	challenge, _, err := svc.IssueChallenge(userID)
+	require.NoError(t, err)
+	_, err = svc.VerifyChallenge(ctx, challenge, code)
+	require.ErrorIs(t, err, ErrAccountLocked)
 }
 
 func TestTOTP_Setup(t *testing.T) {
@@ -387,13 +439,17 @@ func TestDomainTOTPDTOs(t *testing.T) {
 
 	// Verify LoginResponse with TwoFactorRequired
 	loginResp := domain.LoginResponse{
-		Token:             "",
-		User:              domain.UserResponse{ID: 1, Username: "testuser"},
-		TwoFactorRequired: true,
+		Token:              "",
+		User:               domain.UserResponse{ID: 1, Username: "testuser"},
+		TwoFactorRequired:  true,
+		Challenge:          "one-time-challenge",
+		ChallengeExpiresIn: 300,
 	}
 	data, err = json.Marshal(loginResp)
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"two_factor_required":true`)
+	require.Contains(t, string(data), `"challenge":"one-time-challenge"`)
+	require.Contains(t, string(data), `"challenge_expires_in":300`)
 
 	// When two_factor_required is false, it should be omitted
 	loginResp2 := domain.LoginResponse{

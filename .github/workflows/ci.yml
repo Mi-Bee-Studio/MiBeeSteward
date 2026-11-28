@@ -68,6 +68,16 @@ jobs:
       - name: cargo test (ebpf feature)
         working-directory: agent-rs
         run: cargo test --locked -p mibee-ebpf --features loader && cargo test --locked -p mibee-agent --features ebpf
+      # The release agent must carry its fingerprint corpus inside the binary.
+      # Run the check from an empty cwd so a build-machine source path cannot
+      # accidentally satisfy the load.
+      - name: Embedded corpus check outside source tree
+        working-directory: agent-rs
+        run: |
+          cargo build --locked -p mibee-agent
+          bin="$PWD/target/debug/mibee-agent"
+          tmp="$(mktemp -d)"
+          (cd "$tmp" && "$bin" fingerprint-check)
 
   # agent-rs line-coverage ratchet (#559): the Rust mirror of the Go side's
   # coverage-floor gate. Separate job so the instrumented rebuild never
@@ -259,6 +269,8 @@ jobs:
       # eval create=true form) to catch condition bugs the lint can't.
       - run: helm template deploy/helm/mibee-steward >/dev/null
       - run: helm template deploy/helm/mibee-steward --set secrets.create=true >/dev/null
+      - name: Helm runtime contract assertions
+        run: bash scripts/check-helm.sh
   sqlc-verify:
     runs-on: ubuntu-latest
     steps:

@@ -12,13 +12,17 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"math/big"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
@@ -32,12 +36,13 @@ import (
 const TOTPIssuer = "MiBee Steward"
 
 var (
-	ErrTOTPNotFound        = errors.New("TOTP not configured for user")
-	ErrTOTPAlreadyEnabled  = errors.New("TOTP is already enabled")
-	ErrTOTPNotEnabled      = errors.New("TOTP is not enabled")
-	ErrInvalidTOTPCode     = errors.New("invalid TOTP code")
-	ErrInvalidBackupCode   = errors.New("invalid backup code")
-	ErrTOTPInvalidPassword = errors.New("invalid password")
+	ErrTOTPNotFound         = errors.New("TOTP not configured for user")
+	ErrTOTPAlreadyEnabled   = errors.New("TOTP is already enabled")
+	ErrTOTPNotEnabled       = errors.New("TOTP is not enabled")
+	ErrInvalidTOTPCode      = errors.New("invalid TOTP code")
+	ErrInvalidBackupCode    = errors.New("invalid backup code")
+	ErrTOTPInvalidPassword  = errors.New("invalid password")
+	ErrTOTPChallengeInvalid = errors.New("invalid or expired 2FA challenge")
 )
 
 // TOTPService handles TOTP enrollment, verification, and management.
@@ -45,14 +50,29 @@ type TOTPService struct {
 	queries   *db.Queries
 	userDB    db.DBTX
 	auditRepo *AuditRepository
+
+	challengeMu sync.Mutex
+	challenges  map[string]totpChallenge
+}
+
+const (
+	totpChallengeTTL         = 5 * time.Minute
+	totpChallengeMaxAttempts = 5
+)
+
+type totpChallenge struct {
+	userID    int64
+	expiresAt time.Time
+	attempts  int
 }
 
 // NewTOTPService creates a new TOTPService.
 func NewTOTPService(dbConn db.DBTX, auditRepo *AuditRepository) *TOTPService {
 	return &TOTPService{
-		queries:   db.New(dbConn),
-		userDB:    dbConn,
-		auditRepo: auditRepo,
+		queries:    db.New(dbConn),
+		userDB:     dbConn,
+		auditRepo:  auditRepo,
+		challenges: make(map[string]totpChallenge),
 	}
 }
 
@@ -142,6 +162,79 @@ func (s *TOTPService) Enable(ctx context.Context, userID int64, code string) err
 	}
 
 	return nil
+}
+
+// IssueChallenge creates a short-lived, single-factor-completed login challenge.
+// The raw token is returned once; only its SHA-256 hash is kept in memory. The
+// challenge is bound to the user that passed password authentication and can be
+// used for at most totpChallengeMaxAttempts code checks.
+func (s *TOTPService) IssueChallenge(userID int64) (string, time.Duration, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", 0, fmt.Errorf("generate 2FA challenge: %w", err)
+	}
+	token := base64.RawURLEncoding.EncodeToString(raw)
+	key := challengeKey(token)
+
+	s.challengeMu.Lock()
+	defer s.challengeMu.Unlock()
+	now := time.Now()
+	for k, c := range s.challenges {
+		if !now.Before(c.expiresAt) {
+			delete(s.challenges, k)
+		}
+	}
+	s.challenges[key] = totpChallenge{userID: userID, expiresAt: now.Add(totpChallengeTTL)}
+	return token, totpChallengeTTL, nil
+}
+
+// VerifyChallenge validates the one-time login challenge and its TOTP/backup
+// code. The challenge lock serializes verification so concurrent requests cannot
+// consume the same challenge twice. A successful verification removes it; a
+// failed code consumes one of the bounded attempts.
+func (s *TOTPService) VerifyChallenge(ctx context.Context, challenge, code string) (int64, error) {
+	if challenge == "" || code == "" {
+		return 0, ErrTOTPChallengeInvalid
+	}
+	key := challengeKey(challenge)
+
+	s.challengeMu.Lock()
+	defer s.challengeMu.Unlock()
+	c, ok := s.challenges[key]
+	if !ok {
+		return 0, ErrTOTPChallengeInvalid
+	}
+	if !time.Now().Before(c.expiresAt) {
+		delete(s.challenges, key)
+		return 0, ErrTOTPChallengeInvalid
+	}
+
+	user, err := s.queries.GetUserByID(ctx, c.userID)
+	if err != nil {
+		delete(s.challenges, key)
+		return 0, ErrTOTPChallengeInvalid
+	}
+	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
+		delete(s.challenges, key)
+		return 0, ErrAccountLocked
+	}
+
+	if err := s.Verify(ctx, c.userID, code); err != nil {
+		c.attempts++
+		if c.attempts >= totpChallengeMaxAttempts {
+			delete(s.challenges, key)
+		} else {
+			s.challenges[key] = c
+		}
+		return 0, err
+	}
+	delete(s.challenges, key)
+	return c.userID, nil
+}
+
+func challengeKey(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
 // Verify checks a TOTP code or backup code during login.
