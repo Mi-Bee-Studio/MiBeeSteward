@@ -36,6 +36,7 @@ tags:
   - {name: Auth}
   - {name: Users}
   - {name: Devices}
+  - {name: Identity}
   - {name: Networks}
   - {name: Scanner}
   - {name: ProbeTargets}
@@ -701,6 +702,26 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/DeviceDiagnosis"}
         "404": {$ref: "#/components/responses/Error"}
+  /devices/{id}/identity:
+    get:
+      tags: [Identity]
+      summary: Read-only identity projection and review candidates for a device (#781)
+      description: >-
+        Includes normalized hostname, serial, MAC aliases, leaf TLS certificate
+        fingerprints, network-presence/staleness facts, evidence coverage, and
+        explainable candidate pairs. Archived devices can be inspected directly
+        but never enter active candidate generation. No merge/split writes occur.
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200":
+          description: Device identity projection
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeviceIdentity"}
+        "400": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "500": {$ref: "#/components/responses/Error"}
   /devices/{id}/interfaces:
     get:
       tags: [Devices]
@@ -893,6 +914,47 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/HeartbeatStats"}
 
+  /identity/candidates:
+    get:
+      tags: [Identity]
+      summary: Explainable, read-only asset-identity candidate review (#781)
+      description: >-
+        Computes candidate pairs over the caller's scoped active inventory from
+        normalized hostname, serial, current/alias MAC and leaf TLS certificate
+        fingerprint evidence, with temporal overlap and counter-evidence.
+        IP address, vendor/model and OUI alone never create a candidate.
+        device_ids anchors results to pairs involving those devices while the
+        comparison inventory remains the full scoped active set, so a matching
+        row on another inventory page is not hidden. Summary always describes
+        the scoped active inventory before candidate pagination.
+      parameters:
+        - {$ref: "#/components/parameters/limit"}
+        - {$ref: "#/components/parameters/offset"}
+        - name: min_confidence
+          in: query
+          description: Return this confidence and higher (high > medium > low)
+          schema: {type: string, enum: [high, medium, low]}
+        - name: network_id
+          in: query
+          description: Restrict both inventory and candidate pairs to one network (still intersected with caller scope)
+          schema: {type: integer, format: int64, minimum: 1}
+        - name: device_ids
+          in: query
+          description: Comma-separated anchor device IDs; at most 200
+          style: form
+          explode: false
+          schema:
+            type: array
+            maxItems: 200
+            items: {type: integer, format: int64, minimum: 1}
+      responses:
+        "200":
+          description: Paginated candidate pairs and scoped inventory summary
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/IdentityCandidateList"}
+        "400": {$ref: "#/components/responses/Error"}
+        "500": {$ref: "#/components/responses/Error"}
   /networks:
     get:
       tags: [Networks]
@@ -2620,6 +2682,103 @@ components:
         first_seen: {type: string, format: date-time}
         last_seen: {type: string, format: date-time}
         see_count: {type: integer, format: int64}
+    IdentityConfidence:
+      type: string
+      enum: [high, medium, low]
+      description: Explainable confidence tier derived from the candidate signals, not a black-box score
+    IdentitySignal:
+      type: string
+      enum: [hostname, mac_alias, serial, certificate]
+      description: Stable identity evidence; IP and OUI are deliberately absent
+    IdentityEvidence:
+      type: object
+      required: [signal, source, detail]
+      properties:
+        signal: {$ref: "#/components/schemas/IdentitySignal"}
+        source: {type: string, description: Persisted fact backing this evidence}
+        detail: {type: string, description: Human-inspectable normalized match detail}
+        vantage: {type: string}
+        observed_at: {type: string, format: date-time, nullable: true}
+    IdentityDevice:
+      type: object
+      description: Read-only identity projection; no field is an automatic merge decision
+      required: [id, device_uuid, name, type, brand, model, ip_address, mac_address, network_id, status, mac_aliases, multi_homed, stale, evidence_coverage]
+      properties:
+        id: {type: integer, format: int64}
+        device_uuid: {type: string}
+        name: {type: string}
+        type: {type: string}
+        brand: {type: string}
+        model: {type: string}
+        ip_address: {type: string}
+        mac_address: {type: string}
+        hostname: {type: string}
+        serial_number: {type: string}
+        network_id: {type: integer, format: int64, nullable: true}
+        status: {type: string, enum: [online, offline, unknown]}
+        archived_at: {type: string, format: date-time, nullable: true}
+        first_seen: {type: string, format: date-time, nullable: true}
+        last_seen: {type: string, format: date-time, nullable: true}
+        mac_aliases: {type: array, items: {type: string}}
+        certificate_fingerprints: {type: array, items: {type: string}, description: Normalized leaf TLS certificate SHA-256 fingerprints}
+        multi_homed: {type: boolean, description: More than one persisted network-presence row}
+        stale: {type: boolean, description: No last-seen timestamp or older than the seven-day review window}
+        evidence_coverage: {type: number, format: double, minimum: 0, maximum: 1, description: Fraction of six identity-evidence classes present}
+    IdentityCandidate:
+      type: object
+      description: Review suggestion only; the service never merges, splits or renames device rows
+      required: [id, kind, confidence, score, signals, evidence, counter_evidence, temporal_overlap, device_a, device_b]
+      properties:
+        id: {type: string, description: Stable hash of the ordered device-id pair}
+        kind: {type: string, enum: [hostname, mac_alias, serial, certificate, combined]}
+        confidence: {$ref: "#/components/schemas/IdentityConfidence"}
+        score: {type: integer, minimum: 0, maximum: 99}
+        signals:
+          type: array
+          items: {$ref: "#/components/schemas/IdentitySignal"}
+        evidence:
+          type: array
+          items: {$ref: "#/components/schemas/IdentityEvidence"}
+        counter_evidence:
+          type: array
+          nullable: true
+          items: {type: string}
+        temporal_overlap: {type: boolean}
+        device_a: {$ref: "#/components/schemas/IdentityDevice"}
+        device_b: {$ref: "#/components/schemas/IdentityDevice"}
+    IdentitySummary:
+      type: object
+      description: Scoped active-inventory summary before candidate filtering/pagination; rates are 0..1
+      required: [total_devices, candidate_count, high_count, medium_count, low_count, unknown_rate, stale_rate, evidence_coverage]
+      properties:
+        total_devices: {type: integer, format: int64}
+        candidate_count: {type: integer, format: int64}
+        high_count: {type: integer, format: int64}
+        medium_count: {type: integer, format: int64}
+        low_count: {type: integer, format: int64}
+        unknown_rate: {type: number, format: double}
+        stale_rate: {type: number, format: double}
+        evidence_coverage: {type: number, format: double}
+    IdentityCandidateList:
+      type: object
+      required: [candidates, summary, total, limit, offset]
+      properties:
+        candidates:
+          type: array
+          items: {$ref: "#/components/schemas/IdentityCandidate"}
+        summary: {$ref: "#/components/schemas/IdentitySummary"}
+        total: {type: integer, description: Candidate count after anchor/confidence filters, before pagination}
+        limit: {type: integer, description: Effective page size}
+        offset: {type: integer}
+    DeviceIdentity:
+      type: object
+      required: [device, candidates]
+      properties:
+        device: {$ref: "#/components/schemas/IdentityDevice"}
+        candidates:
+          type: array
+          items: {$ref: "#/components/schemas/IdentityCandidate"}
+
     DeviceDiagnosis:
       type: object
       description: Per-device network-anomaly verdict (#761), computed on demand

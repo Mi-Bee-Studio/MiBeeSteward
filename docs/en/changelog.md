@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Trusted asset identity review (#781)**: a read-only identity projection and candidate queue over facts the existing pipelines already persist — normalized hostname, current/alias MAC, serial number, leaf TLS certificate fingerprint, activity-window overlap and counter-evidence. IP address, vendor/model and OUI alone never create a candidate; malformed/placeholder signals are rejected. New `GET /api/v1/identity/candidates` and `GET /api/v1/devices/{id}/identity` honor capability + network scope, support explainable confidence filtering/pagination, and refresh process-wide identity gauges only from an unfiltered global inventory query. The Assets place gains an Identity Review tab plus a device-detail Identity tab; the device list fetches all page badges in one server-side batch while matching against the full authorized inventory, not merely the visible page. Strictly review-only: no automatic merge/split/rename/config-push, no schema change. OpenAPI + both generated clients and en/zh docs updated.
+
 ### Fixed
 
 - **Production trust P0 — public placeholder credentials and predictable HA JWT (#785)**: startup now rejects known public template placeholders for JWT/admin secrets; production/Docker templates ship empty required values instead of usable public defaults; Home Assistant generates a cryptographically random per-install JWT on first start, persists it under `/data/steward/` with mode 0600, and reuses it across restarts.

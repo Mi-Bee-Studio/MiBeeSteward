@@ -4,7 +4,7 @@ Every management capability of MiBee Steward ships inside its built-in web UI, e
 
 > The UI supports Chinese / English switching (language selector at the bottom of the sidebar) and light / dark themes. Screenshots below use the light theme.
 
-The sidebar is organized by **places, not features** (#776): five entries — **Overview** (`/dashboard`), **Assets** (`/devices`), **Networks** (`/network-center`), **Observation** (`/probes`), and **Administration** (`/users`, admins only). Capabilities live inside each place as a tab bar — Assets holds devices, changes, archive, fingerprint coverage, documents and the scan center; Networks holds the Network Center, the segment registry and the collector fleet; Administration holds users, the audit log and the settings centre. Routes and URLs are unchanged, so every bookmark, deep link and API path still resolves.
+The sidebar is organized by **places, not features** (#776): five entries — **Overview** (`/dashboard`), **Assets** (`/devices`), **Networks** (`/network-center`), **Observation** (`/probes`), and **Administration** (`/users`, admins only). Capabilities live inside each place as a tab bar — Assets holds devices, identity review, changes, archive, fingerprint coverage, documents and the scan center; Networks holds the Network Center, the segment registry and the collector fleet; Administration holds users, the audit log and the settings centre. Routes and URLs are unchanged, so every bookmark, deep link and API path still resolves.
 
 ## Login
 
@@ -24,7 +24,11 @@ The device list is the day-to-day workhorse: every registered device across all 
 
 ![Device list](images/devices.webp)
 
-Click any device for the detail page: base info, scan attributes (SNMP sysName/description, open ports, detected services and versions), TLS certificates, heartbeat history, neighbor relationships, config backup versions, and attached documents, all on one page. The **Network Diagnosis** panel (#761/#767) answers "is this device really changing its IP?" with verdict badges and an evidence panel (address timeline, liveness facts, sibling rows) — pull-based on demand, deliberately **not** an alert. The device list lifts the same identity-split / multi-homed verdicts onto affected rows as at-a-glance badges.
+Click any device for the detail page: base info, scan attributes (SNMP sysName/description, open ports, detected services and versions), TLS certificates, heartbeat history, neighbor relationships, config backup versions, and attached documents, all on one page. The **Network Diagnosis** panel (#761/#767) answers "is this device really changing its IP?" with verdict badges and an evidence panel (address timeline, liveness facts, sibling rows) — pull-based on demand, deliberately **not** an alert.
+
+Possible duplicate rows carry a server-computed **identity review** badge. The device list requests all badges for the current page in one batch; matching still compares against the caller's full authorized inventory, not only the visible page. Click the badge (or open the device's **Identity** tab) to inspect normalized hostname, serial, MAC aliases, leaf TLS fingerprints, multi-homed/stale facts, evidence coverage, and each candidate's supporting and counter-evidence.
+
+The **Identity Review** tab (`/identity`, #781) summarizes the active inventory and lists candidate pairs with confidence, signals, temporal overlap, and expandable evidence. It is deliberately read-only: candidates are suggestions for human review, never automatic merges, renames, splits, or configuration changes. IP address, vendor/model, and OUI alone do not create a candidate; archived rows are excluded from active review but remain inspectable by direct device lookup.
 
 ![Device detail](images/device-detail.webp)
 

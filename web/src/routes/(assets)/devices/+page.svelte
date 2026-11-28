@@ -19,7 +19,7 @@
 	import { escapeHtml, escapeAttr, formatDateTime } from '$lib/utils';
 	import { isValidIP } from '$lib/utils/validation';
 	import { defaultRange } from '$lib/utils/dateRange';
-	import type { Device, LinkedDoc, Network , NetworkWithMirror } from '$lib/types';
+	import type { Device, LinkedDoc, Network , NetworkWithMirror, IdentityCandidate, IdentityCandidateList, IdentityConfidence } from '$lib/types';
 	import { ChevronDown, ChevronRight, Download, Upload, Plus, List, Share2 } from '@lucide/svelte';
 
 	import Modal from '$lib/components/Modal.svelte';
@@ -31,6 +31,7 @@
 	import Pagination from '$lib/components/Pagination.svelte';
 	import PageSkeleton from '$lib/components/PageSkeleton.svelte';
 	import HeartbeatExpandableRow from '$lib/components/HeartbeatExpandableRow.svelte';
+	import IdentityReviewPanel from '$lib/components/IdentityReviewPanel.svelte';
 	import ColumnPicker from '$lib/components/ColumnPicker.svelte';
 	import { tagDisplayName } from '$lib/api/archiveTags';
 
@@ -134,6 +135,40 @@ interface AddDevicesResponse {
 
 	// --- Expandable heartbeat row ---
 	let expandedDeviceId = $state<number | null>(null);
+
+	// --- Server-computed identity review badges (#781) ----------------------
+	// One batch request covers the current inventory page. Candidate matching
+	// still compares against the full scoped inventory on the server, so a match
+	// on another page is visible instead of depending on this page's rows.
+	let identityByDevice = $state<Map<number, IdentityCandidate[]>>(new Map());
+	let identityPanelDeviceId = $state<number | null>(null);
+	let identityPanelOpen = $state(false);
+
+	async function fetchIdentityBadges(pageDevices: Device[], seq: number) {
+		const ids = pageDevices.map((d) => d.id);
+		if (ids.length === 0) {
+			if (seq === fetchSeq) identityByDevice = new Map();
+			return;
+		}
+		const params = new URLSearchParams({ device_ids: ids.join(','), limit: '500' });
+		if (networkFilter) params.set('network_id', networkFilter);
+		try {
+			const res = await api.get<IdentityCandidateList>(`/identity/candidates?${params.toString()}`);
+			if (seq !== fetchSeq) return;
+			const next = new Map<number, IdentityCandidate[]>();
+			for (const candidate of res.candidates ?? []) {
+				for (const device of [candidate.device_a, candidate.device_b]) {
+					const matches = next.get(device.id) ?? [];
+					next.set(device.id, [...matches, candidate]);
+				}
+			}
+			identityByDevice = next;
+		} catch {
+			// Badges are supplemental: a failed review query must not blank the
+			// inventory. Clear stale badges so old page data is not misattributed.
+			if (seq === fetchSeq) identityByDevice = new Map();
+		}
+	}
 
 	// --- Link document modal ---
 	let linkOpen = $state(false);
@@ -358,6 +393,7 @@ interface AddDevicesResponse {
 			if (seq !== fetchSeq) return; // superseded: drop stale result
 			devices = res.devices || [];
 			total = res.total || 0;
+			void fetchIdentityBadges(devices, seq);
 			const s = await api.get<Stats>(`/devices/stats${networkFilter ? '?network_id=' + networkFilter : ''}`);
 			if (seq !== fetchSeq) return;
 			stats = s;
@@ -377,6 +413,7 @@ interface AddDevicesResponse {
 			if (seq !== fetchSeq) return; // superseded: a newer fetch owns the state
 			devices = res.devices || [];
 			total = res.total || 0;
+			void fetchIdentityBadges(devices, seq);
 
 		try {
 			const s = await api.get<Stats>(`/devices/stats${networkFilter ? '?network_id=' + networkFilter : ''}`);
@@ -789,26 +826,10 @@ interface AddDevicesResponse {
 		return m['devices.Unknown']();
 	}
 
-	// --- Identity-diagnosis badges (#761 surfaced in the list) ---------------
-	// The diagnosis engine already classifies the "device keeps changing IP"
-	// incident (multihomed_alias / hostname_identity_split), but its verdict
-	// lived only in each device's detail network tab — searching a split device
-	// still showed N unrelated rows and looked like the problem was unsolved.
-	// These helpers lift the SAME facts (hostname + ip_aliases already in the
-	// list payload's scan_attributes) into an at-a-glance badge. No backend,
-	// no schema, no extra fetch: the rules mirror the server classifier so the
-	// list and the detail panel never disagree.
-
-	function rowHostname(row: Record<string, unknown>): string {
-		const sa = row.scan_attributes as { hostname?: string } | undefined;
-		// Normalize to the first DNS label: a device seen via Tailscale reports
-		// `n305-server.tail1a481.ts.net` on one interface and `n305-server` on
-		// another — the same physical box. Comparing the full FQDN would split
-		// them into different identity groups and hide the diagnosis.
-		const raw = (sa?.hostname ?? (row.name as string) ?? '').trim().toLowerCase();
-		return raw.split('.')[0] ?? '';
-	}
-
+	// --- Server-computed identity badges (#781) ------------------------------
+	// Duplicate suggestions come from the batched /identity/candidates response,
+	// never from counting similar names on the current page. The separate
+	// multi-homed observability badge still reflects recorded IP aliases.
 	function rowIpAliases(row: Record<string, unknown>): string[] {
 		const sa = row.scan_attributes as { extras?: { ip_aliases?: string } } | undefined;
 		const raw = sa?.extras?.ip_aliases;
@@ -816,23 +837,23 @@ interface AddDevicesResponse {
 		return String(raw).split(',').map((s) => s.trim()).filter(Boolean);
 	}
 
-	// Count of rows in the CURRENT page sharing this hostname. A hostname
-	// appearing on >1 row (typically different MACs: one bond, one wifi, plus
-	// MAC-less mDNS ghosts) is the identity-split signal.
-	const hostnameRowCount = $derived.by(() => {
-		const counts = new Map<string, number>();
-		for (const d of devices) {
-			const h = rowHostname(d as unknown as Record<string, unknown>);
-			if (h) counts.set(h, (counts.get(h) ?? 0) + 1);
-		}
-		return counts;
-	});
+	function identityConfidenceLabel(confidence: IdentityConfidence): string {
+		if (confidence === 'high') return m['identity.Confidence High']();
+		if (confidence === 'medium') return m['identity.Confidence Medium']();
+		return m['identity.Confidence Low']();
+	}
 
 	function identityBadges(row: Record<string, unknown>): string {
 		const badges: string[] = [];
-		const h = rowHostname(row);
-		if (h && (hostnameRowCount.get(h) ?? 0) > 1) {
-			badges.push(`<span class="text-xs px-1.5 py-0.5 rounded bg-warning/15 text-warning" title="${escapeAttr(m['devices.Identity Split Hint']())}">${m['devices.Identity Split Badge']()}</span>`);
+		const id = Number(row.id);
+		const matches = identityByDevice.get(id) ?? [];
+		if (matches.length > 0) {
+			const best = matches[0]!;
+			const cls = best.confidence === 'high' ? 'bg-warning/15 text-warning'
+				: best.confidence === 'medium' ? 'bg-info/15 text-info'
+				: 'bg-border text-text-muted';
+			const title = `${m['identity.Review Device Named']({ name: String(row.name ?? '') })} · ${identityConfidenceLabel(best.confidence)}`;
+			badges.push(`<button type="button" data-action="identity" data-id="${id}" class="text-xs px-1.5 py-0.5 rounded ${cls} hover:opacity-80" title="${escapeAttr(title)}">${escapeHtml(m['identity.Matches']())} · ${escapeHtml(identityConfidenceLabel(best.confidence))}</button>`);
 		}
 		if (rowIpAliases(row).length > 0) {
 			badges.push(`<span class="text-xs px-1.5 py-0.5 rounded bg-info/15 text-info" title="${escapeAttr(m['devices.Multihomed Hint']())}">${m['devices.Multihomed Badge']()}</span>`);
@@ -1120,6 +1141,11 @@ interface AddDevicesResponse {
 			// Navigate to the full detail page: the only place every device
 			// field (scan_attributes, SNMP, services, monitoring, extras) is shown.
 			goto(`/devices/detail/${id}`);
+			return;
+		}
+		if (action === 'identity') {
+			identityPanelDeviceId = id;
+			identityPanelOpen = true;
 			return;
 		}
 		if (action === 'edit') {
@@ -1844,4 +1870,10 @@ interface AddDevicesResponse {
 			{m['common.Close']()}
 		</button>
 	</div>
+</Modal>
+
+<Modal bind:open={identityPanelOpen} title={m['identity.Device Identity']()} maxWidth="56rem">
+	{#if identityPanelDeviceId !== null}
+		<IdentityReviewPanel deviceId={identityPanelDeviceId} />
+	{/if}
 </Modal>

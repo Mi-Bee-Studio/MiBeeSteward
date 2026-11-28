@@ -59,6 +59,19 @@ export type Device = Schemas['Device'];
 export type DeviceStats = Schemas['DeviceStats'];
 
 // ---------------------------------------------------------------------------
+// Trusted asset identity review (#781) — read-only candidate/evidence model
+// ---------------------------------------------------------------------------
+
+export type IdentityConfidence = Schemas['IdentityConfidence'];
+export type IdentitySignal = Schemas['IdentitySignal'];
+export type IdentityEvidence = Schemas['IdentityEvidence'];
+export type IdentityDevice = Schemas['IdentityDevice'];
+export type IdentityCandidate = Schemas['IdentityCandidate'];
+export type IdentitySummary = Schemas['IdentitySummary'];
+export type IdentityCandidateList = Schemas['IdentityCandidateList'];
+export type DeviceIdentity = Schemas['DeviceIdentity'];
+
+// ---------------------------------------------------------------------------
 // TLS certificates (host_tls_certs via GET /devices/{id}/certificates)
 // ---------------------------------------------------------------------------
 

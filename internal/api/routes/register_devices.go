@@ -111,6 +111,25 @@ func registerDeviceSightingsRoutes(r chi.Router, scopeResolver *scoperesolver.Re
 	})
 }
 
+// registerIdentityRoutes registers the global, read-only identity review list.
+func registerIdentityRoutes(r chi.Router, scopeResolver *scoperesolver.Resolver, identityHandler *handler.IdentityHandler) {
+	r.Route("/api/v1/identity", func(r chi.Router) {
+		r.Use(middleware.RequireCapability(domain.CapDeviceRead))
+		r.Use(middleware.NetworkScope(scopeResolver))
+		r.Get("/candidates", identityHandler.ListCandidates)
+	})
+}
+
+// registerDeviceIdentityRoutes registers the per-device identity projection.
+func registerDeviceIdentityRoutes(r chi.Router, scopeResolver *scoperesolver.Resolver, dbConn *sql.DB, identityHandler *handler.IdentityHandler) {
+	r.Route("/api/v1/devices/{id}/identity", func(r chi.Router) {
+		r.Use(middleware.NetworkScope(scopeResolver))
+		r.Use(middleware.ValidateDeviceScope(dbConn))
+		r.Use(middleware.RequireCapability(domain.CapDeviceRead))
+		r.Get("/", identityHandler.GetDeviceIdentity)
+	})
+}
+
 // registerDeviceDiagnosisRoutes registers the per-device network-anomaly
 // verdict (#761): address timeline with liveness facts + classified
 // findings with an evidence chain. Read-only.

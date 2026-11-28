@@ -1858,6 +1858,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/devices/{id}/identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read-only identity projection and review candidates for a device (#781)
+         * @description Includes normalized hostname, serial, MAC aliases, leaf TLS certificate fingerprints, network-presence/staleness facts, evidence coverage, and explainable candidate pairs. Archived devices can be inspected directly but never enter active candidate generation. No merge/split writes occur.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Device identity projection */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DeviceIdentity"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                500: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/devices/{id}/interfaces": {
         parameters: {
             query?: never;
@@ -2454,6 +2499,58 @@ export interface paths {
                         "application/json": components["schemas"]["HeartbeatStats"];
                     };
                 };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/identity/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Explainable, read-only asset-identity candidate review (#781)
+         * @description Computes candidate pairs over the caller's scoped active inventory from normalized hostname, serial, current/alias MAC and leaf TLS certificate fingerprint evidence, with temporal overlap and counter-evidence. IP address, vendor/model and OUI alone never create a candidate. device_ids anchors results to pairs involving those devices while the comparison inventory remains the full scoped active set, so a matching row on another inventory page is not hidden. Summary always describes the scoped active inventory before candidate pagination.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Page size (absent/0 → endpoint default; malformed or negative → 400; over-max clamps) */
+                    limit?: components["parameters"]["limit"];
+                    /** @description Pagination offset (negative → 400) */
+                    offset?: components["parameters"]["offset"];
+                    /** @description Return this confidence and higher (high > medium > low) */
+                    min_confidence?: "high" | "medium" | "low";
+                    /** @description Restrict both inventory and candidate pairs to one network (still intersected with caller scope) */
+                    network_id?: number;
+                    /** @description Comma-separated anchor device IDs; at most 200 */
+                    device_ids?: number[];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Paginated candidate pairs and scoped inventory summary */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IdentityCandidateList"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                500: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -7073,6 +7170,109 @@ export interface components {
             last_seen: string;
             /** Format: int64 */
             see_count: number;
+        };
+        /**
+         * @description Explainable confidence tier derived from the candidate signals, not a black-box score
+         * @enum {string}
+         */
+        IdentityConfidence: "high" | "medium" | "low";
+        /**
+         * @description Stable identity evidence; IP and OUI are deliberately absent
+         * @enum {string}
+         */
+        IdentitySignal: "hostname" | "mac_alias" | "serial" | "certificate";
+        IdentityEvidence: {
+            signal: components["schemas"]["IdentitySignal"];
+            /** @description Persisted fact backing this evidence */
+            source: string;
+            /** @description Human-inspectable normalized match detail */
+            detail: string;
+            vantage?: string;
+            /** Format: date-time */
+            observed_at?: string | null;
+        };
+        /** @description Read-only identity projection; no field is an automatic merge decision */
+        IdentityDevice: {
+            /** Format: int64 */
+            id: number;
+            device_uuid: string;
+            name: string;
+            type: string;
+            brand: string;
+            model: string;
+            ip_address: string;
+            mac_address: string;
+            hostname?: string;
+            serial_number?: string;
+            /** Format: int64 */
+            network_id: number | null;
+            /** @enum {string} */
+            status: "online" | "offline" | "unknown";
+            /** Format: date-time */
+            archived_at?: string | null;
+            /** Format: date-time */
+            first_seen?: string | null;
+            /** Format: date-time */
+            last_seen?: string | null;
+            mac_aliases: string[];
+            /** @description Normalized leaf TLS certificate SHA-256 fingerprints */
+            certificate_fingerprints?: string[];
+            /** @description More than one persisted network-presence row */
+            multi_homed: boolean;
+            /** @description No last-seen timestamp or older than the seven-day review window */
+            stale: boolean;
+            /**
+             * Format: double
+             * @description Fraction of six identity-evidence classes present
+             */
+            evidence_coverage: number;
+        };
+        /** @description Review suggestion only; the service never merges, splits or renames device rows */
+        IdentityCandidate: {
+            /** @description Stable hash of the ordered device-id pair */
+            id: string;
+            /** @enum {string} */
+            kind: "hostname" | "mac_alias" | "serial" | "certificate" | "combined";
+            confidence: components["schemas"]["IdentityConfidence"];
+            score: number;
+            signals: components["schemas"]["IdentitySignal"][];
+            evidence: components["schemas"]["IdentityEvidence"][];
+            counter_evidence: string[] | null;
+            temporal_overlap: boolean;
+            device_a: components["schemas"]["IdentityDevice"];
+            device_b: components["schemas"]["IdentityDevice"];
+        };
+        /** @description Scoped active-inventory summary before candidate filtering/pagination; rates are 0..1 */
+        IdentitySummary: {
+            /** Format: int64 */
+            total_devices: number;
+            /** Format: int64 */
+            candidate_count: number;
+            /** Format: int64 */
+            high_count: number;
+            /** Format: int64 */
+            medium_count: number;
+            /** Format: int64 */
+            low_count: number;
+            /** Format: double */
+            unknown_rate: number;
+            /** Format: double */
+            stale_rate: number;
+            /** Format: double */
+            evidence_coverage: number;
+        };
+        IdentityCandidateList: {
+            candidates: components["schemas"]["IdentityCandidate"][];
+            summary: components["schemas"]["IdentitySummary"];
+            /** @description Candidate count after anchor/confidence filters */
+            total: number;
+            /** @description Effective page size */
+            limit: number;
+            offset: number;
+        };
+        DeviceIdentity: {
+            device: components["schemas"]["IdentityDevice"];
+            candidates: components["schemas"]["IdentityCandidate"][];
         };
         /** @description Per-device network-anomaly verdict (#761), computed on demand */
         DeviceDiagnosis: {

@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
 	networks: [] as Array<{ id: number; name: string; cidr: string }>,
 	tags: [] as Array<{ id: number; key: string; name: string; color: string; builtin: number }>,
 	devices: [] as Array<Record<string, unknown>>,
+	identityCandidates: [] as Array<Record<string, unknown>>,
 	total: 0
 }));
 
@@ -24,6 +25,7 @@ vi.mock('$lib/api/client', () => ({
 		// compact filter bar's applyFilters re-fires /devices.
 		get: vi.fn((url: string) => {
 			if (url.startsWith('/devices/stats')) return Promise.resolve(h.stats);
+			if (url.startsWith('/identity/candidates')) return Promise.resolve({ candidates: h.identityCandidates, total: h.identityCandidates.length });
 			if (url.startsWith('/devices')) return Promise.resolve({ devices: h.devices, total: h.total });
 			if (url.startsWith('/networks')) return Promise.resolve({ networks: h.networks, total: h.networks.length });
 			if (url.includes('/tags')) return Promise.resolve({ tags: h.tags });
@@ -46,6 +48,7 @@ describe('Devices page', () => {
 		h.networks = [];
 		h.tags = [];
 		h.devices = [];
+		h.identityCandidates = [];
 		h.total = 0;
 		vi.mocked(api.get).mockClear();
 	});
@@ -73,6 +76,7 @@ describe('Compact filter bar (#UI-compact)', () => {
 		h.networks = [{ id: 1, name: 'lan-62', cidr: '192.168.2.0/24' }];
 		h.tags = [{ id: 3, key: 'external', name: '外部设备', color: '#888', builtin: 1 }];
 		h.devices = [];
+		h.identityCandidates = [];
 		h.total = 0;
 		vi.mocked(api.get).mockClear();
 	});
@@ -176,8 +180,13 @@ describe('Devices page — parked rows (#737)', () => {
 	});
 });
 
-describe('Devices page — identity diagnosis badges (#761 surfaced)', () => {
-	it('split rows (same hostname, one with ip_aliases) show at-a-glance identity badges', async () => {
+describe('Devices page — server-computed identity review badges (#781)', () => {
+	beforeEach(() => {
+		h.identityCandidates = [];
+		vi.mocked(api.get).mockClear();
+	});
+
+	it('uses the batched server candidate result instead of current-page hostname guessing', async () => {
 		h.stats = { by_status: { online: 2 }, by_type: { other: 2 } };
 		h.networks = [{ id: 1, name: 'lan-63', cidr: '192.0.2.0/24' }];
 		h.devices = [
@@ -211,16 +220,30 @@ describe('Devices page — identity diagnosis badges (#761 surfaced)', () => {
 			}
 		];
 		h.total = 2;
+		h.identityCandidates = [{
+			id: 'candidate-68-84',
+			confidence: 'high',
+			device_a: { id: 68 },
+			device_b: { id: 84 }
+		}];
 		const { container } = render(Devices);
 		await waitFor(() => {
-			expect(container.textContent).toContain('n305-server');
+			expect(container.querySelectorAll('[data-action="identity"]').length).toBe(2);
 		});
-		// Both rows share a hostname → identity-split badge; row 68 also has
-		// ip_aliases → multihomed badge. The engine verdict is now visible
-		// without opening each device's detail tab.
-		expect(container.querySelectorAll('[title*="identity split"], [title*="same device"], [title*="physical device"]').length).toBeGreaterThan(0);
-		expect(container.textContent).toContain('same device');
+		expect(vi.mocked(api.get).mock.calls.some(([url]) => String(url) === '/identity/candidates?device_ids=68%2C84&limit=500')).toBe(true);
+		expect(container.textContent).toContain('Possible match · High');
 		expect(container.textContent).toContain('multi-homed');
+	});
+
+	it('does not infer a duplicate merely because two visible rows share a hostname', async () => {
+		h.devices = [
+			{ id: 1, name: 'same-host', type: 'pc', status: 'online', network_id: 1, scan_attributes: { hostname: 'same-host.example' } },
+			{ id: 2, name: 'same-host', type: 'pc', status: 'online', network_id: 1, scan_attributes: { hostname: 'same-host' } }
+		];
+		h.total = 2;
+		const { container } = render(Devices);
+		await waitFor(() => expect(container.textContent).toContain('same-host'));
+		expect(container.querySelector('[data-action="identity"]')).toBeNull();
 	});
 
 	it('a lone device with no aliases shows no diagnosis badge', async () => {
@@ -244,7 +267,7 @@ describe('Devices page — identity diagnosis badges (#761 surfaced)', () => {
 		await waitFor(() => {
 			expect(container.textContent).toContain('solo-pc');
 		});
-		expect(container.textContent).not.toContain('same device');
+		expect(container.querySelector('[data-action="identity"]')).toBeNull();
 		expect(container.textContent).not.toContain('multi-homed');
 	});
 });

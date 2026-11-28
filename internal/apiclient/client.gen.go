@@ -395,16 +395,16 @@ func (e DeviceDiagnosisClassification) Valid() bool {
 
 // Defines values for DeviceDiagnosisConfidence.
 const (
-	High   DeviceDiagnosisConfidence = "high"
-	Medium DeviceDiagnosisConfidence = "medium"
+	DeviceDiagnosisConfidenceHigh   DeviceDiagnosisConfidence = "high"
+	DeviceDiagnosisConfidenceMedium DeviceDiagnosisConfidence = "medium"
 )
 
 // Valid indicates whether the value is a known member of the DeviceDiagnosisConfidence enum.
 func (e DeviceDiagnosisConfidence) Valid() bool {
 	switch e {
-	case High:
+	case DeviceDiagnosisConfidenceHigh:
 		return true
-	case Medium:
+	case DeviceDiagnosisConfidenceMedium:
 		return true
 	default:
 		return false
@@ -639,6 +639,99 @@ func (e HeartbeatResultStatus) Valid() bool {
 	case HeartbeatResultStatusSuccess:
 		return true
 	case HeartbeatResultStatusTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IdentityCandidateKind.
+const (
+	IdentityCandidateKindCertificate IdentityCandidateKind = "certificate"
+	IdentityCandidateKindCombined    IdentityCandidateKind = "combined"
+	IdentityCandidateKindHostname    IdentityCandidateKind = "hostname"
+	IdentityCandidateKindMacAlias    IdentityCandidateKind = "mac_alias"
+	IdentityCandidateKindSerial      IdentityCandidateKind = "serial"
+)
+
+// Valid indicates whether the value is a known member of the IdentityCandidateKind enum.
+func (e IdentityCandidateKind) Valid() bool {
+	switch e {
+	case IdentityCandidateKindCertificate:
+		return true
+	case IdentityCandidateKindCombined:
+		return true
+	case IdentityCandidateKindHostname:
+		return true
+	case IdentityCandidateKindMacAlias:
+		return true
+	case IdentityCandidateKindSerial:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IdentityConfidence.
+const (
+	IdentityConfidenceHigh   IdentityConfidence = "high"
+	IdentityConfidenceLow    IdentityConfidence = "low"
+	IdentityConfidenceMedium IdentityConfidence = "medium"
+)
+
+// Valid indicates whether the value is a known member of the IdentityConfidence enum.
+func (e IdentityConfidence) Valid() bool {
+	switch e {
+	case IdentityConfidenceHigh:
+		return true
+	case IdentityConfidenceLow:
+		return true
+	case IdentityConfidenceMedium:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IdentityDeviceStatus.
+const (
+	IdentityDeviceStatusOffline IdentityDeviceStatus = "offline"
+	IdentityDeviceStatusOnline  IdentityDeviceStatus = "online"
+	IdentityDeviceStatusUnknown IdentityDeviceStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the IdentityDeviceStatus enum.
+func (e IdentityDeviceStatus) Valid() bool {
+	switch e {
+	case IdentityDeviceStatusOffline:
+		return true
+	case IdentityDeviceStatusOnline:
+		return true
+	case IdentityDeviceStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IdentitySignal.
+const (
+	IdentitySignalCertificate IdentitySignal = "certificate"
+	IdentitySignalHostname    IdentitySignal = "hostname"
+	IdentitySignalMacAlias    IdentitySignal = "mac_alias"
+	IdentitySignalSerial      IdentitySignal = "serial"
+)
+
+// Valid indicates whether the value is a known member of the IdentitySignal enum.
+func (e IdentitySignal) Valid() bool {
+	switch e {
+	case IdentitySignalCertificate:
+		return true
+	case IdentitySignalHostname:
+		return true
+	case IdentitySignalMacAlias:
+		return true
+	case IdentitySignalSerial:
 		return true
 	default:
 		return false
@@ -1692,6 +1785,27 @@ func (e PutDevicesIdArchiveSettingsJSONBodyPin) Valid() bool {
 	}
 }
 
+// Defines values for GetIdentityCandidatesParamsMinConfidence.
+const (
+	GetIdentityCandidatesParamsMinConfidenceHigh   GetIdentityCandidatesParamsMinConfidence = "high"
+	GetIdentityCandidatesParamsMinConfidenceLow    GetIdentityCandidatesParamsMinConfidence = "low"
+	GetIdentityCandidatesParamsMinConfidenceMedium GetIdentityCandidatesParamsMinConfidence = "medium"
+)
+
+// Valid indicates whether the value is a known member of the GetIdentityCandidatesParamsMinConfidence enum.
+func (e GetIdentityCandidatesParamsMinConfidence) Valid() bool {
+	switch e {
+	case GetIdentityCandidatesParamsMinConfidenceHigh:
+		return true
+	case GetIdentityCandidatesParamsMinConfidenceLow:
+		return true
+	case GetIdentityCandidatesParamsMinConfidenceMedium:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetProbeQualityEpisodesParamsActive.
 const (
 	GetProbeQualityEpisodesParamsActiveN0 GetProbeQualityEpisodesParamsActive = 0
@@ -2211,6 +2325,14 @@ type DeviceDocumentList struct {
 	Total     *int        `json:"total,omitempty"`
 }
 
+// DeviceIdentity defines model for DeviceIdentity.
+type DeviceIdentity struct {
+	Candidates []IdentityCandidate `json:"candidates"`
+
+	// Device Read-only identity projection; no field is an automatic merge decision
+	Device IdentityDevice `json:"device"`
+}
+
 // DeviceInterface One port of the device's interface census (#529).
 type DeviceInterface struct {
 	FirstSeen  time.Time `json:"first_seen"`
@@ -2532,6 +2654,112 @@ type HeartbeatStats struct {
 	FailCount    int64   `json:"fail_count"`
 	SuccessCount int64   `json:"success_count"`
 	TimeoutCount int64   `json:"timeout_count"`
+}
+
+// IdentityCandidate Review suggestion only; the service never merges, splits or renames device rows
+type IdentityCandidate struct {
+	// Confidence Explainable confidence tier derived from the candidate signals, not a black-box score
+	Confidence      IdentityConfidence `json:"confidence"`
+	CounterEvidence *[]string          `json:"counter_evidence"`
+
+	// DeviceA Read-only identity projection; no field is an automatic merge decision
+	DeviceA IdentityDevice `json:"device_a"`
+
+	// DeviceB Read-only identity projection; no field is an automatic merge decision
+	DeviceB  IdentityDevice     `json:"device_b"`
+	Evidence []IdentityEvidence `json:"evidence"`
+
+	// Id Stable hash of the ordered device-id pair
+	Id              string                `json:"id"`
+	Kind            IdentityCandidateKind `json:"kind"`
+	Score           int                   `json:"score"`
+	Signals         []IdentitySignal      `json:"signals"`
+	TemporalOverlap bool                  `json:"temporal_overlap"`
+}
+
+// IdentityCandidateKind defines model for IdentityCandidate.Kind.
+type IdentityCandidateKind string
+
+// IdentityCandidateList defines model for IdentityCandidateList.
+type IdentityCandidateList struct {
+	Candidates []IdentityCandidate `json:"candidates"`
+
+	// Limit Effective page size
+	Limit  int `json:"limit"`
+	Offset int `json:"offset"`
+
+	// Summary Scoped active-inventory summary before candidate filtering/pagination; rates are 0..1
+	Summary IdentitySummary `json:"summary"`
+
+	// Total Candidate count after anchor/confidence filters
+	Total int `json:"total"`
+}
+
+// IdentityConfidence Explainable confidence tier derived from the candidate signals, not a black-box score
+type IdentityConfidence string
+
+// IdentityDevice Read-only identity projection; no field is an automatic merge decision
+type IdentityDevice struct {
+	ArchivedAt *time.Time `json:"archived_at,omitempty"`
+	Brand      string     `json:"brand"`
+
+	// CertificateFingerprints Normalized leaf TLS certificate SHA-256 fingerprints
+	CertificateFingerprints *[]string `json:"certificate_fingerprints,omitempty"`
+	DeviceUuid              string    `json:"device_uuid"`
+
+	// EvidenceCoverage Fraction of six identity-evidence classes present
+	EvidenceCoverage float64    `json:"evidence_coverage"`
+	FirstSeen        *time.Time `json:"first_seen,omitempty"`
+	Hostname         *string    `json:"hostname,omitempty"`
+	Id               int64      `json:"id"`
+	IpAddress        string     `json:"ip_address"`
+	LastSeen         *time.Time `json:"last_seen,omitempty"`
+	MacAddress       string     `json:"mac_address"`
+	MacAliases       []string   `json:"mac_aliases"`
+	Model            string     `json:"model"`
+
+	// MultiHomed More than one persisted network-presence row
+	MultiHomed   bool    `json:"multi_homed"`
+	Name         string  `json:"name"`
+	NetworkId    *int64  `json:"network_id"`
+	SerialNumber *string `json:"serial_number,omitempty"`
+
+	// Stale No last-seen timestamp or older than the seven-day review window
+	Stale  bool                 `json:"stale"`
+	Status IdentityDeviceStatus `json:"status"`
+	Type   string               `json:"type"`
+}
+
+// IdentityDeviceStatus defines model for IdentityDevice.Status.
+type IdentityDeviceStatus string
+
+// IdentityEvidence defines model for IdentityEvidence.
+type IdentityEvidence struct {
+	// Detail Human-inspectable normalized match detail
+	Detail     string     `json:"detail"`
+	ObservedAt *time.Time `json:"observed_at,omitempty"`
+
+	// Signal Stable identity evidence; IP and OUI are deliberately absent
+	Signal IdentitySignal `json:"signal"`
+
+	// Source Persisted fact backing this evidence
+	Source  string  `json:"source"`
+	Vantage *string `json:"vantage,omitempty"`
+}
+
+// IdentitySignal Stable identity evidence; IP and OUI are deliberately absent
+type IdentitySignal string
+
+// IdentitySummary Scoped active-inventory summary before candidate filtering/pagination; rates are 0..1
+type IdentitySummary struct {
+	CandidateCount   int64   `json:"candidate_count"`
+	EvidenceCoverage float64 `json:"evidence_coverage"`
+	HighCount        int64   `json:"high_count"`
+	LowCount         int64   `json:"low_count"`
+	MediumCount      int64   `json:"medium_count"`
+	StaleRate        float64 `json:"stale_rate"`
+	TotalDevices     int64   `json:"total_devices"`
+	UnknownRate      float64 `json:"unknown_rate"`
 }
 
 // InterfaceList defines model for InterfaceList.
@@ -4075,6 +4303,27 @@ type PutFingerprintsMultipartBody struct {
 	File *openapi_types.File `json:"file,omitempty"`
 }
 
+// GetIdentityCandidatesParams defines parameters for GetIdentityCandidates.
+type GetIdentityCandidatesParams struct {
+	// Limit Page size (absent/0 → endpoint default; malformed or negative → 400; over-max clamps)
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Offset Pagination offset (negative → 400)
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// MinConfidence Return this confidence and higher (high > medium > low)
+	MinConfidence *GetIdentityCandidatesParamsMinConfidence `form:"min_confidence,omitempty" json:"min_confidence,omitempty"`
+
+	// NetworkId Restrict both inventory and candidate pairs to one network (still intersected with caller scope)
+	NetworkId *int64 `form:"network_id,omitempty" json:"network_id,omitempty"`
+
+	// DeviceIds Comma-separated anchor device IDs; at most 200
+	DeviceIds *[]int64 `form:"device_ids,omitempty" json:"device_ids,omitempty"`
+}
+
+// GetIdentityCandidatesParamsMinConfidence defines parameters for GetIdentityCandidates.
+type GetIdentityCandidatesParamsMinConfidence string
+
 // GetNetworkGrantsParams defines parameters for GetNetworkGrants.
 type GetNetworkGrantsParams struct {
 	// Limit Page size (absent/0 → endpoint default; malformed or negative → 400; over-max clamps)
@@ -5275,6 +5524,13 @@ type ClientInterface interface {
 	// Corresponds with GET /devices/{id}/heartbeat-stats (the `GetDevicesIdHeartbeatStats` operationId).
 	GetDevicesIdHeartbeatStats(ctx context.Context, id Id, params *GetDevicesIdHeartbeatStatsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetDevicesIdIdentity Read-only identity projection and review candidates for a device (#781)
+	//
+	// Includes normalized hostname, serial, MAC aliases, leaf TLS certificate fingerprints, network-presence/staleness facts, evidence coverage, and explainable candidate pairs. Archived devices can be inspected directly but never enter active candidate generation. No merge/split writes occur.
+	//
+	// Corresponds with GET /devices/{id}/identity (the `GetDevicesIdIdentity` operationId).
+	GetDevicesIdIdentity(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetDevicesIdInterfaces Interface census of a device (#529, IF-MIB + ipAddrTable)
 	//
 	// The device's own port list - ifIndex, name, description, MAC, link speed, and the IPv4 each port answers at. This is the multi-homed detail the single devices.ip_address row cannot express. Ordered by ifIndex; vanished ports keep their frozen last-seen row.
@@ -5477,6 +5733,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /heartbeat-configs/{id} (the `PutHeartbeatConfigsId` operationId).
 	PutHeartbeatConfigsId(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetIdentityCandidates Explainable, read-only asset-identity candidate review (#781)
+	//
+	// Computes candidate pairs over the caller's scoped active inventory from normalized hostname, serial, current/alias MAC and leaf TLS certificate fingerprint evidence, with temporal overlap and counter-evidence. IP address, vendor/model and OUI alone never create a candidate. device_ids anchors results to pairs involving those devices while the comparison inventory remains the full scoped active set, so a matching row on another inventory page is not hidden. Summary always describes the scoped active inventory before candidate pagination.
+	//
+	// Corresponds with GET /identity/candidates (the `GetIdentityCandidates` operationId).
+	GetIdentityCandidates(ctx context.Context, params *GetIdentityCandidatesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetMetrics Prometheus metrics exposition (public)
 	//
@@ -7168,6 +7431,23 @@ func (c *Client) GetDevicesIdHeartbeatStats(ctx context.Context, id Id, params *
 	return c.Client.Do(req)
 }
 
+// GetDevicesIdIdentity Read-only identity projection and review candidates for a device (#781)
+//
+// Includes normalized hostname, serial, MAC aliases, leaf TLS certificate fingerprints, network-presence/staleness facts, evidence coverage, and explainable candidate pairs. Archived devices can be inspected directly but never enter active candidate generation. No merge/split writes occur.
+//
+// Corresponds with GET /devices/{id}/identity (the `GetDevicesIdIdentity` operationId).
+func (c *Client) GetDevicesIdIdentity(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetDevicesIdIdentityRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetDevicesIdInterfaces Interface census of a device (#529, IF-MIB + ipAddrTable)
 //
 // The device's own port list - ifIndex, name, description, MAC, link speed, and the IPv4 each port answers at. This is the multi-homed detail the single devices.ip_address row cannot express. Ordered by ifIndex; vanished ports keep their frozen last-seen row.
@@ -7731,6 +8011,23 @@ func (c *Client) DeleteHeartbeatConfigsId(ctx context.Context, id Id, reqEditors
 // Corresponds with PUT /heartbeat-configs/{id} (the `PutHeartbeatConfigsId` operationId).
 func (c *Client) PutHeartbeatConfigsId(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPutHeartbeatConfigsIdRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetIdentityCandidates Explainable, read-only asset-identity candidate review (#781)
+//
+// Computes candidate pairs over the caller's scoped active inventory from normalized hostname, serial, current/alias MAC and leaf TLS certificate fingerprint evidence, with temporal overlap and counter-evidence. IP address, vendor/model and OUI alone never create a candidate. device_ids anchors results to pairs involving those devices while the comparison inventory remains the full scoped active set, so a matching row on another inventory page is not hidden. Summary always describes the scoped active inventory before candidate pagination.
+//
+// Corresponds with GET /identity/candidates (the `GetIdentityCandidates` operationId).
+func (c *Client) GetIdentityCandidates(ctx context.Context, params *GetIdentityCandidatesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetIdentityCandidatesRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -12159,6 +12456,40 @@ func NewGetDevicesIdHeartbeatStatsRequest(server string, id Id, params *GetDevic
 	return req, nil
 }
 
+// NewGetDevicesIdIdentityRequest constructs an http.Request for the GetDevicesIdIdentity method
+func NewGetDevicesIdIdentityRequest(server string, id Id) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/devices/%s/identity", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetDevicesIdInterfacesRequest constructs an http.Request for the GetDevicesIdInterfaces method
 func NewGetDevicesIdInterfacesRequest(server string, id Id) (*http.Request, error) {
 	var err error
@@ -13472,6 +13803,108 @@ func NewPutHeartbeatConfigsIdRequest(server string, id Id) (*http.Request, error
 	}
 
 	req, err := http.NewRequest(http.MethodPut, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetIdentityCandidatesRequest constructs an http.Request for the GetIdentityCandidates method
+func NewGetIdentityCandidatesRequest(server string, params *GetIdentityCandidatesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/identity/candidates")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.MinConfidence != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "min_confidence", *params.MinConfidence, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.NetworkId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "network_id", *params.NetworkId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.DeviceIds != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "device_ids", *params.DeviceIds, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -17785,6 +18218,15 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /devices/{id}/heartbeat-stats (the `GetDevicesIdHeartbeatStats` operationId).
 	GetDevicesIdHeartbeatStatsWithResponse(ctx context.Context, id Id, params *GetDevicesIdHeartbeatStatsParams, reqEditors ...RequestEditorFn) (*GetDevicesIdHeartbeatStatsResponse, error)
 
+	// GetDevicesIdIdentityWithResponse Read-only identity projection and review candidates for a device (#781)
+	//
+	// Includes normalized hostname, serial, MAC aliases, leaf TLS certificate fingerprints, network-presence/staleness facts, evidence coverage, and explainable candidate pairs. Archived devices can be inspected directly but never enter active candidate generation. No merge/split writes occur.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /devices/{id}/identity (the `GetDevicesIdIdentity` operationId).
+	GetDevicesIdIdentityWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetDevicesIdIdentityResponse, error)
+
 	// GetDevicesIdInterfacesWithResponse Interface census of a device (#529, IF-MIB + ipAddrTable)
 	//
 	// The device's own port list - ifIndex, name, description, MAC, link speed, and the IPv4 each port answers at. This is the multi-homed detail the single devices.ip_address row cannot express. Ordered by ifIndex; vanished ports keep their frozen last-seen row.
@@ -18047,6 +18489,15 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PUT /heartbeat-configs/{id} (the `PutHeartbeatConfigsId` operationId).
 	PutHeartbeatConfigsIdWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*PutHeartbeatConfigsIdResponse, error)
+
+	// GetIdentityCandidatesWithResponse Explainable, read-only asset-identity candidate review (#781)
+	//
+	// Computes candidate pairs over the caller's scoped active inventory from normalized hostname, serial, current/alias MAC and leaf TLS certificate fingerprint evidence, with temporal overlap and counter-evidence. IP address, vendor/model and OUI alone never create a candidate. device_ids anchors results to pairs involving those devices while the comparison inventory remains the full scoped active set, so a matching row on another inventory page is not hidden. Summary always describes the scoped active inventory before candidate pagination.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /identity/candidates (the `GetIdentityCandidates` operationId).
+	GetIdentityCandidatesWithResponse(ctx context.Context, params *GetIdentityCandidatesParams, reqEditors ...RequestEditorFn) (*GetIdentityCandidatesResponse, error)
 
 	// GetMetricsWithResponse Prometheus metrics exposition (public)
 	//
@@ -21513,6 +21964,75 @@ func (r GetDevicesIdHeartbeatStatsResponse) ContentType() string {
 	return ""
 }
 
+type GetDevicesIdIdentityResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DeviceIdentity
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *Error
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetDevicesIdIdentityResponse) GetJSON200() *DeviceIdentity {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetDevicesIdIdentityResponse) GetJSON400() *Error {
+	return r.JSON400
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetDevicesIdIdentityResponse) GetJSON403() *Error {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetDevicesIdIdentityResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetDevicesIdIdentityResponse) GetJSON500() *Error {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r GetDevicesIdIdentityResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetDevicesIdIdentityResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetDevicesIdIdentityResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetDevicesIdIdentityResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetDevicesIdInterfacesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -22850,6 +23370,61 @@ func (r PutHeartbeatConfigsIdResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PutHeartbeatConfigsIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetIdentityCandidatesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *IdentityCandidateList
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *Error
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetIdentityCandidatesResponse) GetJSON200() *IdentityCandidateList {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetIdentityCandidatesResponse) GetJSON400() *Error {
+	return r.JSON400
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetIdentityCandidatesResponse) GetJSON500() *Error {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r GetIdentityCandidatesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetIdentityCandidatesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetIdentityCandidatesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetIdentityCandidatesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -27535,6 +28110,21 @@ func (c *ClientWithResponses) GetDevicesIdHeartbeatStatsWithResponse(ctx context
 	return ParseGetDevicesIdHeartbeatStatsResponse(rsp)
 }
 
+// GetDevicesIdIdentityWithResponse Read-only identity projection and review candidates for a device (#781)
+//
+// Includes normalized hostname, serial, MAC aliases, leaf TLS certificate fingerprints, network-presence/staleness facts, evidence coverage, and explainable candidate pairs. Archived devices can be inspected directly but never enter active candidate generation. No merge/split writes occur.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /devices/{id}/identity (the `GetDevicesIdIdentity` operationId).
+func (c *ClientWithResponses) GetDevicesIdIdentityWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetDevicesIdIdentityResponse, error) {
+	rsp, err := c.GetDevicesIdIdentity(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetDevicesIdIdentityResponse(rsp)
+}
+
 // GetDevicesIdInterfacesWithResponse Interface census of a device (#529, IF-MIB + ipAddrTable)
 //
 // The device's own port list - ifIndex, name, description, MAC, link speed, and the IPv4 each port answers at. This is the multi-homed detail the single devices.ip_address row cannot express. Ordered by ifIndex; vanished ports keep their frozen last-seen row.
@@ -28018,6 +28608,21 @@ func (c *ClientWithResponses) PutHeartbeatConfigsIdWithResponse(ctx context.Cont
 		return nil, err
 	}
 	return ParsePutHeartbeatConfigsIdResponse(rsp)
+}
+
+// GetIdentityCandidatesWithResponse Explainable, read-only asset-identity candidate review (#781)
+//
+// Computes candidate pairs over the caller's scoped active inventory from normalized hostname, serial, current/alias MAC and leaf TLS certificate fingerprint evidence, with temporal overlap and counter-evidence. IP address, vendor/model and OUI alone never create a candidate. device_ids anchors results to pairs involving those devices while the comparison inventory remains the full scoped active set, so a matching row on another inventory page is not hidden. Summary always describes the scoped active inventory before candidate pagination.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /identity/candidates (the `GetIdentityCandidates` operationId).
+func (c *ClientWithResponses) GetIdentityCandidatesWithResponse(ctx context.Context, params *GetIdentityCandidatesParams, reqEditors ...RequestEditorFn) (*GetIdentityCandidatesResponse, error) {
+	rsp, err := c.GetIdentityCandidates(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetIdentityCandidatesResponse(rsp)
 }
 
 // GetMetricsWithResponse Prometheus metrics exposition (public)
@@ -30974,6 +31579,60 @@ func ParseGetDevicesIdHeartbeatStatsResponse(rsp *http.Response) (*GetDevicesIdH
 	return response, nil
 }
 
+// ParseGetDevicesIdIdentityResponse parses an HTTP response from a GetDevicesIdIdentityWithResponse call
+func ParseGetDevicesIdIdentityResponse(rsp *http.Response) (*GetDevicesIdIdentityResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetDevicesIdIdentityResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DeviceIdentity
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetDevicesIdInterfacesResponse parses an HTTP response from a GetDevicesIdInterfacesWithResponse call
 func ParseGetDevicesIdInterfacesResponse(rsp *http.Response) (*GetDevicesIdInterfacesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -31738,6 +32397,46 @@ func ParsePutHeartbeatConfigsIdResponse(rsp *http.Response) (*PutHeartbeatConfig
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetIdentityCandidatesResponse parses an HTTP response from a GetIdentityCandidatesWithResponse call
+func ParseGetIdentityCandidatesResponse(rsp *http.Response) (*GetIdentityCandidatesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetIdentityCandidatesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IdentityCandidateList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
 
 	}
 

@@ -168,6 +168,29 @@ var (
 		},
 		[]string{"source"},
 	)
+
+	// Identity review gauges (#781). Refreshed only by unfiltered global
+	// candidate queries; scoped or network-filtered queries never overwrite
+	// the process-wide inventory view.
+	MibeeIdentityCandidates = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mibee_identity_candidates",
+			Help: "Identity review candidate pairs by confidence (high / medium / low)",
+		},
+		[]string{"confidence"},
+	)
+	MibeeIdentityUnknownRate = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "mibee_identity_unknown_rate",
+		Help: "Fraction of active devices still typed as other/unknown",
+	})
+	MibeeIdentityStaleRate = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "mibee_identity_stale_rate",
+		Help: "Fraction of active devices last seen more than 7 days ago (or never seen)",
+	})
+	MibeeIdentityEvidenceCoverage = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "mibee_identity_evidence_coverage",
+		Help: "Mean identity evidence coverage across active devices (0..1)",
+	})
 )
 
 func init() {
@@ -184,6 +207,10 @@ func init() {
 	prometheus.MustRegister(MibeeDBTableRows)
 	prometheus.MustRegister(MibeeFingerprintIdentified)
 	prometheus.MustRegister(MibeeSqliteBusyTotal)
+	prometheus.MustRegister(MibeeIdentityCandidates)
+	prometheus.MustRegister(MibeeIdentityUnknownRate)
+	prometheus.MustRegister(MibeeIdentityStaleRate)
+	prometheus.MustRegister(MibeeIdentityEvidenceCoverage)
 }
 
 // RefreshScannerTaskGauges recomputes mibee_scanner_tasks_total{status} from
