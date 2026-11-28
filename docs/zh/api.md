@@ -1512,6 +1512,15 @@ flowchart LR
 
 
 
+### 可信资产身份审查（#781）
+
+身份审查是基于发现流程已持久化事实生成的只读投影。它绝不修改设备行，也不执行自动合并、拆分、改名或配置下发。
+
+- `GET /api/v1/identity/candidates?limit=&offset=&min_confidence=&network_id=&device_ids=` 返回 `{candidates, summary, total, limit, offset}`。候选按可解释得分降序排列；`summary` 始终描述候选过滤/分页前的授权在册清单。`device_ids` 是逗号分隔的锚点 ID 列表（最多 200 个）：结果包含涉及这些设备的候选对，但比较范围仍是完整的授权在册清单，因此匹配行位于其他清单页时也不会被隐藏。
+- `GET /api/v1/devices/{id}/identity` 返回单台设备的 `{device, candidates}`。归档设备可直接查看身份投影，但不进入在册候选生成；未知 ID 返回 404，网络受限调用者访问越界设备返回 403。
+
+证据信号包括规范化主机名（识别大小写与 FQDN）、当前 MAC 或 MAC 别名、序列号、叶证书 TLS 指纹。候选同时携带活动时间窗重叠与反证（例如双方非空序列号冲突、观测时间窗不重叠）。仅有 IP 地址、厂商/型号或 OUI 永远不构成身份证明。置信度是由这些信号推导出的可解释 `high` / `medium` / `low` 等级，不是黑盒分数。两个接口都要求 `device.read` 能力，并遵守调用者的网络授权范围。
+
 ## 设备系统
 
 

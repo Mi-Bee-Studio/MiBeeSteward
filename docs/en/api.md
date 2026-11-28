@@ -1511,6 +1511,15 @@ Delete a device.
 
 
 
+### Trusted Asset Identity Review (#781)
+
+Identity review is a read-only projection over facts already persisted by discovery. It never mutates device rows and never performs automatic merge/split/rename/config-push actions.
+
+- `GET /api/v1/identity/candidates?limit=&offset=&min_confidence=&network_id=&device_ids=` returns `{candidates, summary, total, limit, offset}`. Candidates are sorted by explainable score descending. `summary` always describes the scoped active inventory before candidate filtering/pagination. `device_ids` is a comma-separated anchor list (maximum 200): results include pairs involving those devices while comparison still covers the full authorized active inventory, so a match on another inventory page is not hidden.
+- `GET /api/v1/devices/{id}/identity` returns `{device, candidates}` for one device. Archived devices can be inspected directly but do not enter active candidate generation. Unknown IDs return 404; network-scoped callers receive 403 for an out-of-scope device.
+
+Evidence signals are normalized hostname (case/FQDN-aware), current or alias MAC, serial number, and leaf TLS certificate fingerprint. Candidates also carry activity-window overlap and counter-evidence such as conflicting non-empty serials or non-overlapping observation windows. IP address, vendor/model and OUI alone are never identity proof. Confidence is the explainable `high` / `medium` / `low` tier derived from these signals, not a black-box score. Both endpoints require the `device.read` capability and honor the caller's network scope.
+
 ## Device Systems
 
 

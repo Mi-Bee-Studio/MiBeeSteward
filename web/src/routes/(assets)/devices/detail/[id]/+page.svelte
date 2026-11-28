@@ -146,6 +146,7 @@
 	import Chart from '$lib/components/Chart.svelte';
 	import LabelEditor from '$lib/components/scanner/LabelEditor.svelte';
 	import CertificateModal from '$lib/components/CertificateModal.svelte';
+	import IdentityReviewPanel from '$lib/components/IdentityReviewPanel.svelte';
 
 	// --- Route param ---
 	let deviceId = $derived(Number($page.params.id));
@@ -537,12 +538,11 @@
 
 
 	// --- In-page tab navigation ---
-	// The detail page is a single 1800-line vertical scroll by default; the tab
-	// bar splits it into 5 focused panes (Overview / Scan Discovery / Network &
-	// Certs / Systems / Heartbeat) so a user can jump straight to the question
-	// they're asking ("is this healthy?" → Overview; "what services?" →
-	// Discovery) instead of scrolling past unrelated sections.
-	type Tab = 'overview' | 'discovery' | 'network' | 'systems' | 'heartbeat' | 'config';
+	// The detail page is a single long vertical scroll by default; the tab bar
+	// splits it into focused panes (Overview / Identity / Scan Discovery /
+	// Network & Certs / Systems / Heartbeat / Config) so a user can jump straight
+	// to the question they're asking instead of scrolling past unrelated sections.
+	type Tab = 'overview' | 'identity' | 'discovery' | 'network' | 'systems' | 'heartbeat' | 'config';
 	let activeTab = $state<Tab>('overview');
 
 	// Sync the active tab to ?tab= so links/reloads land on the right pane.
@@ -550,7 +550,7 @@
 		if (typeof window === 'undefined') return 'overview';
 		const sp = new URLSearchParams(window.location.search);
 		const t = sp.get('tab');
-		return (t === 'overview' || t === 'discovery' || t === 'network' || t === 'systems' || t === 'heartbeat' || t === 'config')
+		return (t === 'overview' || t === 'identity' || t === 'discovery' || t === 'network' || t === 'systems' || t === 'heartbeat' || t === 'config')
 			? t : 'overview';
 	}
 	function setTab(t: Tab) {
@@ -1414,7 +1414,7 @@
 	{:else}
 	<!-- Sticky in-page tab bar -->
 	<div class="tab-bar" role="tablist" aria-label={m['navigation.Devices']()}>
-		{#each [['overview', m['devicedetail.Tab Overview']()], ['discovery', m['devicedetail.Tab Discovery']()], ['network', m['devicedetail.Tab Network']()], ['systems', m['devicedetail.Tab Systems']()], ['heartbeat', m['devicedetail.Tab Heartbeat']()], ['config', m['devicedetail.Tab Config']()]] as [key, label] (key)}
+		{#each [['overview', m['devicedetail.Tab Overview']()], ['identity', m['identity.Device Identity']()], ['discovery', m['devicedetail.Tab Discovery']()], ['network', m['devicedetail.Tab Network']()], ['systems', m['devicedetail.Tab Systems']()], ['heartbeat', m['devicedetail.Tab Heartbeat']()], ['config', m['devicedetail.Tab Config']()]] as [key, label] (key)}
 			<button
 				role="tab"
 				aria-selected={activeTab === key}
@@ -1679,6 +1679,13 @@
 
 		</div><!-- /overview tabpanel -->
 	{/if}<!-- /overview tab -->
+
+	<!-- ── IDENTITY TAB ── -->
+	{#if activeTab === 'identity'}
+	<div id="tab-panel-identity" role="tabpanel" aria-labelledby="tab-btn-identity">
+		<IdentityReviewPanel {deviceId} />
+	</div>
+	{/if}
 
 	<!-- ── DISCOVERY TAB ── -->
 	{#if activeTab === 'discovery'}

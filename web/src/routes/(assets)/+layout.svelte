@@ -32,6 +32,7 @@
 
 	const tabs = $derived<PlaceTab[]>([
 		{ path: '/devices', label: m['assets.Place Tab Devices'](), exact: true },
+		{ path: '/identity', label: m['assets.Place Tab Identity']() },
 		{ path: '/changes', label: m['assets.Place Tab Changes']() },
 		{ path: '/archive', label: m['assets.Place Tab Archive']() },
 		{ path: '/fingerprints', label: m['assets.Place Tab Fingerprints']() },

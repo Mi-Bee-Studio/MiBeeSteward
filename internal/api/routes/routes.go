@@ -40,6 +40,7 @@ import (
 	"mibee-steward/internal/service/diagnostics"
 	"mibee-steward/internal/service/discovery"
 	"mibee-steward/internal/service/flows"
+	identitysvc "mibee-steward/internal/service/identity"
 	"mibee-steward/internal/service/listenwatch"
 	"mibee-steward/internal/service/notification"
 	scannerv2peer "mibee-steward/internal/service/peer"
@@ -1136,6 +1137,12 @@ func NewRouter(dbConn *sql.DB, cfg *config.Config) (http.Handler, *service.Heart
 	// diagnostics service; any logged-in user may read.
 	diagnosisHandler := handler.NewDeviceDiagnosisHandler(diagnostics.NewService(dbConn))
 	registerDeviceDiagnosisRoutes(r, scopeResolver, dbConn, diagnosisHandler)
+
+	// Identity review (#781): batch candidate detection + per-device evidence
+	// projection. Read-only; no automatic merge/split writes.
+	identityHandler := handler.NewIdentityHandler(identitysvc.NewService(dbConn))
+	registerIdentityRoutes(r, scopeResolver, identityHandler)
+	registerDeviceIdentityRoutes(r, scopeResolver, dbConn, identityHandler)
 
 	registerDeviceCertificateRoutes(r, scopeResolver, dbConn, tlsCertHandler)
 

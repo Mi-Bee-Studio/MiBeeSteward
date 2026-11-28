@@ -144,6 +144,12 @@ vi.mock('$lib/api/client', () => ({
 			if (path === '/devices/1/systems') {
 				return Promise.resolve({ systems: [], total: 0 });
 			}
+			if (path === '/devices/1/identity') {
+				return Promise.resolve({
+					device: { ...mocks.device, device_uuid: 'identity-device-1', mac_aliases: [], multi_homed: false, stale: false, evidence_coverage: 0.5 },
+					candidates: []
+				});
+			}
 			if (path === '/devices/1/diagnosis') {
 				return Promise.resolve(mocks.diagnosis);
 			}
@@ -202,6 +208,15 @@ describe('Device detail page', () => {
 
 	// #429 (manual-edit shape): tags may also be a plain CSV string: the
 	// manual edit form submits it that way.
+	it('deep-links to the read-only Identity tab and loads its projection', async () => {
+		window.history.replaceState(null, '', '/devices/1?tab=identity');
+		const { container } = render(Detail);
+		await waitFor(() => {
+			expect(container.querySelector('#tab-panel-identity')?.textContent).toContain('Identity facts');
+		});
+		expect(container.querySelector('#tab-panel-identity')?.textContent).toContain('No identity candidates');
+	});
+
 	it('renders CSV tags as plain chips too (#429)', async () => {
 		mocks.device.tags = 'camera,Chuangmi,miot';
 
