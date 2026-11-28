@@ -106,7 +106,9 @@ SvelteKit 5 SPA embedded via `web/embed.go` (`//go:embed all:dist`). Tailwind 4 
 
 
 
-SQLite via the pure-Go `modernc.org/sqlite` driver (CGO-free), WAL mode, main pool `MaxOpenConns=16` (`busy_timeout=5000`). Heartbeat results go to a **separate** SQLite file `data/heartbeat.db` (single connection, batched writes) so high-frequency probe records never contend with the main DB. sqlc generates type-safe Go from `db/queries/*.sql`. Default path: `./data/mibee.db`. **Schema bootstrap is fresh-only**: the embedded `schema.sql` is the single DDL source, applied once when the database is first created and stamped via `PRAGMA user_version`; a database stamped with a different version is rejected at startup with guidance instead of being upgraded in place. Never edit `internal/db/*.go` directly, modify SQL and regenerate.
+SQLite via the pure-Go `modernc.org/sqlite` driver (CGO-free), WAL mode, main pool `MaxOpenConns=16` (`busy_timeout=5000`). Heartbeat results go to a **separate** SQLite file `data/heartbeat.db` (single connection, batched writes), and probe extensions go to `data/probe_ext.db`, so high-frequency records never contend with the main DB. sqlc generates type-safe Go from `db/queries/*.sql`. Default path: `./data/mibee.db`. **Schema bootstrap is fresh-only**: the embedded `schema.sql` is the single DDL source, applied once when the database is first created and stamped via `PRAGMA user_version`; a database stamped with a different version is rejected at startup with guidance instead of being upgraded in place. Never edit `internal/db/*.go` directly, modify SQL and regenerate.
+
+The built-in `backup` / `verify-backup` / `restore` commands manage the data lifecycle: bundles cover all top-level SQLite files, uploads/fingerprints/instance identity, and config, with SHA-256, SQLite integrity, and schema-version manifests. Core schema stays stable while side stores evolve additively; crossing a core schema boundary means backing up and rescanning into a fresh database rather than restoring the old migration chain.
 
 
 

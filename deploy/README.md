@@ -162,8 +162,9 @@ sudo journalctl -u mibee-steward -f
 ### 9. 设置备份计划
 
 ```bash
-# 复制备份脚本
-sudo cp scripts/backup.sh /opt/mibee-steward/
+# 复制备份脚本（deb/rpm 已自带，可跳过）
+sudo mkdir -p /opt/mibee-steward/scripts
+sudo cp scripts/backup.sh /opt/mibee-steward/scripts/
 
 # 设置脚本权限
 sudo chmod +x /opt/mibee-steward/scripts/backup.sh
@@ -338,8 +339,18 @@ export MIBEE_AUTH_INITIAL_ADMIN_PASSWORD="your-password"
 # 停止服务
 sudo systemctl stop mibee-steward
 
-# 恢复数据库
-sqlite3 ./data/mibee.db < /path/to/backup/mibee-20240101_120000.db
+# 校验备份包并做恢复预演
+/opt/mibee-steward/mibee-steward verify-backup /path/to/mibee-YYYYMMDD_HHMMSS
+/opt/mibee-steward/mibee-steward restore -dry-run \
+  -data-dir /opt/mibee-steward/data \
+  -config /opt/mibee-steward/configs/config.yaml \
+  /path/to/mibee-YYYYMMDD_HHMMSS
+
+# 正式恢复（旧数据保留为 *.pre-restore-*）
+sudo /opt/mibee-steward/mibee-steward restore -force \
+  -data-dir /opt/mibee-steward/data \
+  -config /opt/mibee-steward/configs/config.yaml \
+  /path/to/mibee-YYYYMMDD_HHMMSS
 
 # 启动服务
 sudo systemctl start mibee-steward

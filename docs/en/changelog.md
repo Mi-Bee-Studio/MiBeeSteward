@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Verified data-lifecycle bundles (#786)**: new built-in `backup`, `verify-backup`, and `restore` commands snapshot every top-level SQLite database plus uploads/fingerprints/instance identity/config into a manifest bundle with SHA-256, SQLite integrity and schema stamps. Restore verifies first, stages beside the target, preserves previous data, supports dry-run, and refuses cross-core-schema restore by default. `scripts/backup.sh` is now a zero-`sqlite3` compatibility wrapper.
+
 ### Fixed
 
 - **Production trust P0 — public placeholder credentials and predictable HA JWT (#785)**: startup now rejects known public template placeholders for JWT/admin secrets; production/Docker templates ship empty required values instead of usable public defaults; Home Assistant generates a cryptographically random per-install JWT on first start, persists it under `/data/steward/` with mode 0600, and reuses it across restarts.

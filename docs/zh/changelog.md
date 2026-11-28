@@ -7,6 +7,9 @@
 
 ## [Unreleased]
 
+### Added
+- **可验证的数据生命周期备份包（#786）**：新增内置 `backup` / `verify-backup` / `restore`，把全部顶层 SQLite 库及 uploads/fingerprints/instance-id/config 打入带 SHA-256、SQLite 完整性和 schema 版本的 manifest 备份包。恢复前完整校验、目标旁暂存、保留旧数据、支持 dry-run，默认拒绝跨核心 schema 恢复；`scripts/backup.sh` 改为零 `sqlite3` 依赖的兼容包装器。
+
 ### Fixed
 - **生产可信化 P0——公开占位凭据与可预测 HA JWT（#785）**：启动校验现在拒绝已知公开模板占位 JWT/管理员密钥；生产与 Docker 模板不再携带可直接使用的公开默认值；Home Assistant 首次启动生成密码学随机 JWT，以 0600 持久化到 `/data/steward/`，重启复用。
 - **生产可信化 P0——Rust Agent 发布语料真正内嵌（#783）**：指纹 YAML 与 SNMP 表编译进二进制，不再运行时读取构建机 `CARGO_MANIFEST_DIR`；新增 `mibee-agent fingerprint-check`，在无配置/源码树时验证内嵌语料，CI 与发布均从空工作目录执行。

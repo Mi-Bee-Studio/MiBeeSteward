@@ -9,12 +9,15 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"mibee-steward/internal/backup"
 )
 
 // TestDoctor_BackupBranches drives the backup checks: a fresh valid backup
@@ -43,4 +46,34 @@ func TestDoctor_BackupBranches(t *testing.T) {
 		}
 	}
 	require.Equal(t, wantExit, doctor([]string{"-config", cfg}))
+}
+
+func TestDoctor_VerifiedBundleBranch(t *testing.T) {
+	dbDir := t.TempDir()
+	dbPath := filepath.Join(dbDir, "mibee.db")
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	_, err = db.Exec(`CREATE TABLE devices (id INTEGER PRIMARY KEY)`)
+	require.NoError(t, err)
+	_, err = db.Exec(`PRAGMA user_version = 11`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	cfg := writeDoctorConfig(t, dbPath, "0123456789abcdef0123456789abcdef")
+
+	result, err := backup.Create(context.Background(), backup.CreateRequest{
+		MainDBPath: dbPath, ConfigPath: cfg, OutputDir: filepath.Join(dbDir, "backups"),
+		ExpectedSchemaVersion: SchemaVersion,
+	})
+	require.NoError(t, err)
+	wantExit := 0
+	if raw, err := os.ReadFile("/proc/sys/net/ipv4/ping_group_range"); err == nil {
+		if c, ok := icmpPingGroupRangeCheck(string(raw), os.Getgid()); ok && c.status == "fail" {
+			wantExit = doctorFailExit
+		}
+	}
+	require.Equal(t, wantExit, doctor([]string{"-config", cfg}))
+
+	// Corruption must turn the bundle/restorability checks into failures.
+	require.NoError(t, os.WriteFile(filepath.Join(result.Path, "databases", "mibee.db"), []byte("tampered"), 0o600))
+	require.Equal(t, doctorFailExit, doctor([]string{"-config", cfg}))
 }
