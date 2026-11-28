@@ -13,12 +13,17 @@
 
 ### 方式一：GitHub Releases
 
-从 [Mi-Bee-Studio/MiBeeSteward Releases](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases) 下载对应架构的二进制（当前 v0.10.0）：
+从 [MiBee Steward v0.10.0 Release](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases/tag/v0.10.0) 下载对应架构的二进制：
 
 ```bash
-chmod +x mibee-steward
-./mibee-steward --config config.yaml
+# amd64；arm64 资产名为 mibee-steward-linux-arm64
+chmod +x mibee-steward-linux-amd64
+./mibee-steward-linux-amd64 --config config.yaml
 ```
+
+校验和文件为 `SHA256SUMS.center`；带可选 LLDP/CDP 与 ARP 能力的变体为 `mibee-steward-linux-amd64-full` / `mibee-steward-linux-arm64-full`。
+
+> **从 v0.9.x 或更早版本升级？** v0.10.0 的 schema v9 → v10 → v11 不就地升级。先运行 `scripts/backup.sh`，删除旧数据库，再以全新数据库启动并重新扫描；拨测历史清零，归档条目不随重建保留。详见[部署指南](deployment.md#v09x--v0100-跨界操作)。
 
 ### 方式二：Docker
 

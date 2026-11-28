@@ -40,7 +40,7 @@ flowchart TD
 
 ### 下载
 
-从 [GitHub Releases](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases) 下载对应平台的预编译 binary（amd64/arm64），或从源码构建。单机部署使用**中心**二进制（源码入口 `cmd/server`，约 24MB，内嵌 SvelteKit Web 界面）；纯采集器（Rust `agent-rs/` workspace，约 4.8MB，无内嵌界面）用于 [OpenWrt](openwrt.md) 与 [分布式](distributed.md) 场景。每个版本另附每架构一个 **`-full` 变体**，编入可选的 LLDP/CDP 监听与 ARP 扫描（需 `CAP_NET_RAW`；见[构建变体矩阵](build-variants.md)）；全部 center 二进制的校验和在 `SHA256SUMS.center`：
+从 [v0.10.0 Release](https://github.com/Mi-Bee-Studio/MiBeeSteward/releases/tag/v0.10.0) 下载对应平台的预编译 binary（amd64/arm64），或从源码构建。单机部署使用**中心**二进制（源码入口 `cmd/server`，约 24MB，内嵌 SvelteKit Web 界面）；纯采集器（Rust `agent-rs/` workspace，约 4.8MB，无内嵌界面）用于 [OpenWrt](openwrt.md) 与 [分布式](distributed.md) 场景。每个版本另附每架构一个 **`-full` 变体**，编入可选的 LLDP/CDP 监听与 ARP 扫描（需 `CAP_NET_RAW`；见[构建变体矩阵](build-variants.md)）；全部 center 二进制的校验和在 `SHA256SUMS.center`：
 
 ```bash
 git clone https://github.com/Mi-Bee-Studio/MiBeeSteward.git
@@ -57,9 +57,9 @@ Debian / RHEL 系主机可以跳过下面的手工步骤：每个版本附带原
 
 ```bash
 # Debian / Ubuntu / Armbian（apt 可直接装本地文件；arm64 / armhf 同理）
-sudo apt install ./mibee-steward_<version>_amd64.deb
+sudo apt install ./mibee-steward_0.10.0_amd64.deb
 # Fedora / RHEL / openSUSE
-sudo dnf install ./mibee-steward-<version>-1.x86_64.rpm
+sudo dnf install ./mibee-steward-0.10.0-1.x86_64.rpm
 ```
 
 首次安装会自动完成下面二进制部署的全部手工步骤：铺出完全相同的目录布局（`/opt/mibee-steward` 下的二进制 + configs、`/usr/lib/systemd/system/` 下的 systemd unit、logrotate、`backup.sh`），**生成 `/opt/mibee-steward/configs/config.yaml`**（随机 `jwt_secret`；admin 密码留空——Web 界面首启时在浏览器里创建；`cookie_secure: false` 局域网明文 HTTP 默认——上 nginx+TLS 后改回 `true`），打开并持久化 `net.ipv4.ping_group_range`（非特权 ICMP），随后启用并启动服务。Web 界面在 `http://<host>:8080`。
@@ -67,7 +67,7 @@ sudo dnf install ./mibee-steward-<version>-1.x86_64.rpm
 注意：
 
 - 服务以**数字 uid/gid 1000** 运行（unit 刻意如此，见其注释）；postinst 会把 `/opt/mibee-steward` 整体 chown 到 1000:1000。若本机 1000 不是预期账号，用 unit drop-in 覆盖。
-- 升级 = 安装新包：配置与数据永不被改动（配置只在首次安装生成）。`apt purge` / `dnf remove` 删除生成配置，但刻意保留 `data/`。
+- 升级 = 安装新包：包脚本不主动改写配置与数据（配置只在首次安装生成）。`apt purge` / `dnf remove` 删除生成配置，但刻意保留 `data/`。**跨 schema 边界仍必须按下文重建数据库，不能把“安装新包”当作数据迁移。**
 - 从手工二进制安装迁移到包安装可直接进行（存量配置保留），但先移除手工拷贝的 `/etc/systemd/system/mibee-steward.service`——`/etc` 下的 unit 会永久遮蔽包内 unit（postinst 也会提示这一点）。
 - agent 包 `mibee-agent` 生命周期相同：`/etc/mibee/agent.yaml` + 专用 `mibee-agent` 系统用户；`network.name`/`cidr` 从默认路由推导，`center.url` / `center.auth_token` 未填时服务保持停止（[distributed.md](distributed.md)）。
 - 包只带默认构建；`-full` 能力变体仍是手工构建（[构建变体](build-variants.md)）。
@@ -349,8 +349,17 @@ sudo systemctl start mibee-steward
 
 ## 升级
 
+> **v0.10.0 重要升级说明（schema v9 → v10 → v11，不就地升级）**：从 v0.9.x 或更早数据库升级时，先运行 `scripts/backup.sh` 备份，再删除旧数据库并从全新数据库启动，最后重新扫描回填。**拨测历史序列会清零，归档条目不会随重建保留**，会在设备离线周期中重新积累。v11 内部的小版本升级仍只需替换二进制。agent 建议同步升级到 **0.2.4**；旧 agent 仍可上报，但 HostNet 归因、SNTP 时钟偏移、UDP DNS 重传与链式压缩指针解析等新能力需要 0.2.4。
 
-### 二进制升级
+### v0.9.x → v0.10.0 跨界操作
+
+1. **停服并备份**：运行 `scripts/backup.sh`，另存一份 `configs/config.yaml`。
+2. **删除旧库**：删除 `data/mibee.db`（以及残留的 `-wal` / `-shm`）；不要把备份直接改名成新库。
+3. **启动 v0.10.0**：使用现有配置创建 v11 全新数据库，随后执行扫描重新发现并回填设备。
+4. **恢复质量矩阵**：二进制/systemd 与 Docker 升级若缺少 `probe.quality` 键，默认值现已改为开启；按“设置 → 探针”开关或 `doctor` 提示核对。OpenWrt 保配置升级由 `migrate-config.sh` 自动补齐默认块。
+5. **验证**：确认设备台账、拨测页「出口与路径」、站点矩阵与网络中心有数据，再恢复告警规则。
+
+### 二进制升级（同一 schema 内）
 
 ```bash
 sudo systemctl stop mibee-steward
@@ -372,7 +381,7 @@ docker compose pull  # 拉取新镜像
 docker compose up -d
 ```
 
-数据兼容性：自 v0.7 起 schema 只在首次启动时全新创建，不做原地升级。记录为旧版本号的数据库会在启动时被拒绝并给出指引；跨版本升级的做法是先备份 `data/` 目录（`scripts/backup.sh`），用新数据库启动，设备由下一次扫描重新发现。schema 版本兼容时，替换二进制即完成升级。ARMv7 设备无 release 预编译产物，需本地 `make build-linux-arm` 交叉编译。
+数据兼容性：自 v0.7 起 schema 只在首次启动时全新创建，不做原地升级。记录为旧版本号的数据库会在启动时被拒绝并给出指引；**v0.9 → v0.10 的跨界数据库必须重建，v0.10 → v0.11 同样如此，不能仅替换二进制或安装新包**。schema 版本兼容时，替换二进制即完成升级。ARMv7 设备无 release 预编译产物，需本地 `make build-linux-arm` 交叉编译。
 
 > **跨 schema 8 → 9（资产档案库组合，#662–#669）**——新建库后有两点需要预期：
 >
