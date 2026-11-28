@@ -14,9 +14,10 @@ Key decisions (mirroring the issue constraints):
   survive add-on updates (`/data/steward/`).
 - **Secrets are options, blanks are secure defaults** — an empty
   `master_key` disables the v3 credential vault rather than inventing a weak
-  key; an empty `jwt_secret` derives a stable per-install value so sessions
-  survive restarts without the user managing one; the admin password is
-  always created via the browser first-run setup.
+  key; an empty `jwt_secret` generates a cryptographically random per-install
+  value on first start and persists it under `/data/steward/` with mode 0600,
+  so sessions survive restarts without deriving a key from public data; the
+  admin password is always created via the browser first-run setup.
 - **Relationship to the distributed shape**: an HA-box center covers the LANs
   the box bridges. Multiple segments still want one agent per segment
   reporting to this center — see the distributed docs.

@@ -21,8 +21,8 @@ type TOTPSetupRequest struct {
 }
 
 type TOTPVerifyRequest struct {
-	UserID int64  `json:"user_id"`
-	Code   string `json:"code"`
+	Challenge string `json:"challenge"`
+	Code      string `json:"code"`
 }
 
 type TOTPEnableRequest struct {

@@ -61,9 +61,11 @@ type UserResponse struct {
 }
 
 type LoginResponse struct {
-	Token             string       `json:"token"`
-	User              UserResponse `json:"user"`
-	TwoFactorRequired bool         `json:"two_factor_required,omitempty"`
+	Token              string       `json:"token"`
+	User               UserResponse `json:"user"`
+	TwoFactorRequired  bool         `json:"two_factor_required,omitempty"`
+	Challenge          string       `json:"challenge,omitempty"`
+	ChallengeExpiresIn int          `json:"challenge_expires_in,omitempty"`
 }
 
 type ListUsersResponse struct {

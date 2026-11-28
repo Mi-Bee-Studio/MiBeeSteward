@@ -422,7 +422,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Verify a TOTP code during login (public + login rate limit) */
+        /** Verify a one-time 2FA challenge and TOTP code during login (public + login rate limit) */
         post: {
             parameters: {
                 query?: never;
@@ -430,7 +430,16 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description One-time challenge returned by /auth/login after password success */
+                        challenge: string;
+                        /** @description Current TOTP code or unconsumed backup code */
+                        code: string;
+                    };
+                };
+            };
             responses: {
                 /** @description Session token */
                 200: {
@@ -6619,7 +6628,10 @@ export interface components {
             token: string;
             user: components["schemas"]["User"];
             two_factor_required?: boolean;
-            user_id?: number;
+            /** @description One-time 2FA challenge; present only when two_factor_required is true */
+            challenge?: string;
+            /** @description Challenge lifetime in seconds */
+            challenge_expires_in?: number;
         };
         SystemNetworkInterfacesReport: {
             interfaces: components["schemas"]["SystemNetworkInterface"][];

@@ -35,7 +35,12 @@ it via the existing-secret path).
 | Key | Default | Notes |
 |---|---|---|
 | `image.tag` | chart appVersion | pin a release tag in production |
-| `persistence.{enabled,size,storageClass,existingClaim}` | true / 2Gi / "" / "" | RWO is the contract |
+| `persistence.{enabled,size,storageClass,existingClaim}` | true / 2Gi / "" / "" | RWO is the contract; mounted at `/data` |
 | `secrets.existingName` | "" | the production path for credentials |
 | `ingress.*` | disabled | ingressClassName + TLS as usual |
-| `config.*` | reserved-targets off | any `MIBEE_*` env key goes here |
+| `config.*` | DB `/data/mibee.db`, uploads `/data/uploads`, reserved-targets off | any `MIBEE_*` env key goes here |
+
+The chart mounts a generated `config.yaml` at `/app/configs/config.yaml` and
+the PVC at `/data`. Secrets remain environment-only; the file contains empty
+auth placeholders that the secret environment overrides. The container runs as
+non-root with privilege escalation disabled.

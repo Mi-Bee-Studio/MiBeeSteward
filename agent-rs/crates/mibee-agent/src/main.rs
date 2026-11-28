@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use include_dir::{include_dir, Dir};
 use mibee_agent::center::{CenterClient, RealClock, Reporter};
 use mibee_agent::config::Config;
 use mibee_agent::engine::orchestrator::ScanEngine;
@@ -28,6 +29,12 @@ const COMMAND_POLL: Duration = Duration::from_secs(60);
 const SWEEP_EVERY: Duration = Duration::from_secs(6 * 3600);
 const SCAN_DEADLINE: Duration = Duration::from_secs(15 * 60);
 
+// Compile-time assets: release binaries must remain self-contained on hosts
+// without the build machine's source tree. Runtime corpus precedence remains
+// scanner.fingerprint_path -> synced directory -> this embedded corpus.
+static EMBEDDED_FINGERPRINTS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/fingerprints");
+const EMBEDDED_SNMP_TABLES: &str = include_str!("../assets/fingerprints/snmp-data.yaml");
+
 /// 300-line log ring for remote logs-tail.
 static LOG_RING: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
 
@@ -46,6 +53,15 @@ fn main() {
     if args.iter().any(|a| a == "-version" || a == "--version") {
         println!("mibee-agent {VERSION}");
         return;
+    }
+    if args.get(1).map(|s| s.as_str()) == Some("fingerprint-check") {
+        match embedded_corpus_check() {
+            Ok(()) => return,
+            Err(e) => {
+                eprintln!("mibee-agent: embedded fingerprint check failed: {e}");
+                std::process::exit(1);
+            }
+        }
     }
     if args.get(1).map(|s| s.as_str()) == Some("snmp-credential") {
         std::process::exit(snmp_credential_cli(&args[2..]));
@@ -92,10 +108,7 @@ async fn run_agent(cfg: Config, config_path: &str) -> Result<(), String> {
     let corpus_used: String = match &corpus_dir {
         Some(dir) if classifier.load_from_dir(dir).is_ok() && classifier.loaded() => dir.clone(),
         _ => {
-            let embedded = embedded_corpus_path();
-            if std::path::Path::new(&embedded).is_dir() {
-                classifier.load_from_dir(&embedded).map_err(|e| e.to_string())?;
-            }
+            classifier = load_embedded_classifier()?;
             "embedded".to_string()
         }
     };
@@ -890,12 +903,44 @@ fn hostname_str() -> String {
         .unwrap_or_else(|| "agent".to_string())
 }
 
-/// Embedded corpus directory (build-time synced to assets/fingerprints/).
-fn embedded_corpus_path() -> String {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("assets/fingerprints")
-        .to_string_lossy()
-        .into_owned()
+/// Load the compile-time corpus through the same compiler as runtime YAML.
+fn load_embedded_classifier() -> Result<RuleClassifier, String> {
+    let mut classifier = RuleClassifier::new();
+    let files = EMBEDDED_FINGERPRINTS
+        .files()
+        .filter(|f| f.path().extension().and_then(|e| e.to_str()) == Some("yaml"))
+        .filter_map(|f| {
+            let name = f.path().file_name()?.to_string_lossy().into_owned();
+            let text = f.contents_utf8()?;
+            Some((name, text))
+        });
+    classifier.load_contents(files).map_err(|e| e.to_string())?;
+    if !classifier.loaded() {
+        return Err("embedded corpus compiled zero rules".to_string());
+    }
+    Ok(classifier)
+}
+
+/// Artifact/diagnostic check: runs without a config or source tree and proves
+/// both the rule corpus and SNMP tables are present in the executable.
+fn embedded_corpus_check() -> Result<(), String> {
+    let classifier = load_embedded_classifier()?;
+    let tables = SnmpTables::parse(EMBEDDED_SNMP_TABLES)?;
+    let table_entries = tables.oid_prefixes.len()
+        + tables.sysdescr_types.len()
+        + tables.sysdescr_brands.len()
+        + tables.sysdescr_os.len();
+    if classifier.rule_count() < 1_000 || table_entries == 0 {
+        return Err(format!(
+            "embedded corpus incomplete: rules={}, snmp_table_entries={table_entries}",
+            classifier.rule_count()
+        ));
+    }
+    println!(
+        "embedded fingerprints OK: rules={}, snmp_table_entries={table_entries}",
+        classifier.rule_count()
+    );
+    Ok(())
 }
 
 fn read_snmp_tables(corpus_dir: &Option<String>) -> String {
@@ -905,10 +950,7 @@ fn read_snmp_tables(corpus_dir: &Option<String>) -> String {
             return text;
         }
     }
-    std::fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/fingerprints/snmp-data.yaml"),
-    )
-    .unwrap_or_default()
+    EMBEDDED_SNMP_TABLES.to_string()
 }
 
 /// snmp-credential CLI (add/list/remove). Passphrases never echo.
@@ -1061,6 +1103,24 @@ fn snmp_credential_cli(args: &[String]) -> i32 {
             eprintln!("unknown action {other:?} (add|list|remove)");
             1
         }
+    }
+}
+
+#[cfg(test)]
+mod embedded_corpus_tests {
+    use super::{embedded_corpus_check, load_embedded_classifier, EMBEDDED_SNMP_TABLES};
+    use mibee_agent::engine::identify::SnmpTables;
+
+    #[test]
+    fn embedded_corpus_is_self_contained_and_complete() {
+        let classifier = load_embedded_classifier().expect("embedded corpus must compile");
+        assert!(classifier.loaded());
+        assert!(classifier.rule_count() >= 1_000);
+
+        let tables = SnmpTables::parse(EMBEDDED_SNMP_TABLES).expect("embedded SNMP tables must parse");
+        assert!(!tables.oid_prefixes.is_empty());
+        assert!(!tables.sysdescr_brands.is_empty());
+        embedded_corpus_check().expect("artifact check must pass");
     }
 }
 

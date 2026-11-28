@@ -11,7 +11,6 @@ package handler
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -462,23 +461,26 @@ func TestTOTPHandler_TailBranches(t *testing.T) {
 	h.Status(rw, ctxUser(httptest.NewRequest(http.MethodGet, "/status", nil), seeded.ID, "viewer"))
 	require.Equal(t, http.StatusOK, rw.Code)
 
-	// Verify: decode / missing fields / unknown user (not configured).
+	// Verify: decode / missing fields / invalid challenge.
 	rw = httptest.NewRecorder()
 	h.Verify(rw, httptest.NewRequest(http.MethodPost, "/verify", strings.NewReader("{nope")))
 	require.Equal(t, http.StatusBadRequest, rw.Code)
 	rw = httptest.NewRecorder()
-	h.Verify(rw, httptest.NewRequest(http.MethodPost, "/verify", strings.NewReader(`{"user_id":0,"code":""}`)))
+	h.Verify(rw, httptest.NewRequest(http.MethodPost, "/verify", strings.NewReader(`{"challenge":"","code":""}`)))
 	require.Equal(t, http.StatusBadRequest, rw.Code)
 	rw = httptest.NewRecorder()
-	h.Verify(rw, httptest.NewRequest(http.MethodPost, "/verify", strings.NewReader(`{"user_id":99999,"code":"123456"}`)))
-	require.Equal(t, http.StatusBadRequest, rw.Code) // 2FA not configured
-	// Setup creates a PENDING secret; verify then reports "not enabled".
+	h.Verify(rw, httptest.NewRequest(http.MethodPost, "/verify", strings.NewReader(`{"challenge":"invalid","code":"123456"}`)))
+	require.Equal(t, http.StatusBadRequest, rw.Code)
+	// Setup creates a PENDING secret; a manually issued challenge then reports
+	// "not enabled" from the service branch.
 	rw = httptest.NewRecorder()
 	h.Setup(rw, ctxUser(httptest.NewRequest(http.MethodPost, "/setup", nil), seeded.ID, "viewer"))
 	require.Equal(t, http.StatusCreated, rw.Code)
+	challenge, _, err := h.svc.IssueChallenge(seeded.ID)
+	require.NoError(t, err)
 	rw = httptest.NewRecorder()
 	h.Verify(rw, httptest.NewRequest(http.MethodPost, "/verify", strings.NewReader(
-		fmt.Sprintf(`{"user_id":%d,"code":"000000"}`, seeded.ID))))
+		`{"challenge":"`+challenge+`","code":"000000"}`)))
 	require.Equal(t, http.StatusBadRequest, rw.Code) // 2FA is not enabled
 }
 

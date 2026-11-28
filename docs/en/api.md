@@ -424,7 +424,7 @@ Accounts support TOTP-based two-factor authentication. Endpoints are at `/api/v1
 |----------|------|-------------|
 
 
-| `POST /api/v1/auth/2fa/verify` | Public · Login Rate Limit | Verify TOTP code (login two-factor verification step) |
+| `POST /api/v1/auth/2fa/verify` | Public · Login Rate Limit | Complete 2FA login with a one-time `challenge` + TOTP/backup code |
 
 
 | `POST /api/v1/auth/2fa/setup` | Authenticated | Get TOTP setup (generate secret / otpauth URI binding info) |
@@ -541,7 +541,7 @@ Authenticate user and return JWT token.
 
 
 
-Every user object carries a `must_change_password` flag. Accounts with 2FA enabled have a **challenge variant**: after the password checks out, the response carries `two_factor_required: true` and **no** cookie/token is issued, complete the login by passing `POST /auth/2fa/verify`.
+Every user object carries a `must_change_password` flag. Accounts with 2FA enabled have a **challenge variant**: after the password checks out, the response carries `two_factor_required: true`, a one-time `challenge`, and `challenge_expires_in`, with **no** cookie/token. Submit `{challenge, code}` to `POST /auth/2fa/verify`; the server resolves the user from the challenge and no longer accepts a caller-supplied `user_id`. Challenges are short-lived, bound to successful password authentication, and invalidated after success or attempt-budget exhaustion.
 
 
 

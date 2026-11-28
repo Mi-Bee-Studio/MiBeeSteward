@@ -10,16 +10,18 @@ sat next to it) — where docs and Go code disagree, the Go code wins.
 ## Layout
 
 - `crates/mibee-fingerprints` — fingerprint rule classifier (port of
-  mibee-fingerprints-go). Corpus is data (CC-BY-SA upstream), loaded from
-  a directory; never embedded here.
+  mibee-fingerprints-go). Corpus is data (CC-BY-SA upstream), loaded from a
+  runtime directory or compiled into the agent binary as a self-contained
+  fallback.
 - `crates/mibee-agent` — the agent binary: wire types, config, center
   client, scan engine.
 - `difftest/` — differential test rig against the Go classifier:
   `gen_case_tables.go` (Go-generated case-mapping tables), `gen_battery.py`
   (deterministic battery), `run_difftest.sh`, `go_oracle_main.go` (build
   into mibee-fingerprints-go/tmp/oracle/).
-- `crates/mibee-agent/assets/` — synced copies of the main repo's embedded
-  OUI table and device_types.yaml; sync, never hand-edit.
+- `crates/mibee-agent/assets/` — synced copies of the main repo's fingerprint
+  corpus, embedded OUI table and device_types.yaml; sync, never hand-edit.
+  The corpus is compiled into release binaries with `include_dir!`/`include_str!`.
 
 ## Build / test
 
@@ -39,6 +41,11 @@ the pyenv `python3.bat` shim resolves to a Python without ziglang.
 Version: `-version` reports `MIBEE_AGENT_VERSION` when that env var is set
 at BUILD time (the release pipeline stamps the git tag through it), else
 the Cargo.toml version.
+
+`mibee-agent fingerprint-check` loads the compiled-in rule corpus and SNMP
+tables without a config file or source tree, prints their counts, and exits
+non-zero if either is missing. CI and release artifact smoke use this command
+from an empty working directory.
 
 ## Status: DEPLOYED (2026-10-07, agent 0.1.5)
 

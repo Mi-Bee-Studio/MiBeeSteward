@@ -50,9 +50,9 @@ func (r *Resolver) Mode() domain.ScopeMode {
 }
 
 // Resolve returns the effective network scope for a user. It never returns an
-// error: on DB failure it fails OPEN (Global) so a transient DB hiccup cannot
-// lock users out of inventory (fail-safe for availability; logged by caller if
-// needed). Admin and open-mode always short-circuit without touching the DB.
+// error: in closed mode a DB failure fails CLOSED (an empty restricted scope)
+// so a transient storage problem can never widen a user's permissions. Admin
+// and open-mode always short-circuit without touching the DB.
 func (r *Resolver) Resolve(ctx context.Context, userID int64, role domain.UserRole) domain.Scope {
 	if r == nil {
 		return domain.Scope{Global: true}
@@ -71,8 +71,9 @@ func (r *Resolver) Resolve(ctx context.Context, userID int64, role domain.UserRo
 		var err error
 		ids, err = NetworkIDsByUser(ctx, r.db, userID)
 		if err != nil {
-			// Fail open on DB error (availability over strictness); cache nothing.
-			return domain.Scope{Global: true}
+			// Fail closed on DB error; cache nothing. An empty restricted scope
+			// matches "user has no grants" and exposes no network data.
+			return domain.Scope{Global: false, NetworkIDs: nil}
 		}
 		r.store(userID, ids)
 	}

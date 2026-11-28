@@ -424,7 +424,7 @@ flowchart LR
 |------|------|------|
 
 
-| `POST /api/v1/auth/2fa/verify` | 公开 · 登录限流 | 校验 TOTP 验证码（登录的双因素校验步骤） |
+| `POST /api/v1/auth/2fa/verify` | 公开 · 登录限流 | 用一次性 `challenge` + TOTP/备份码完成双因素登录 |
 
 
 | `POST /api/v1/auth/2fa/setup` | 需认证 | 获取 TOTP 设置（生成密钥 / otpauth URI 等绑定信息） |
@@ -541,7 +541,7 @@ flowchart LR
 
 
 
-每个用户对象都携带 `must_change_password` 标记。已启用 2FA 的账户存在**挑战变体**：密码校验通过后返回 `two_factor_required: true`，此时**不**发放 cookie/token，需继续调用 `POST /auth/2fa/verify` 通过验证后才完成登录。
+每个用户对象都携带 `must_change_password` 标记。已启用 2FA 的账户存在**挑战变体**：密码校验通过后返回 `two_factor_required: true`、一次性 `challenge` 和 `challenge_expires_in`，此时**不**发放 cookie/token。继续调用 `POST /auth/2fa/verify` 时提交 `{challenge, code}`；服务端从 challenge 解析用户，不再接受客户端指定 `user_id`。challenge 短时效、绑定密码验证结果，成功或失败次数耗尽后失效。
 
 
 

@@ -93,7 +93,7 @@ database:
 
 | 键 | 类型 | 默认值 | 描述 |
 |-----|------|---------|-------------|
-| `auth.jwt_secret` | string | 无（必填） | JWT 签名密钥。**必填**：空值、长度不足 32 字符或等于占位符 `"change-me-in-production"`（仅 25 字符，两条校验都无法通过）都会导致启动失败。 |
+| `auth.jwt_secret` | string | 无（必填） | JWT 签名密钥。**必填**：空值、长度不足 32 字符，或使用 `CHANGE_THIS...`、`change-me-in-production`、`your-strong-jwt-secret-here` 等公开模板占位值，都会导致启动失败。 |
 | `auth.token_expiry` | string | "24h" | JWT 令牌有效期 |
 | `auth.initial_admin_password` | string | `""` | 引导用管理员凭据。**留空（默认）= 首启浏览器设置**：admin 以无密码状态播种，登录页会直接显示「创建管理员密码」表单（`GET /auth/setup-status` → `POST /auth/setup`，按生效密码策略校验、一次性）。非空值则为临时凭据，首次登录强制改密。 |
 | `auth.cookie_domain` | string | "" | Cookie 域名（空表示当前域名） |
@@ -913,7 +913,7 @@ MIBEE_CORS_ALLOWED_ORIGINS=https://yourdomain.com
 
 **中心/独立模式**：
 - `auth.jwt_secret` 必填，且长度至少 32 字符
-- `auth.jwt_secret` 不得等于占位符 `"change-me-in-production"`
+- `auth.jwt_secret` 不得使用已知公开模板占位值（例如 `CHANGE_THIS...`、`change-me-in-production` 或 `your-strong-jwt-secret-here`）。
 - `auth.initial_admin_password` 为空时服务器在启动时退出（见 `cmd/server/main.go`）
 
 以下情况仅输出**警告**、不阻止启动：

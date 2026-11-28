@@ -159,12 +159,12 @@ func (h *TOTPHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.UserID <= 0 || req.Code == "" {
-		Error(w, http.StatusBadRequest, "user_id and code are required")
+	if req.Challenge == "" || req.Code == "" {
+		Error(w, http.StatusBadRequest, "challenge and code are required")
 		return
 	}
 
-	err := h.svc.Verify(r.Context(), req.UserID, req.Code)
+	userID, err := h.svc.VerifyChallenge(r.Context(), req.Challenge, req.Code)
 	if err != nil {
 		if errors.Is(err, service.ErrTOTPNotFound) {
 			Error(w, http.StatusBadRequest, "2FA not configured")
@@ -178,15 +178,23 @@ func (h *TOTPHandler) Verify(w http.ResponseWriter, r *http.Request) {
 			Error(w, http.StatusBadRequest, "2FA is not enabled")
 			return
 		}
-		slog.Error("2FA verify failed", "user_id", req.UserID, "error", err)
+		if errors.Is(err, service.ErrTOTPChallengeInvalid) {
+			Error(w, http.StatusBadRequest, "invalid or expired 2FA challenge")
+			return
+		}
+		if errors.Is(err, service.ErrAccountLocked) {
+			Error(w, http.StatusLocked, err.Error())
+			return
+		}
+		slog.Error("2FA verify failed", "user_id", userID, "error", err)
 		Error(w, http.StatusInternalServerError, "verification failed")
 		return
 	}
 
 	// Code is valid, generate JWT token
-	profile, err := h.userSvc.GetProfile(r.Context(), req.UserID)
+	profile, err := h.userSvc.GetProfile(r.Context(), userID)
 	if err != nil {
-		slog.Error("failed to get user profile for 2FA", "user_id", req.UserID, "error", err)
+		slog.Error("failed to get user profile for 2FA", "user_id", userID, "error", err)
 		Error(w, http.StatusInternalServerError, "verification failed")
 		return
 	}
@@ -194,15 +202,14 @@ func (h *TOTPHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	// Generate token via a direct call, we need to use GenerateTokenForUser
 	// Since we can't access generateToken directly, use a public method. The
 	// must-change flag rides the token as the mcp claim (server-side gate).
-	token, err := h.userSvc.GenerateTokenForUser(r.Context(), req.UserID, profile.Role, profile.MustChangePassword)
+	token, err := h.userSvc.GenerateTokenForUser(r.Context(), userID, profile.Role, profile.MustChangePassword)
 	if err != nil {
-		slog.Error("failed to generate token for 2FA", "user_id", req.UserID, "error", err)
+		slog.Error("failed to generate token for 2FA", "user_id", userID, "error", err)
 		Error(w, http.StatusInternalServerError, "verification failed")
 		return
 	}
 
 	// Audit log
-	userID := req.UserID
 	h.auditRepo.Log(r.Context(), service.AuditLog{
 		UserID:       &userID,
 		Action:       "auth.login.2fa.success",

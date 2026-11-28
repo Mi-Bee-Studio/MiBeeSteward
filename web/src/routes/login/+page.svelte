@@ -92,7 +92,7 @@
 
 	// 2FA state
 	let twoFactorRequired = $state(false);
-	let twoFactorUserId = $state<number | null>(null);
+	let twoFactorChallenge = $state('');
 	let twoFactorCode = $state('');
 	let twoFactorLoading = $state(false);
 	async function handleLogin(e: Event) {
@@ -116,11 +116,11 @@
 			loginResponse = res;
 			loginDone = true;
 
-			// Check if 2FA is required. LoginResponse models these fields
-			// (two_factor_required / user_id) directly: no `as any` needed.
+			// Check if 2FA is required. The one-time challenge is bound to the
+			// password-authenticated user; verify never sends a caller-chosen id.
 			if (res.two_factor_required) {
 				twoFactorRequired = true;
-				twoFactorUserId = res.user_id ?? null;
+				twoFactorChallenge = res.challenge ?? '';
 				return; // Don't navigate yet
 			}
 
@@ -260,7 +260,7 @@
 			// The verify endpoint returns the same LoginResponse shape as
 			// /auth/login (Token + full User, including must_change_password).
 			const res = await api.post<LoginResponse>('/auth/2fa/verify', {
-				user_id: twoFactorUserId,
+				challenge: twoFactorChallenge,
 				code: twoFactorCode
 			});
 			loginResponse = res;
@@ -285,7 +285,7 @@
 
 	function backToLogin() {
 		twoFactorRequired = false;
-		twoFactorUserId = null;
+		twoFactorChallenge = '';
 		twoFactorCode = '';
 		// Clear a stale error left over from the failed login that pushed us
 		// into the 2FA flow; otherwise it resurfaces on the username/password

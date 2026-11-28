@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mibee-steward.fullname" . }}-runtime
+  labels:
+    {{- include "mibee-steward.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    server:
+      host: "0.0.0.0"
+      port: 8080
+    database:
+      sqlite:
+        path: /data/mibee.db
+    storage:
+      upload_path: /data/uploads
+    auth:
+      # Secrets are injected through envFrom and override these empty values.
+      jwt_secret: ""
+      initial_admin_password: ""

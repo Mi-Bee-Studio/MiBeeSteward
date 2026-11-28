@@ -2542,11 +2542,16 @@ type InterfaceList struct {
 
 // LoginResponse defines model for LoginResponse.
 type LoginResponse struct {
+	// Challenge One-time 2FA challenge; present only when two_factor_required is true
+	Challenge *string `json:"challenge,omitempty"`
+
+	// ChallengeExpiresIn Challenge lifetime in seconds
+	ChallengeExpiresIn *int `json:"challenge_expires_in,omitempty"`
+
 	// Token JWT (cookie mibee_token preferred; Bearer fallback)
 	Token             string `json:"token"`
 	TwoFactorRequired *bool  `json:"two_factor_required,omitempty"`
 	User              User   `json:"user"`
-	UserId            *int   `json:"user_id,omitempty"`
 }
 
 // NeighborList defines model for NeighborList.
@@ -3875,6 +3880,15 @@ type GetAuditLogsParams struct {
 	Search       *string    `form:"search,omitempty" json:"search,omitempty"`
 }
 
+// PostAuth2faVerifyJSONBody defines parameters for PostAuth2faVerify.
+type PostAuth2faVerifyJSONBody struct {
+	// Challenge One-time challenge returned by /auth/login after password success
+	Challenge string `json:"challenge"`
+
+	// Code Current TOTP code or unconsumed backup code
+	Code string `json:"code"`
+}
+
 // PostAuthLoginJSONBody defines parameters for PostAuthLogin.
 type PostAuthLoginJSONBody struct {
 	Password string `json:"password"`
@@ -4272,6 +4286,9 @@ type PostAgentsEgressReportJSONRequestBody PostAgentsEgressReportJSONBody
 
 // PostAgentsPathReportJSONRequestBody defines body for PostAgentsPathReport for application/json ContentType.
 type PostAgentsPathReportJSONRequestBody PostAgentsPathReportJSONBody
+
+// PostAuth2faVerifyJSONRequestBody defines body for PostAuth2faVerify for application/json ContentType.
+type PostAuth2faVerifyJSONRequestBody PostAuth2faVerifyJSONBody
 
 // PostAuthLoginJSONRequestBody defines body for PostAuthLogin for application/json ContentType.
 type PostAuthLoginJSONRequestBody PostAuthLoginJSONBody
@@ -4995,10 +5012,19 @@ type ClientInterface interface {
 	// Corresponds with GET /auth/2fa/status (the `GetAuth2faStatus` operationId).
 	GetAuth2faStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostAuth2faVerify Verify a TOTP code during login (public + login rate limit)
+	// PostAuth2faVerifyWithBody Verify a one-time 2FA challenge and TOTP code during login (public + login rate limit)
+	//
+	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /auth/2fa/verify (the `PostAuth2faVerify` operationId).
-	PostAuth2faVerify(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	PostAuth2faVerifyWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostAuth2faVerify Verify a one-time 2FA challenge and TOTP code during login (public + login rate limit)
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /auth/2fa/verify (the `PostAuth2faVerify` operationId).
+	PostAuth2faVerify(ctx context.Context, body PostAuth2faVerifyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PutAuthForcePassword Complete forced first-login password change (clears the mcp gate)
 	//
@@ -6389,11 +6415,30 @@ func (c *Client) GetAuth2faStatus(ctx context.Context, reqEditors ...RequestEdit
 	return c.Client.Do(req)
 }
 
-// PostAuth2faVerify Verify a TOTP code during login (public + login rate limit)
+// PostAuth2faVerifyWithBody Verify a one-time 2FA challenge and TOTP code during login (public + login rate limit)
+//
+// Takes any type of body and a specified content type.
 //
 // Corresponds with POST /auth/2fa/verify (the `PostAuth2faVerify` operationId).
-func (c *Client) PostAuth2faVerify(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostAuth2faVerifyRequest(c.Server)
+func (c *Client) PostAuth2faVerifyWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostAuth2faVerifyRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostAuth2faVerify Verify a one-time 2FA challenge and TOTP code during login (public + login rate limit)
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /auth/2fa/verify (the `PostAuth2faVerify` operationId).
+func (c *Client) PostAuth2faVerify(ctx context.Context, body PostAuth2faVerifyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostAuth2faVerifyRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -10163,8 +10208,19 @@ func NewGetAuth2faStatusRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
-// NewPostAuth2faVerifyRequest constructs an http.Request for the PostAuth2faVerify method
-func NewPostAuth2faVerifyRequest(server string) (*http.Request, error) {
+// NewPostAuth2faVerifyRequest calls the generic PostAuth2faVerify builder with application/json body
+func NewPostAuth2faVerifyRequest(server string, body PostAuth2faVerifyJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostAuth2faVerifyRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPostAuth2faVerifyRequestWithBody constructs an http.Request for the PostAuth2faVerify method, with any body, and a specified content type
+func NewPostAuth2faVerifyRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -10182,10 +10238,12 @@ func NewPostAuth2faVerifyRequest(server string) (*http.Request, error) {
 		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -17382,12 +17440,19 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /auth/2fa/status (the `GetAuth2faStatus` operationId).
 	GetAuth2faStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetAuth2faStatusResponse, error)
 
-	// PostAuth2faVerifyWithResponse Verify a TOTP code during login (public + login rate limit)
+	// PostAuth2faVerifyWithBodyWithResponse Verify a one-time 2FA challenge and TOTP code during login (public + login rate limit)
 	//
-	// Returns a wrapper object for the known response body format(s).
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /auth/2fa/verify (the `PostAuth2faVerify` operationId).
-	PostAuth2faVerifyWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PostAuth2faVerifyResponse, error)
+	PostAuth2faVerifyWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostAuth2faVerifyResponse, error)
+
+	// PostAuth2faVerifyWithResponse Verify a one-time 2FA challenge and TOTP code during login (public + login rate limit)
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /auth/2fa/verify (the `PostAuth2faVerify` operationId).
+	PostAuth2faVerifyWithResponse(ctx context.Context, body PostAuth2faVerifyJSONRequestBody, reqEditors ...RequestEditorFn) (*PostAuth2faVerifyResponse, error)
 
 	// PutAuthForcePasswordWithResponse Complete forced first-login password change (clears the mcp gate)
 	//
@@ -26831,13 +26896,26 @@ func (c *ClientWithResponses) GetAuth2faStatusWithResponse(ctx context.Context, 
 	return ParseGetAuth2faStatusResponse(rsp)
 }
 
-// PostAuth2faVerifyWithResponse Verify a TOTP code during login (public + login rate limit)
+// PostAuth2faVerifyWithBodyWithResponse Verify a one-time 2FA challenge and TOTP code during login (public + login rate limit)
 //
-// Returns a wrapper object for the known response body format(s).
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /auth/2fa/verify (the `PostAuth2faVerify` operationId).
-func (c *ClientWithResponses) PostAuth2faVerifyWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PostAuth2faVerifyResponse, error) {
-	rsp, err := c.PostAuth2faVerify(ctx, reqEditors...)
+func (c *ClientWithResponses) PostAuth2faVerifyWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostAuth2faVerifyResponse, error) {
+	rsp, err := c.PostAuth2faVerifyWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostAuth2faVerifyResponse(rsp)
+}
+
+// PostAuth2faVerifyWithResponse Verify a one-time 2FA challenge and TOTP code during login (public + login rate limit)
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /auth/2fa/verify (the `PostAuth2faVerify` operationId).
+func (c *ClientWithResponses) PostAuth2faVerifyWithResponse(ctx context.Context, body PostAuth2faVerifyJSONRequestBody, reqEditors ...RequestEditorFn) (*PostAuth2faVerifyResponse, error) {
+	rsp, err := c.PostAuth2faVerify(ctx, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

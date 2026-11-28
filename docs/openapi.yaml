@@ -194,8 +194,18 @@ paths:
   /auth/2fa/verify:
     post:
       tags: [Auth]
-      summary: Verify a TOTP code during login (public + login rate limit)
+      summary: Verify a one-time 2FA challenge and TOTP code during login (public + login rate limit)
       security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challenge, code]
+              properties:
+                challenge: {type: string, description: "One-time challenge returned by /auth/login after password success"}
+                code: {type: string, description: "Current TOTP code or unconsumed backup code"}
       responses:
         "200":
           description: Session token
@@ -2233,7 +2243,8 @@ components:
         token: {type: string, description: JWT (cookie mibee_token preferred; Bearer fallback)}
         user: {$ref: "#/components/schemas/User"}
         two_factor_required: {type: boolean}
-        user_id: {type: integer}
+        challenge: {type: string, description: "One-time 2FA challenge; present only when two_factor_required is true"}
+        challenge_expires_in: {type: integer, description: "Challenge lifetime in seconds"}
 
     SystemNetworkInterfacesReport:
       type: object

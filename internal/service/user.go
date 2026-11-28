@@ -402,11 +402,19 @@ func (s *UserService) Login(ctx context.Context, username, password string) (*do
 	if s.totpSvc != nil {
 		enabled, err := s.totpSvc.IsEnabled(ctx, user.ID)
 		if err == nil && enabled {
-			// Return 2FA challenge instead of token
+			// Password authentication succeeded. Issue a short-lived challenge
+			// bound to this user; the public verify endpoint no longer trusts a
+			// caller-supplied user_id.
+			challenge, ttl, challengeErr := s.totpSvc.IssueChallenge(user.ID)
+			if challengeErr != nil {
+				return nil, fmt.Errorf("issue 2FA challenge: %w", challengeErr)
+			}
 			return &domain.LoginResponse{
-				Token:             "",
-				User:              toUserResponse(user),
-				TwoFactorRequired: true,
+				Token:              "",
+				User:               toUserResponse(user),
+				TwoFactorRequired:  true,
+				Challenge:          challenge,
+				ChallengeExpiresIn: int(ttl.Seconds()),
 			}, nil
 		}
 	}

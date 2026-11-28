@@ -343,13 +343,13 @@ func TestTOTPEndpoints_StatusAndDisableBranches(t *testing.T) {
 	resp = authPost(t, fx.server.URL+"/api/v1/auth/2fa/disable", token, `{"password":"wrong"}`)
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode) // invalid password (row exists, not yet enabled)
 
-	// Verify (public): missing fields / unknown user / not enabled.
-	resp = authPost(t, fx.server.URL+"/api/v1/auth/2fa/verify", "", `{"user_id":0,"code":""}`)
+	// Verify (public): missing fields / malformed body / invalid challenge.
+	resp = authPost(t, fx.server.URL+"/api/v1/auth/2fa/verify", "", `{"challenge":"","code":""}`)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	resp = authPost(t, fx.server.URL+"/api/v1/auth/2fa/verify", "", `{not-json`)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
-	resp = authPost(t, fx.server.URL+"/api/v1/auth/2fa/verify", "", `{"user_id":9999,"code":"123456"}`)
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode) // 2FA not configured
+	resp = authPost(t, fx.server.URL+"/api/v1/auth/2fa/verify", "", `{"challenge":"invalid","code":"123456"}`)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
 // --- documents: upload → download inline/attachment, restore, update ---

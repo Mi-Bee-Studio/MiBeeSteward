@@ -39,9 +39,12 @@ security:
   master_key: ""
 
 auth:
-  jwt_secret: "CHANGE_THIS (generate with: openssl rand -base64 32)"
+  # REQUIRED: inject a random value via MIBEE_AUTH_JWT_SECRET or edit this file.
+  # Empty is rejected at startup; never use a public template value.
+  jwt_secret: ""
   token_expiry: "1h"
-  initial_admin_password: "CHANGE_THIS (first-run admin password)"
+  # Empty = first browser visit opens the secure first-run admin setup.
+  initial_admin_password: ""
   cookie_domain: ""
   cookie_secure: false     # 容器内若无 TLS 终止，置 false；上游 nginx 终止 TLS 时由 nginx 设置 Secure
   cookie_same_site: "lax"  # 容器场景下通常用 lax（反代跨端口）

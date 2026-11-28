@@ -5,6 +5,15 @@ All notable changes to MiBee Steward are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Production trust P0 — public placeholder credentials and predictable HA JWT (#785)**: startup now rejects known public template placeholders for JWT/admin secrets; production/Docker templates ship empty required values instead of usable public defaults; Home Assistant generates a cryptographically random per-install JWT on first start, persists it under `/data/steward/` with mode 0600, and reuses it across restarts.
+- **Production trust P0 — Rust Agent release corpus is truly embedded (#783)**: fingerprint YAML and SNMP tables are compiled into the binary instead of read from the build machine's `CARGO_MANIFEST_DIR`; `mibee-agent fingerprint-check` validates the embedded corpus without a config/source tree, and CI/release run it from an empty working directory.
+- **Production trust P0 — Helm runtime contract (#782)**: config is mounted at `/app/configs/config.yaml`, all authoritative state is mounted at `/data`, PVC selection works with existing secrets/claims, and the container runs non-root with privilege escalation disabled.
+- **Production trust P0 — 2FA challenge and closed-scope authorization (#787)**: 2FA verify now requires a short-lived one-time challenge bound to successful password authentication, enforces attempt/account-lockout checks, and no longer trusts caller-supplied `user_id`; closed-mode scope resolution fails closed on DB errors.
+
 ## [0.10.0] - 2026-11-24
 
 ### Added

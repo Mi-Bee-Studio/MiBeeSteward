@@ -28,7 +28,8 @@ options:
 schema:
   # Secrets typed once in the add-on options; blanks follow the secure
   # defaults (browser first-run setup creates the admin password; empty
-  # master key disables the v3 credential vault).
+  # master key disables the v3 credential vault; empty jwt_secret generates
+  # and persists a random per-install signing key under /data/steward/).
   jwt_secret: str?
   master_key: str?
   agent_token: str?

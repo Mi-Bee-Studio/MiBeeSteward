@@ -143,6 +143,51 @@ describe('Login page', () => {
 		});
 	});
 
+	it('uses the one-time 2FA challenge instead of a caller-supplied user id', async () => {
+		authMock.state.user = null;
+		authMock.state.token = null;
+		vi.mocked(api.get).mockImplementation((path: string) =>
+			path === '/auth/setup-status'
+				? Promise.resolve({ required: false })
+				: Promise.resolve(undefined)
+		);
+		vi.mocked(api.post)
+			.mockReset()
+			.mockResolvedValueOnce({
+				token: '',
+				user: { id: 7, username: 'tfu', role: 'user', must_change_password: false },
+				two_factor_required: true,
+				challenge: 'one-time-challenge',
+				challenge_expires_in: 300
+			})
+			.mockResolvedValueOnce({
+				token: 'verified-token',
+				user: { id: 7, username: 'tfu', role: 'user', must_change_password: false }
+			});
+
+		const { container } = render(Login);
+		const username = container.querySelector<HTMLInputElement>('input[type="text"]')!;
+		const password = container.querySelector<HTMLInputElement>('input[type="password"]')!;
+		await fireEvent.input(username, { target: { value: 'tfu' } });
+		await fireEvent.input(password, { target: { value: 'Str0ng!Pass' } });
+		await fireEvent.submit(username.closest('form')!);
+
+		const codeInput = await waitFor(() => {
+			const el = container.querySelector<HTMLInputElement>('input[inputmode="numeric"]');
+			expect(el).toBeTruthy();
+			return el!;
+		});
+		await fireEvent.input(codeInput, { target: { value: '123456' } });
+		await fireEvent.submit(codeInput.closest('form')!);
+
+		await waitFor(() => {
+			expect(api.post).toHaveBeenCalledWith('/auth/2fa/verify', {
+				challenge: 'one-time-challenge',
+				code: '123456'
+			});
+		});
+	});
+
 	// #427: an empty submit must show in-DOM, localized field errors: not rely
 	// on the native required bubble (silent under automation): and must never
 	// reach the API.
