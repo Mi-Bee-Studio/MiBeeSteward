@@ -11,6 +11,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -23,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"mibee-steward/internal/backup"
 	"mibee-steward/internal/config"
 	"mibee-steward/internal/dbopen"
 	scannerv2discovery "mibee-steward/internal/service/scannerv2/discovery"
@@ -212,41 +214,74 @@ func doctor(args []string) int {
 
 	// -- Backups --------------------------------------------------------------
 	backupDir := filepath.Join(filepath.Dir(dbPath), "backups")
-	if entries, err := os.ReadDir(backupDir); err != nil || len(entries) == 0 {
+	entries, readErr := os.ReadDir(backupDir)
+	if readErr != nil || len(entries) == 0 {
 		checks = append(checks, doctorCheck{name: "backups", status: "warn",
 			detail:  "no backups found under " + backupDir,
-			fixHint: "schedule scripts/backup.sh (cron: 0 2 * * *)"})
+			fixHint: "run `mibee-steward backup` (or schedule scripts/backup.sh: 0 2 * * *)"})
 	} else {
-		newest := ""
-		var newestMod time.Time
+		// Preferred format: a verified bundle directory. Pick the newest by
+		// directory mtime, then verify every checksum and SQLite file.
+		newestBundle := ""
+		var newestBundleMod time.Time
 		for _, e := range entries {
-			if fi, err := e.Info(); err == nil && fi.ModTime().After(newestMod) && strings.HasSuffix(e.Name(), ".db") {
-				newestMod, newest = fi.ModTime(), filepath.Join(backupDir, e.Name())
+			if !e.IsDir() || !strings.HasPrefix(e.Name(), backup.BundlePrefix) {
+				continue
+			}
+			if fi, err := e.Info(); err == nil && fi.ModTime().After(newestBundleMod) {
+				newestBundleMod, newestBundle = fi.ModTime(), filepath.Join(backupDir, e.Name())
 			}
 		}
-		if newest == "" {
-			checks = append(checks, doctorCheck{name: "backups", status: "warn", detail: "no .db backups", fixHint: "schedule scripts/backup.sh"})
-		} else {
-			age := time.Since(newestMod).Round(time.Hour)
-			status, hint := "ok", ""
-			if age > 48*time.Hour {
-				status, hint = "warn", "older than 48h: check the cron entry"
+		if newestBundle != "" {
+			manifest, verifyErr := backup.Inspect(context.Background(), newestBundle)
+			if verifyErr != nil {
+				checks = append(checks, doctorCheck{name: "backups", status: "fail",
+					detail: "newest bundle failed verification: " + verifyErr.Error(), fixHint: "take a fresh backup and investigate disk health"})
+				checks = append(checks, doctorCheck{name: "backup restorable", status: "fail",
+					detail: verifyErr.Error(), fixHint: "run `mibee-steward verify-backup <bundle>`"})
+			} else {
+				age := time.Since(manifest.CreatedAt).Round(time.Hour)
+				status, hint := "ok", ""
+				if age > 48*time.Hour {
+					status, hint = "warn", "older than 48h: check the cron entry"
+				}
+				checks = append(checks, doctorCheck{name: "backups", status: status,
+					detail: fmt.Sprintf("newest bundle %s (%s old)", filepath.Base(newestBundle), age), fixHint: hint})
+				checks = append(checks, doctorCheck{name: "backup restorable", status: "ok",
+					detail: fmt.Sprintf("%d files, main SQLite integrity OK (run verify-backup for full checksum audit)", len(manifest.Files))})
 			}
-			checks = append(checks, doctorCheck{name: "backups", status: status,
-				detail: fmt.Sprintf("newest %s (%s old)", filepath.Base(newest), age), fixHint: hint})
-			// Quick restorability check: the newest backup must open and pass integrity.
-			if bdb, err := dbopen.Open(newest, "busy_timeout=2000"); err == nil {
-				var ok string
-				if err := bdb.QueryRow(`PRAGMA integrity_check`).Scan(&ok); err == nil && ok == "ok" {
-					checks = append(checks, doctorCheck{name: "backup restorable", status: "ok", detail: filepath.Base(newest) + " opens, integrity ok"})
+		} else {
+			// Legacy single-file .db backups remain readable for upgrades.
+			newest := ""
+			var newestMod time.Time
+			for _, e := range entries {
+				if fi, err := e.Info(); err == nil && fi.ModTime().After(newestMod) && strings.HasSuffix(e.Name(), ".db") {
+					newestMod, newest = fi.ModTime(), filepath.Join(backupDir, e.Name())
+				}
+			}
+			if newest == "" {
+				checks = append(checks, doctorCheck{name: "backups", status: "warn", detail: "no backup bundles or legacy .db backups", fixHint: "run `mibee-steward backup`"})
+			} else {
+				age := time.Since(newestMod).Round(time.Hour)
+				status, hint := "ok", ""
+				if age > 48*time.Hour {
+					status, hint = "warn", "older than 48h: check the cron entry"
+				}
+				checks = append(checks, doctorCheck{name: "backups", status: status,
+					detail: fmt.Sprintf("newest legacy %s (%s old)", filepath.Base(newest), age), fixHint: hint})
+				if bdb, err := dbopen.Open(newest, "busy_timeout=2000"); err == nil {
+					var ok string
+					if err := bdb.QueryRow(`PRAGMA integrity_check`).Scan(&ok); err == nil && ok == "ok" {
+						checks = append(checks, doctorCheck{name: "backup restorable", status: "ok", detail: filepath.Base(newest) + " opens, integrity ok"})
+					} else {
+						checks = append(checks, doctorCheck{name: "backup restorable", status: "fail",
+							detail: fmt.Sprintf("integrity=%q err=%v", ok, err), fixHint: "take a fresh backup and investigate disk health"})
+					}
+					bdb.Close()
 				} else {
 					checks = append(checks, doctorCheck{name: "backup restorable", status: "fail",
-						detail: fmt.Sprintf("integrity=%q err=%v", ok, err), fixHint: "take a fresh backup and investigate disk health"})
+						detail: err.Error(), fixHint: "take a fresh backup"})
 				}
-				bdb.Close()
-			} else {
-				checks = append(checks, doctorCheck{name: "backup restorable", status: "fail",
-					detail: err.Error(), fixHint: "take a fresh backup"})
 			}
 		}
 	}

@@ -55,6 +55,7 @@ flowchart LR
 - **设备系统管理**：每台设备可挂载多个已安装系统（含入口 URL），以带分类徽章的卡片网格展示
 - **网络扫描器（v2）**：基于插件的 5 层架构（探测 → 分类 → 处理 → 持久化 → 编排），支持级联深度采集。可识别 SSH/HTTP/RTSP/ONVIF/SNMP/Prometheus/node_exporter，并推断设备类型与品牌（例如根据 RTSP+ONVIF 识别为摄像头）。扩展方式：注册一个 Classifier + 一个 Handler 即可接入新协议
 - **设备配置备份**：Oxidized/RANCID 式定时 SSH 拉取 `running-config`（厂商命令矩阵、host-key TOFU），版本化存储、两版本 diff、`device_config_changed` 变更事件。按需启用，凭据落库加密。[API 参考](docs/zh/api.md)
+- **数据生命周期备份**：内置 `backup` / `verify-backup` / `restore`，覆盖全部 SQLite 库、上传/指纹/实例身份与配置，带 SHA-256、完整性和 schema 清单；支持恢复预演、旧数据保留与跨 schema 保护，不依赖宿主 `sqlite3`。
 - **RBAC + 网络作用域**：基于能力的角色模型（admin / operator / viewer）+ 按用户的网络授权；`closed` 模式将租户隔离到各自被授权的网络（MSP 就绪）。
 - **MAC 厂商推断**：按最长前缀匹配把每个 MAC 解析到 IEEE 注册厂商（MA-L / MA-M / MA-S），记为 `oui_prefix` + `oui_vendor`（NIC 芯片厂商，与设备自报品牌分开）。内置精简表开箱即用，完整 IEEE 数据集可选下载。
 - **TLS 证书清点**：从 TLS 包装的服务（HTTPS、LDAPS、SMTPS、IMAPS、POP3S、FTPS、IRCS、TelnetS）采集完整证书链，含 Subject/Issuer/SAN/有效期/指纹与 PEM，按端口/设备维度保存；设备详情页展示过期状态与信任判定，默认保留 30 天（`host_tls_certs`）。

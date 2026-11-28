@@ -55,6 +55,24 @@ func main() {
 		runDoctor(os.Args[2:])
 		return
 	}
+	if len(os.Args) > 1 {
+		var err error
+		switch os.Args[1] {
+		case "backup":
+			err = runBackupSubcommand(os.Args[2:])
+		case "verify-backup":
+			err = runVerifyBackupSubcommand(os.Args[2:])
+		case "restore":
+			err = runRestoreSubcommand(os.Args[2:])
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		if os.Args[1] == "backup" || os.Args[1] == "verify-backup" || os.Args[1] == "restore" {
+			return
+		}
+	}
 
 	if err := runCLI(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)

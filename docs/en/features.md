@@ -165,7 +165,7 @@ A SvelteKit 5 SPA embedded in the binary: Chinese/English i18n (auto-detect + lo
 - **Single binary, zero dependencies**: CGO-free (modernc.org/sqlite, pure Go), frontend embedded via `go:embed`, embedded SQLite (WAL); `make build-all` cross-compiles linux amd64 + arm64.
 - **Deployment shapes**: systemd + Nginx, Docker (multi-stage non-root, multi-arch GHCR images, bridge/host/macvlan profiles), OpenWrt procd (center + agent, UCI config, ARMv7).
 - **Retention**: per-table batched sweeps (heartbeat 7d, scans 30d, audit 90d, …, all configurable); silent-device pruning.
-- **Data safety**: schema-version gating that rejects incompatible databases at startup instead of half-upgrading them, `scripts/backup.sh` (`.backup` + integrity check, 7-day retention).
+- **Data safety**: schema-version gating that rejects incompatible databases at startup instead of half-upgrading them; built-in `backup` / `verify-backup` / `restore` cover every SQLite store plus uploads/fingerprints/instance identity/config with SHA-256, integrity, and schema manifests (7-day retention). `scripts/backup.sh` is a zero-`sqlite3` compatibility wrapper.
 - **Configuration**: koanf (YAML + `MIBEE_*` env overrides); the example config covers every module.
 - **Observability**: slog structured logging, request/scanner/heartbeat/probe metrics, bind-retry against restart storms, graceful shutdown.
 

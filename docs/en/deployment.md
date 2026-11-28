@@ -293,23 +293,34 @@ sudo certbot --nginx -d your-domain.com
 
 ### Data Location
 
-The SQLite database lives at `./data/mibee.db` (binary deployment) or `/data/mibee.db` inside the container (Docker deployment).
+Authoritative data lives at `./data/mibee.db` (binary deployment) or `/data/mibee.db` inside the container (Docker deployment). The same directory also holds `heartbeat.db`, `probe_ext.db`, `uploads/`, managed fingerprints, and `instance-id`. The backup command covers every top-level SQLite file and every other regular file in the data directory.
 
 
 ### Backup Strategy
 
-Use `scripts/backup.sh` for safe SQLite backups (no database locking):
+Use the built-in backup command (no host `sqlite3` dependency):
 
 ```bash
-# Usage: ./scripts/backup.sh [DB_PATH] [BACKUP_DIR] [RETENTION_DAYS]
-# Defaults: ./data/mibee.db → ./data/backups, retain 7 days
-./scripts/backup.sh
+# Defaults to ./data/backups/mibee-<timestamp>/, retains 7 days
+./mibee-steward backup -config configs/config.yaml
 
-# Scheduled backup (crontab)
-# 0 2 * * * /opt/mibee-steward/scripts/backup.sh /opt/mibee-steward/data/mibee.db /opt/mibee-steward/data/backups 30
+# Custom location and retention
+./mibee-steward backup -config configs/config.yaml \
+  -output /var/backups/mibee -retention-days 30
+
+# Legacy cron/script entry point (calls the same built-in command)
+/opt/mibee-steward/scripts/backup.sh \
+  /opt/mibee-steward/data/mibee.db /opt/mibee-steward/data/backups 30
 ```
 
-The backup script automatically verifies integrity and cleans up expired backups.
+Each bundle contains:
+
+- `databases/*.db`: online consistent snapshots through SQLite `VACUUM INTO`;
+- data-directory files such as `uploads/`, `fingerprints/`, and `instance-id`;
+- `config.yaml`: the master key/JWT configuration required to decrypt credentials;
+- `manifest.json`: file sizes, SHA-256, SQLite `user_version`, and integrity results.
+
+**Bundles contain secrets and must be protected as sensitive data.** Bundle directories are mode `0700` and files are `0600`; encrypt off-site copies. Only fully verified bundles participate in retention pruning.
 
 
 ### Automatic Maintenance
@@ -349,17 +360,29 @@ Measured on a 85-device LAN with default retention windows (30d scan results,
   (a stuck sweeper shows as monotonic growth on one table).
 
 
-### Restore
+### Verify and Restore
 
-Backups are **binary database files** produced by `sqlite3 ".backup"`, not SQL scripts. Restore by copying the file back:
+Verify the bundle, then run a no-write restore rehearsal:
+
+```bash
+./mibee-steward verify-backup /path/to/mibee-YYYYMMDD_HHMMSS
+./mibee-steward restore -dry-run \
+  -data-dir ./data -config configs/config.yaml \
+  /path/to/mibee-YYYYMMDD_HHMMSS
+```
+
+Stop the service and restore:
 
 ```bash
 sudo systemctl stop mibee-steward
-sudo cp /path/to/backup/mibee-YYYYMMDD_HHMMSS.db /opt/mibee-steward/data/mibee.db
-# remove stale WAL/SHM sidecar files so old state can't interfere
-sudo rm -f /opt/mibee-steward/data/mibee.db-wal /opt/mibee-steward/data/mibee.db-shm
+sudo ./mibee-steward restore -force \
+  -data-dir /opt/mibee-steward/data \
+  -config /opt/mibee-steward/configs/config.yaml \
+  /path/to/mibee-YYYYMMDD_HHMMSS
 sudo systemctl start mibee-steward
 ```
+
+Restore verifies every file, stages a complete copy beside the target, then swaps it into place. Previous data is preserved as `*.pre-restore-<timestamp>`. Cross-core-schema restore is refused by default, preserving the standing “back up → fresh database → rescan” policy; only explicit forensic/compatibility scenarios should use `-allow-schema-mismatch`. Legacy single-file `.db` backups remain manually restorable but do not include side stores or files.
 
 ## Upgrading
 

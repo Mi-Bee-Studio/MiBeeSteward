@@ -113,7 +113,7 @@ SELECT * FROM your_table WHERE id = $1;
 1. Edit `db/schema.sql`
 2. Run `~/go/bin/sqlc generate`
 3. If the change is not compatible with databases created by earlier builds, bump `SchemaVersion` in `cmd/server/migrations.go` (the Rust agent's local DB has its own schema versioning inside `agent-rs/crates/mibee-agent/src/db.rs`)
-4. Schema is applied only when a database is first created; a database stamped with an older version is rejected at startup with guidance, there is no in-place upgrade path
+4. Schema is applied only when a database is first created; a database stamped with an older version is rejected at startup with guidance, there is no in-place upgrade path. Run `mibee-steward backup` before a version crossing, then start with a fresh database and rescan; bundles are for verification/forensics and refuse cross-core-schema restore by default
 
 ### Frontend Development
 

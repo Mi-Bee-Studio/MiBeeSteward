@@ -293,23 +293,34 @@ sudo certbot --nginx -d your-domain.com
 
 ### 数据位置
 
-SQLite 数据库默认位于 `./data/mibee.db`（二进制部署）或容器内 `/data/mibee.db`（Docker 部署）。
+权威数据默认位于 `./data/mibee.db`（二进制部署）或容器内 `/data/mibee.db`（Docker 部署）；同目录还包含 `heartbeat.db`、`probe_ext.db`、`uploads/`、托管指纹目录与 `instance-id`。备份命令会覆盖数据目录中的全部顶层 SQLite 文件和其余普通文件。
 
 
 ### 备份策略
 
-使用 `scripts/backup.sh` 执行安全的 SQLite 备份（无数据库锁定）：
+推荐使用内置备份命令（不依赖宿主 `sqlite3`）：
 
 ```bash
-# 用法: ./scripts/backup.sh [数据库路径] [备份目录] [保留天数]
-# 默认: ./data/mibee.db → ./data/backups，保留 7 天
-./scripts/backup.sh
+# 默认写入 ./data/backups/mibee-<时间戳>/，保留 7 天
+./mibee-steward backup -config configs/config.yaml
 
-# 定期备份（crontab）
-# 0 2 * * * /opt/mibee-steward/scripts/backup.sh /opt/mibee-steward/data/mibee.db /opt/mibee-steward/data/backups 30
+# 指定位置与保留期
+./mibee-steward backup -config configs/config.yaml \
+  -output /var/backups/mibee -retention-days 30
+
+# 兼容旧 cron/脚本入口（内部调用同一个内置命令）
+/opt/mibee-steward/scripts/backup.sh \
+  /opt/mibee-steward/data/mibee.db /opt/mibee-steward/data/backups 30
 ```
 
-备份脚本会自动验证完整性并清理过期备份。
+每个备份包包含：
+
+- `databases/*.db`：通过 SQLite `VACUUM INTO` 获取在线一致性快照；
+- `uploads/`、`fingerprints/`、`instance-id` 等数据目录文件；
+- `config.yaml`：恢复加密凭据所需的 master key/JWT 配置；
+- `manifest.json`：文件大小、SHA-256、SQLite `user_version` 与完整性校验结果。
+
+**备份包包含密钥，必须按敏感数据保护。** 备份目录权限为 `0700`，文件为 `0600`；异地备份应再加密。只有通过完整校验的备份包才会参与保留期清理。
 
 
 ### 自动养护
@@ -335,17 +346,29 @@ SQLite 数据库默认位于 `./data/mibee.db`（二进制部署）或容器内 
 - 经验值：默认保留窗口下按**每台被扫描设备每月约 2 MB** 预算；之后关注 `mibee_db_size_bytes`，若偏离线性增长，用 `mibee_db_table_rows` 定位哪张表在累积（清理器卡死表现为单表单调增长）
 
 
-### 恢复
+### 验证与恢复
 
-备份文件是 `sqlite3 ".backup"` 产出的**二进制数据库文件**，不是 SQL 脚本--直接复制回原位即可：
+先验证备份包，再执行不写盘的恢复预演：
+
+```bash
+./mibee-steward verify-backup /path/to/mibee-YYYYMMDD_HHMMSS
+./mibee-steward restore -dry-run \
+  -data-dir ./data -config configs/config.yaml \
+  /path/to/mibee-YYYYMMDD_HHMMSS
+```
+
+停服后恢复：
 
 ```bash
 sudo systemctl stop mibee-steward
-sudo cp /path/to/backup/mibee-YYYYMMDD_HHMMSS.db /opt/mibee-steward/data/mibee.db
-# 删除可能残留的 WAL/SHM 文件，避免旧状态干扰
-sudo rm -f /opt/mibee-steward/data/mibee.db-wal /opt/mibee-steward/data/mibee.db-shm
+sudo ./mibee-steward restore -force \
+  -data-dir /opt/mibee-steward/data \
+  -config /opt/mibee-steward/configs/config.yaml \
+  /path/to/mibee-YYYYMMDD_HHMMSS
 sudo systemctl start mibee-steward
 ```
+
+恢复会先校验全部文件，再在目标旁暂存完整副本，最后原子切换；旧数据保留为 `*.pre-restore-<时间戳>`。默认拒绝跨核心 schema 恢复，保持“备份 → 新库 → 重扫”的既定边界；只有明确的取证/兼容场景才使用 `-allow-schema-mismatch`。旧的单文件 `.db` 备份仍可手动恢复，但不包含旁库与文件。
 
 ## 升级
 

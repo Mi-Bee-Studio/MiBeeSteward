@@ -275,6 +275,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Backup wrapper contract
+        run: bash scripts/test-backup-wrapper.sh
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod

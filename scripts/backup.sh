@@ -1,55 +1,54 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Copyright (c) 2026 Mi-Bee Studio. All rights reserved.
+# Copyright (c) 2026 Mi Bee Studio. All rights reserved.
 #
-# This file is part of MiBee Steward, distributed under the GNU Affero General
-# Public License v3.0 or later. You may use, modify, and redistribute it under
-# those terms; see LICENSE for the full text. A commercial license is available
-# for use cases the AGPL does not accommodate; see LICENSE-COMMERCIAL.md.
+# This file is part of MiBee Steward, distributed under the GNU Affero
+# General Public License v3.0 or later. See the LICENSE file for the full
+# text. A commercial license is available for use cases the AGPL does not
+# accommodate; see LICENSE-COMMERCIAL.md.
 
-# MiBee Steward: SQLite Backup Script
-# Usage: ./scripts/backup.sh [DB_PATH] [BACKUP_DIR] [RETENTION_DAYS]
+# Compatibility wrapper for the built-in, zero-external-dependency backup
+# command. The old script required sqlite3 and backed up only mibee.db; the
+# binary now snapshots every top-level SQLite file plus uploads, fingerprints,
+# instance identity and config into a verified bundle.
+#
+# Usage: ./backup.sh [DB_PATH] [BACKUP_DIR] [RETENTION_DAYS]
 # Cron example: 0 2 * * * /opt/mibee-steward/scripts/backup.sh
 
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "$0")" && pwd)"
 DB_PATH="${1:-./data/mibee.db}"
 BACKUP_DIR="${2:-./data/backups}"
 RETENTION_DAYS="${3:-7}"
 
-# Ensure backup directory exists
-mkdir -p "$BACKUP_DIR"
-
-# Generate timestamp-based filename
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_FILE="${BACKUP_DIR}/mibee-${TIMESTAMP}.db"
-
-# Check database file exists
-if [ ! -f "$DB_PATH" ]; then
-    echo "ERROR: Database file not found: $DB_PATH" >&2
-    exit 1
-fi
-
-# Perform safe backup using sqlite3 .backup command
-# This does NOT lock the database: safe for production use
-echo "Backing up ${DB_PATH} to ${BACKUP_FILE}..."
-sqlite3 "$DB_PATH" ".backup '${BACKUP_FILE}'"
-
-# Verify backup integrity AND that the file opens as a usable database (a
-# truncated/corrupt page can pass a quick stat but fail a real query: #280).
-if sqlite3 "$BACKUP_FILE" "PRAGMA integrity_check;" | grep -q "ok" \
-    && ROWS=$(sqlite3 "$BACKUP_FILE" "SELECT COUNT(*) FROM sqlite_master;") && [ "$ROWS" -gt 0 ]; then
-    SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
-    echo "Backup completed successfully: ${BACKUP_FILE} (${SIZE}, ${ROWS} schema objects, integrity ok)"
+if [ -n "${MIBEE_BIN:-}" ]; then
+  BIN="$MIBEE_BIN"
+elif [ -x "$ROOT/mibee-steward" ]; then
+  BIN="$ROOT/mibee-steward"
+elif [ -x "$ROOT/../mibee-steward" ]; then
+  BIN="$ROOT/../mibee-steward"
+elif [ -x "$ROOT/../bin/mibee-steward" ]; then
+  BIN="$ROOT/../bin/mibee-steward"
 else
-    echo "ERROR: Backup verification failed (integrity or open): ${BACKUP_FILE}" >&2
-    rm -f "$BACKUP_FILE"
-    exit 1
+  echo "ERROR: mibee-steward binary not found; set MIBEE_BIN" >&2
+  exit 1
 fi
 
-# Remove backups older than RETENTION_DAYS
-DELETED=$(find "$BACKUP_DIR" -name "mibee-*.db" -mtime +"$RETENTION_DAYS" -delete -print | wc -l)
-if [ "$DELETED" -gt 0 ]; then
-    echo "Removed ${DELETED} old backup(s) (older than ${RETENTION_DAYS} days)"
+if [ -n "${MIBEE_CONFIG:-}" ]; then
+  CONFIG="$MIBEE_CONFIG"
+elif [ -f "$ROOT/configs/config.yaml" ]; then
+  CONFIG="$ROOT/configs/config.yaml"
+elif [ -f "$ROOT/../configs/config.yaml" ]; then
+  CONFIG="$ROOT/../configs/config.yaml"
+else
+  echo "ERROR: config.yaml not found; set MIBEE_CONFIG" >&2
+  exit 1
 fi
+
+exec "$BIN" backup \
+  -config "$CONFIG" \
+  -db "$DB_PATH" \
+  -output "$BACKUP_DIR" \
+  -retention-days "$RETENTION_DAYS"

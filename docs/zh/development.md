@@ -110,7 +110,7 @@ SELECT * FROM your_table WHERE id = $1;
 1. 编辑 `db/schema.sql`
 2. 运行 `~/go/bin/sqlc generate`
 3. 变更与旧版本建的库不兼容时，同步调高 `cmd/server/migrations.go` 中的 `SchemaVersion`（Rust agent 的本地库在 `agent-rs/crates/mibee-agent/src/db.rs` 内自行管理 schema 版本）
-4. schema 只在数据库首次创建时应用；版本不符的旧库启动即拒并给出指引，不做原地升级
+4. schema 只在数据库首次创建时应用；版本不符的旧库启动即拒并给出指引，不做原地升级。跨版本前先运行 `mibee-steward backup`，再用全新数据库启动并重扫；备份包可用于校验和取证，但默认不能跨核心 schema 直接恢复
 
 ### 前端开发
 
